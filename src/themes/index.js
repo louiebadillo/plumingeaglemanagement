@@ -138,11 +138,6 @@ const darkModeOverrides = {
         boxShadow: 'none !important',
       },
     },
-    typography: {
-      root: {
-        color: 'white !important',
-      },
-    },
     MuiCheckbox: {
       root: {
         color: '#76767B',
@@ -195,7 +190,7 @@ const darkModeOverrides = {
         color: '#76767B',
       },
     },
-  },
+  }
 };
 
 export default {

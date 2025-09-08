@@ -11,11 +11,6 @@ import Calendar from './Components/Calendar/Calendar';
 import MediaBlock from './Components/MediaBlock';
 import ViewsWidget from './Components/ViewsWidget';
 import ProfileIcon from '../../images/profile/profilePhoto.svg';
-import BehanceIcon from '../../images/profile/BehanceIcon.svg';
-import MediumIcon from '../../images/profile/MediumIcon.svg';
-import FacebookIcon from '../../images/profile/FacebookIcon.svg';
-import DribbleIcon from '../../images/profile/DribbleIcon.svg';
-import InstagramIcon from '../../images/profile/InstagramIcon.svg';
 import CloudIcon from './Icons/CloudIcon' 
 
 // styles
@@ -58,18 +53,6 @@ function Profile() {
                   <Badge type="tag" badgeContent={"Design"} color="secondary"/>
                   <Badge type="tag" badgeContent={"Illustration"} color="warning"/>
                   <Badge type="tag" badgeContent={"Mobile"} color="success"/>
-                </div>
-                <div className={classes.socials}>
-                  {/* eslint-disable-next-line */}
-                  <a href="#"><img src={FacebookIcon} alt="FacebookIcon" /></a>
-                  {/* eslint-disable-next-line */}
-                  <a href="#"><img src={MediumIcon} alt="MediumIcon" /></a>
-                  {/* eslint-disable-next-line */}
-                  <a href="#"><img src={DribbleIcon} alt="DribbleIcon" /></a>
-                  {/* eslint-disable-next-line */}
-                  <a href="#"><img src={BehanceIcon} alt="BehanceIcon" /></a>
-                  {/* eslint-disable-next-line */}
-                  <a href="#"><img src={InstagramIcon} alt="InstagramIcon" /></a>
                 </div>
               </div>
             </Grid>

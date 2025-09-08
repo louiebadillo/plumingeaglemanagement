@@ -29,36 +29,6 @@ export default makeStyles((theme) => ({
     marginRight: `16px !important`,
     textDecoration: 'none',
   },
-  defaultRadio: {
-    color: '#536DFE',
-    '&.MuiRadio-colorSecondary.Mui-checked': {
-      color: '#536DFE',
-    },
-  },
-  successRadio: {
-    color: '#23a075',
-    '&.MuiRadio-colorSecondary.Mui-checked': {
-      color: '#23a075',
-    },
-  },
-  secondaryRadio: {
-    color: '#FF5C93',
-    '&.MuiRadio-colorSecondary.Mui-checked': {
-      color: '#FF5C93',
-    },
-  },
-  warningRadio: {
-    color: '#FFC260',
-    '&.MuiRadio-colorSecondary.Mui-checked': {
-      color: '#FFC260',
-    },
-  },
-  infoRadio: {
-    color: '#9013FE',
-    '&.MuiRadio-colorSecondary.Mui-checked': {
-      color: '#9013FE',
-    },
-  },
   button: {
     boxShadow: theme.customShadows.widget,
     textTransform: 'none',
@@ -75,15 +45,6 @@ export default makeStyles((theme) => ({
   },
   margin: {
     marginBottom: 24,
-  },
-  changeThemeFab: {
-    position: 'fixed',
-    top: theme.spacing(15),
-    right: 0,
-    zIndex: 1,
-    borderRadius: 0,
-    borderTopLeftRadius: '50%',
-    borderBottomLeftRadius: '50%',
   },
   navPadding: {
     paddingTop: `${theme.spacing(1)}px !important`,

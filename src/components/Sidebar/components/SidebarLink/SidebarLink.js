@@ -53,6 +53,17 @@ export default function SidebarLink({
 
   onLogin.clickName = 'onLogin';
 
+  // Logout onClick
+  function onLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('user_id');
+    document.cookie = 'token=;expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.href = '/login';
+  }
+
+  onLogout.clickName = 'onLogout';
+
   let classes = useStyles(isOpen);
   const classes2 = useStyles2();
   let isLinkActive =
@@ -94,7 +105,7 @@ export default function SidebarLink({
         <ListItem
           onClick={(e) => {
             if (click) {
-              return click(e, addSectionClick, onLogin);
+              return click(e, addSectionClick, onLogin, onLogout);
             }
             return toggleDrawer(e);
           }}
@@ -135,7 +146,7 @@ export default function SidebarLink({
         <ListItem
           onClick={(e) => {
             if (click) {
-              return click(e, addSectionClick, onLogin);
+              return click(e, addSectionClick, onLogin, onLogout);
             }
             return toggleDrawer(e);
           }}

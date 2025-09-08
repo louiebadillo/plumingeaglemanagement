@@ -37,11 +37,6 @@ export default {
       light: tinycolor(info).lighten(lightenRate).toHexString(),
       dark: tinycolor(info).darken(darkenRate).toHexString(),
     },
-    inherit: {
-      main: 'inherit',
-      light: tinycolor('inherit').lighten('inherit').toHexString(),
-      dark: tinycolor('inherit').darken('inherit').toHexString(),
-    },
     text: {
       primary: '#4A4A4A',
       secondary: '#6E6E6E',

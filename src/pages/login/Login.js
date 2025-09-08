@@ -2,27 +2,22 @@ import React, { useState, useEffect } from 'react';
 import {
   Grid,
   CircularProgress,
-  Tabs,
-  Tab,
   Grow,
   TextField as Input,
   Typography,
 } from '@mui/material';
 import { withRouter } from 'react-router-dom';
-import classnames from 'classnames';
 
 // styles
 import useStyles from './styles';
 
 // logo
-import logo from './logo.svg';
-import google from '../../images/google.svg';
+import logo from '../../images/pellogo.png';
 
 // context
 import {
   useUserDispatch,
   loginUser,
-  registerUser,
   sendPasswordResetEmail,
 } from '../../context/UserContext';
 import { receiveToken, doInit } from '../../context/UserContext';
@@ -31,19 +26,8 @@ import { receiveToken, doInit } from '../../context/UserContext';
 import { Button } from '../../components/Wrappers';
 import Widget from '../../components/Widget';
 import config from '../../config';
+import { getConfig } from '../../config/template';
 
-const getGreeting = () => {
-  const d = new Date();
-  if (d.getHours() >= 4 && d.getHours() <= 12) {
-    return 'Good Morning';
-  } else if (d.getHours() >= 13 && d.getHours() <= 16) {
-    return 'Good Day';
-  } else if (d.getHours() >= 17 && d.getHours() <= 23) {
-    return 'Good Evening';
-  } else {
-    return 'Good Night';
-  }
-};
 
 function Login(props) {
   let classes = useStyles();
@@ -66,8 +50,8 @@ function Login(props) {
   let [error, setError] = useState(null);
   let [activeTabId, setActiveTabId] = useState(+tab ?? 0);
   let [nameValue, setNameValue] = useState('');
-  let [loginValue, setLoginValue] = useState('admin@flatlogic.com');
-  let [passwordValue, setPasswordValue] = useState('password');
+  let [loginValue, setLoginValue] = useState(getConfig('AUTH.DEFAULT_EMAIL') || 'admin@plumingeagle.com');
+  let [passwordValue, setPasswordValue] = useState(getConfig('AUTH.DEFAULT_PASSWORD') || 'admin123');
   let [forgotEmail, setForgotEmail] = useState('');
   let [isForgot, setIsForgot] = useState(false);
 
@@ -91,9 +75,11 @@ function Login(props) {
   return (
     <Grid container className={classes.container}>
       <div className={classes.logotypeContainer}>
-        <img src={logo} alt='logo' className={classes.logotypeImage} />
         <Typography className={classes.logotypeText}>
-          React Material Admin Full
+          {getConfig('COMPANY.NAME') || 'Pluming Eagle Lodge'}
+        </Typography>
+        <Typography className={classes.logotypeSubText}>
+          {getConfig('COMPANY.TAGLINE') || 'Empowering The Next Generation'}
         </Typography>
       </div>
       <div
@@ -147,18 +133,7 @@ function Login(props) {
             </div>
           ) : (
             <>
-              <Tabs
-                value={activeTabId}
-                onChange={(e, id) => setActiveTabId(id)}
-                indicatorColor='primary'
-                textColor='primary'
-                centered
-              >
-                <Tab label='Login' classes={{ root: classes.tab }} />
-                <Tab label='New User' classes={{ root: classes.tab }} />
-              </Tabs>
-              {activeTabId === 0 && (
-                <React.Fragment>
+              <React.Fragment>
                   {config.isBackend ? (
                     <Widget
                       disableWidgetMenu
@@ -170,45 +145,21 @@ function Login(props) {
                         component="div"
                         style={{ textAlign: 'center' }}
                       >
-                        This is a real app with Node.js backend - use
+                        Healthcare Management System - use
                         <Typography variant={'body2'} weight={'bold'}>
-                          "admin@flatlogic.com / password"
+                          "admin@plumingeagle.com / admin123"
                         </Typography>{' '}
                         to login!
                       </Typography>
                     </Widget>
                   ) : null}
-                  <Typography variant='h1' className={classes.greeting}>
-                    {getGreeting()}, User
-                  </Typography>
-                  <Button
-                    size='large'
-                    className={classes.googleButton}
-                    onClick={() =>
-                      loginUser(
-                        userDispatch,
-                        loginValue,
-                        passwordValue,
-                        props.history,
-                        setIsLoading,
-                        setError,
-                        'google',
-                      )
-                    }
-                  >
-                    <img
-                      src={google}
-                      alt='google'
-                      className={classes.googleIcon}
-                    />
-                    &nbsp;Sign in with Google
-                  </Button>
-                  <div className={classes.formDividerContainer}>
-                    <div className={classes.formDivider} />
-                    <Typography className={classes.formDividerWord}>
-                      or
+                  
+                  {/* Logo and Sign-in Message Section */}
+                  <div className={classes.logoMessageContainer}>
+                    <img src={logo} alt='logo' className={classes.formLogo} />
+                    <Typography variant='h4' className={classes.signInMessage}>
+                      Sign in to your account
                     </Typography>
-                    <div className={classes.formDivider} />
                   </div>
                   <Grow
                     in={error}
@@ -288,143 +239,11 @@ function Login(props) {
                     </Button>
                   </div>
                 </React.Fragment>
-              )}
-              {activeTabId === 1 && (
-                <React.Fragment>
-                  <Typography variant='h1' className={classes.greeting}>
-                    Welcome!
-                  </Typography>
-                  <Typography variant='h2' className={classes.subGreeting}>
-                    Create your account
-                  </Typography>
-                  <Grow in={error}>
-                    <Typography className={classes.errorMessage}>
-                      Something is wrong with your login or password :(
-                    </Typography>
-                  </Grow>
-                  <Input
-                    id='name'
-                    InputProps={{
-                      classes: {
-                        underline: classes.InputUnderline,
-                        input: classes.Input,
-                      },
-                    }}
-                    value={nameValue}
-                    onChange={(e) => setNameValue(e.target.value)}
-                    margin='normal'
-                    placeholder='Full Name'
-                    type='email'
-                    fullWidth
-                  />
-                  <Input
-                    id='email'
-                    InputProps={{
-                      classes: {
-                        underline: classes.InputUnderline,
-                        input: classes.Input,
-                      },
-                    }}
-                    value={loginValue}
-                    onChange={(e) => setLoginValue(e.target.value)}
-                    margin='normal'
-                    placeholder='Email Adress'
-                    type='email'
-                    fullWidth
-                  />
-                  <Input
-                    id='password'
-                    InputProps={{
-                      classes: {
-                        underline: classes.InputUnderline,
-                        input: classes.Input,
-                      },
-                    }}
-                    value={passwordValue}
-                    onChange={(e) => setPasswordValue(e.target.value)}
-                    margin='normal'
-                    placeholder='Password'
-                    type='password'
-                    fullWidth
-                  />
-                  <div className={classes.creatingButtonContainer}>
-                    {isLoading ? (
-                      <CircularProgress size={26} />
-                    ) : (
-                      <Button
-                        onClick={() =>
-                          registerUser(
-                            userDispatch,
-                            loginValue,
-                            passwordValue,
-                            props.history,
-                            setIsLoading,
-                            setError,
-                          )()
-                        }
-                        disabled={
-                          loginValue.length === 0 ||
-                          passwordValue.length === 0 ||
-                          nameValue.length === 0
-                        }
-                        size='large'
-                        variant='contained'
-                        color='primary'
-                        fullWidth
-                        className={classes.createAccountButton}
-                      >
-                        Create your account
-                      </Button>
-                    )}
-                  </div>
-                  <div className={classes.formDividerContainer}>
-                    <div className={classes.formDivider} />
-                    <Typography className={classes.formDividerWord}>
-                      or
-                    </Typography>
-                    <div className={classes.formDivider} />
-                  </div>
-                  <Button
-                    size='large'
-                    className={classnames(
-                      classes.googleButton,
-                      classes.googleButtonCreating,
-                    )}
-                    onClick={() =>
-                      loginUser(
-                        userDispatch,
-                        loginValue,
-                        passwordValue,
-                        props.history,
-                        setIsLoading,
-                        setError,
-                        'google',
-                      )
-                    }
-                  >
-                    <img
-                      src={google}
-                      alt='google'
-                      className={classes.googleIcon}
-                    />
-                    &nbsp;Sign in with Google
-                  </Button>
-                </React.Fragment>
-              )}
             </>
           )}
         </div>
         <Typography color='primary' className={classes.copyright}>
-          2014-{new Date().getFullYear()}{' '}
-          <a
-            style={{ textDecoration: 'none', color: 'inherit' }}
-            href='https://flatlogic.com'
-            rel='noopener noreferrer'
-            target='_blank'
-          >
-            Flatlogic
-          </a>
-          , LLC. All rights reserved.
+          {getConfig('COMPANY.COPYRIGHT') || `© ${new Date().getFullYear()} Pluming Eagle Lodge. All rights reserved.`}
         </Typography>
       </div>
     </Grid>

@@ -9,12 +9,16 @@ import {
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 import { withStyles } from '@mui/styles';
-
-// styles
+import { getClientById } from '../../context/clientMock';
 import useStyles from '../Layout/styles';
-
-// components
 import structure from '../Sidebar/SidebarStructure';
+
+// Facility information for breadcrumbs
+const facilityData = {
+  'facility-a': 'Facility A',
+  'facility-b': 'Facility B', 
+  'facility-c': 'Facility C'
+};
 
 // Tab styling
 const CustomTab = withStyles((theme) => ({
@@ -33,23 +37,99 @@ const BreadCrumbs = () => {
 
   const renderBreadCrumbs = () => {
     let url = location.pathname;
-    let route = url
-      .split('/')
-      .slice(1)
-      .map((route) =>
-        route
+    let urlParts = url.split('/').slice(1);
+    
+    // Build breadcrumb items with proper handling
+    let breadcrumbItems = [];
+    let i = 0;
+    
+    while (i < urlParts.length) {
+      const segment = urlParts[i];
+      
+      if (segment === 'facility' && i + 1 < urlParts.length) {
+        // Handle facility route
+        const facilityId = urlParts[i + 1];
+        if (facilityId === 'management') {
+          // Handle facility management route
+          breadcrumbItems.push({
+            label: 'Facility Management',
+            url: '/app/facility/management'
+          });
+          i += 2; // Skip both 'facility' and 'management'
+        } else {
+          // Handle individual facility route
+          const facilityName = facilityData[facilityId] || `Facility ${facilityId}`;
+          breadcrumbItems.push({
+            label: facilityName,
+            url: '/' + urlParts.slice(0, i + 2).join('/')
+          });
+          i += 2; // Skip both 'facility' and 'facility-a'
+        }
+      } else if (segment === 'client' && i + 1 < urlParts.length) {
+        // Handle client route
+        const clientId = urlParts[i + 1];
+        let clientName;
+        let clientFacility = null;
+        
+        if (clientId === 'new') {
+          clientName = 'New Client';
+          // For new client, try to get facility from URL params
+          const urlParams = new URLSearchParams(window.location.search);
+          const facilityParam = urlParams.get('facility');
+          if (facilityParam) {
+            clientFacility = facilityData[facilityParam] || `Facility ${facilityParam}`;
+          }
+        } else {
+          const client = getClientById(parseInt(clientId));
+          if (client) {
+            clientName = `${client.firstName} ${client.lastName}`;
+            clientFacility = facilityData[client.facility] || `Facility ${client.facility}`;
+          } else {
+            clientName = `Client ${clientId}`;
+          }
+        }
+        
+        // Add facility breadcrumb if we have facility info
+        if (clientFacility) {
+          let facilityId;
+          if (clientId === 'new') {
+            facilityId = new URLSearchParams(window.location.search).get('facility');
+          } else {
+            const client = getClientById(parseInt(clientId));
+            facilityId = client ? client.facility : null;
+          }
+          
+          if (facilityId) {
+            breadcrumbItems.push({
+              label: clientFacility,
+              url: `/app/facility/${facilityId}`
+            });
+          }
+        }
+        
+        // Add client breadcrumb
+        breadcrumbItems.push({
+          label: clientName,
+          url: '/' + urlParts.slice(0, i + 2).join('/')
+        });
+        i += 2; // Skip both 'client' and client ID
+      } else {
+        // Handle regular segments
+        const label = segment
           .split('-')
           .map((word) => word[0].toUpperCase() + word.slice(1))
-          .join(' '),
-      );
-    const length = route.length;
-    return route.map((item, index) => {
-      let middlewareUrl =
-        '/' +
-        url
-          .split('/')
-          .slice(1, index + 2)
-          .join('/');
+          .join(' ');
+        breadcrumbItems.push({
+          label: label,
+          url: '/' + urlParts.slice(0, i + 1).join('/')
+        });
+        i++;
+      }
+    }
+    
+    const length = breadcrumbItems.length;
+    return breadcrumbItems.map((item, index) => {
+      let middlewareUrl = item.url;
 
       return (
         <Breadcrumbs
@@ -62,13 +142,13 @@ const BreadCrumbs = () => {
             color={length === index + 1 ? 'primary' : ''}
           >
             {length === index + 1 ? (
-              item
+              item.label
             ) : (
               <Link
                 to={middlewareUrl}
                 style={{ color: 'unset', textDecoration: 'none' }}
               >
-                {item}
+                {item.label}
               </Link>
             )}
           </Typography>

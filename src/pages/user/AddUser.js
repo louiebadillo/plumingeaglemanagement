@@ -29,7 +29,7 @@ import {
 
 
 function getSteps() {
-    return ['Create Account', 'User Details', 'Business Details', 'Social']
+    return ['Create Account', 'User Details', 'Business Details']
 }
 
 function getStepContent(step) {
@@ -40,8 +40,6 @@ function getStepContent(step) {
             return 'Create User Details'
         case 2:
             return 'Business Details'
-        case 3:
-            return 'Social'
         default:
             return ''
     }
@@ -501,53 +499,9 @@ const AddUser = () => {
                                 </>
                             ) : (
                                 <>
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="Facebook"
-                                        variant="outlined"
-                                        onChange={handleChange}
-                                        style={{ marginBottom: 35 }}
-                                        helperText="Enter your Facebook link"
-                                    />
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="Twitter"
-                                        variant="outlined"
-                                        onChange={handleChange}
-                                        style={{ marginBottom: 35 }}
-                                        helperText={'Enter your Twitter link'}
-                                    />
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="Instagram"
-                                        variant="outlined"
-                                        onChange={handleChange}
-                                        style={{ marginBottom: 35 }}
-                                        helperText={'Enter your Instagram link'}
-                                    />
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="GitHub"
-                                        variant="outlined"
-                                        onChange={handleChange}
-                                        style={{ marginBottom: 35 }}
-                                        helperText={'Enter your GitHub link'}
-                                    />
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="CodePen"
-                                        variant="outlined"
-                                        onChange={handleChange}
-                                        style={{ marginBottom: 35 }}
-                                        helperText={'Enter your CodePen link'}
-                                    />
-                                    <TextField
-                                        id="outlined-basic"
-                                        label="Slack"
-                                        variant="outlined"
-                                        style={{ marginBottom: 35 }}
-                                        helperText={'Enter your Slack link'}
-                                    />
+                                    <Typography variant="h6" style={{ marginBottom: 20 }}>
+                                        Social media links have been removed for this healthcare management system.
+                                    </Typography>
                                 </>
                             )}
                             <div>

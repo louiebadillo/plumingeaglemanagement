@@ -29,23 +29,23 @@ const structure = [
   { id: 0, label: 'Dashboard', link: '/app/dashboard', icon: <HomeIcon /> },
   {
     id: 1,
-    label: 'E-commerce',
-    badge: 'NodeJS',
+    label: 'Facility',
+    badge: 'Active',
     badgeColor: 'success',
-    link: '/app/ecommerce',
+    link: '/app/facility',
     icon: <ShoppingCartIcon />,
     children: [
       {
-        label: 'Product Manage',
-        link: '/app/ecommerce/management',
+        label: 'Facility A',
+        link: '/app/facility/facility-a',
       },
       {
-        label: 'Products Grid',
-        link: '/app/ecommerce/gridproducts',
+        label: 'Facility B',
+        link: '/app/facility/facility-b',
       },
       {
-        label: 'Product Page',
-        link: '/app/ecommerce/product',
+        label: 'Facility C',
+        link: '/app/facility/facility-c',
       },
     ],
   },

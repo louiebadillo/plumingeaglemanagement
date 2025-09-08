@@ -2,12 +2,8 @@ import React, { useEffect } from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import classnames from 'classnames';
 
-import SettingsIcon from '@mui/icons-material/Settings';
-import GithubIcon from '@mui/icons-material/GitHub';
-import FacebookIcon from '@mui/icons-material/Facebook';
-import TwitterIcon from '@mui/icons-material/Twitter';
 
-import { Fab, IconButton } from '@mui/material';
+import { IconButton } from '@mui/material';
 import { connect } from 'react-redux';
 // styles
 import useStyles from './styles';
@@ -15,15 +11,19 @@ import useStyles from './styles';
 // components
 import Header from '../Header';
 import Sidebar from '../Sidebar';
-import Footer from '../Footer';
 import { Link } from '../Wrappers';
-import ColorChangeThemePopper from './components/ColorChangeThemePopper';
 
 import EditUser from '../../pages/user/EditUser';
+import ClientProfile from '../../pages/client/ClientProfile';
 
 // pages
 import Dashboard from '../../pages/dashboard';
-import Profile from '../../pages/profile'
+import FacilityPage from '../../pages/facility/FacilityPage';
+import FacilityManagement from '../../pages/facility/FacilityManagement';
+import CreateReport from '../../pages/reports/CreateReport';
+import MyReports from '../../pages/reports/MyReports';
+import StaffManagement from '../../pages/staff/StaffManagement';
+import AnnouncementsManagement from '../../pages/announcements/AnnouncementsManagement';
 import TypographyPage from '../../pages/typography'
 import ColorsPage from '../../pages/colors'
 import GridPage from '../../pages/grid'
@@ -77,7 +77,7 @@ import UsersFormPage from 'pages/CRUD/Users/form/UsersFormPage';
 import UsersTablePage from 'pages/CRUD/Users/table/UsersTablePage';
 
 //Sidebar structure
-import structure from '../Sidebar/SidebarStructure'
+import { getSidebarStructure, getCurrentUserRole } from '../Sidebar/getSidebarStructure'
 
 const Redirect = (props) => {
   useEffect(() => window.location.replace(props.url));
@@ -86,21 +86,18 @@ const Redirect = (props) => {
 
 function Layout(props) {
   const classes = useStyles();
-  const [anchorEl, setAnchorEl] = React.useState(null);
-
-  const open = Boolean(anchorEl);
-  const id = open ? 'add-section-popover' : undefined;
-  const handleClick = (event) => {
-    setAnchorEl(open ? null : event.currentTarget);
-  };
 
   // global
   let layoutState = useLayoutState();
+  
+  // Get sidebar structure based on user role
+  const userRole = getCurrentUserRole();
+  const sidebarStructure = getSidebarStructure(userRole);
 
   return (
     <div className={classes.root}>
       <Header history={props.history} />
-      <Sidebar structure={structure}/>
+      <Sidebar structure={sidebarStructure}/>
       <div
         className={classnames(classes.content, {
           [classes.contentShift]: layoutState.isSidebarOpened,
@@ -110,8 +107,21 @@ function Layout(props) {
         <BreadCrumbs />
         <Switch>
           <Route path='/app/dashboard' component={Dashboard} />
-          <Route path="/app/profile" component={Profile} />
           <Route path='/app/user/edit' component={EditUser} />
+
+          {/* Facility Management Routes */}
+          <Route path="/app/facility/management" component={FacilityManagement} />
+          <Route path="/app/facility/:facilityId" component={FacilityPage} />
+
+          {/* Daily Reports Routes */}
+          <Route path="/app/reports/create" component={CreateReport} />
+          <Route path="/app/reports/my-reports" component={MyReports} />
+
+          {/* Staff Management Routes */}
+          <Route path="/app/staff/management" component={StaffManagement} />
+
+          {/* Announcements Management Routes */}
+          <Route path="/app/announcements/management" component={AnnouncementsManagement} />
 
           <Route exact path="/app/core" render={() => <Redirect to="/app/core/typography" />} />
           <Route path="/app/core/typography" component={TypographyPage} />
@@ -158,26 +168,11 @@ function Layout(props) {
           <Route path="/app/extra/invoice" component={Invoice} />
           <Route path="/app/extra/calendar" component={Calendar} />
 
-          <Route path="/app/ecommerce/management" exact>
-            <ProductsProvider>
-              <Ecommerce />
-            </ProductsProvider>
-          </Route>
-          <Route path="/app/ecommerce/management/edit/:id" exact>
-            <ProductsProvider>
-              <CreateProduct />
-            </ProductsProvider>
-          </Route>
-          <Route path="/app/ecommerce/management/create">
-            <ProductsProvider>
-              <CreateProduct />
-            </ProductsProvider>
-          </Route>
-          <Route path="/app/ecommerce/product/:id" component={Product}/>
-          <Route path="/app/ecommerce/product" component={Product} />
-          <Route path="/app/ecommerce/gridproducts" component={ProductsGrid}/>
+          <Route exact path="/app/facility" render={() => <Redirect to="/app/facility/facility-a" />} />
 
-          />
+          <Route path="/app/client/:clientId" component={ClientProfile} />
+          <Route path="/app/client/:clientId/edit" component={ClientProfile} />
+          <Route path="/app/client/new" component={ClientProfile} />
 
           <Route path={'/app/users'} exact component={UsersTablePage} />
           <Route path={'/app/user/new'} exact component={UsersFormPage} />
@@ -187,64 +182,6 @@ function Layout(props) {
             component={UsersFormPage}
           />
         </Switch>
-        <Fab
-          color='primary'
-          aria-label='settings'
-          onClick={(e) => handleClick(e)}
-          className={classes.changeThemeFab}
-          style={{ zIndex: 100 }}
-        >
-          <SettingsIcon style={{ color: '#fff' }} />
-        </Fab>
-        <ColorChangeThemePopper id={id} open={open} anchorEl={anchorEl} />
-        <Footer>
-          <div>
-            <Link
-              color={'primary'}
-              href={'https://flatlogic.com/'}
-              target={'_blank'}
-              className={classes.link}
-            >
-              Flatlogic
-            </Link>
-            <Link
-              color={'primary'}
-              href={'https://flatlogic.com/about'}
-              target={'_blank'}
-              className={classes.link}
-            >
-              About Us
-            </Link>
-            <Link
-              color={'primary'}
-              href={'https://flatlogic.com/blog'}
-              target={'_blank'}
-              className={classes.link}
-            >
-              Blog
-            </Link>
-          </div>
-          <div>
-            <Link href={'https://www.facebook.com/flatlogic'} target={'_blank'}>
-              <IconButton aria-label='facebook'>
-                <FacebookIcon style={{ color: '#6E6E6E99' }} />
-              </IconButton>
-            </Link>
-            <Link href={'https://twitter.com/flatlogic'} target={'_blank'}>
-              <IconButton aria-label='twitter'>
-                <TwitterIcon style={{ color: '#6E6E6E99' }} />
-              </IconButton>
-            </Link>
-            <Link href={'https://github.com/flatlogic'} target={'_blank'}>
-              <IconButton
-                aria-label='github'
-                style={{ padding: '12px 0 12px 12px' }}
-              >
-                <GithubIcon style={{ color: '#6E6E6E99' }} />
-              </IconButton>
-            </Link>
-          </div>
-        </Footer>
       </div>
     </div>
   );

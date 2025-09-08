@@ -56,13 +56,6 @@ export default makeStyles(theme => ({
     width: 48,
     height: 26,
   },
-  socials: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginTop: 30,
-    alignItems: 'center',
-    maxWidth: 180,
-  },
   mediaBlockPadding: {
     padding: '0 24px 12px 24px',
   },

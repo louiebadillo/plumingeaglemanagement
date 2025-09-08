@@ -148,6 +148,14 @@ function loginUser(
 export function sendPasswordResetEmail(email) {
   return (dispatch) => {
     if (!config.isBackend) {
+      // In development mode, show a success message
+      dispatch({
+        type: 'PASSWORD_RESET_EMAIL_SUCCESS',
+      });
+      showSnackbar({
+        type: 'success',
+        message: 'Password reset email would be sent to: ' + email + ' (Development Mode)',
+      });
       return;
     } else {
       dispatch({
@@ -197,7 +205,10 @@ export function receiveToken(token, dispatch) {
   delete user.id;
   localStorage.setItem('token', token);
   localStorage.setItem('user', JSON.stringify(user));
-  localStorage.setItem('theme', 'default');
+  // Ensure theme is set
+  if (!localStorage.getItem('theme')) {
+    localStorage.setItem('theme', 'default');
+  }
   axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
   dispatch({ type: 'LOGIN_SUCCESS' });
 }
@@ -207,6 +218,15 @@ async function findMe() {
     const response = await axios.get('/auth/me');
     return response.data;
   } else {
+    // Initialize user in localStorage if not already set
+    const existingUser = localStorage.getItem('user');
+    if (!existingUser) {
+      localStorage.setItem('user', JSON.stringify(mockUser));
+    }
+    // Ensure theme is set
+    if (!localStorage.getItem('theme')) {
+      localStorage.setItem('theme', 'default');
+    }
     return mockUser;
   }
 }

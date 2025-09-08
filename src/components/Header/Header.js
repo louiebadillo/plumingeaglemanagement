@@ -12,6 +12,7 @@ import classNames from 'classnames';
 //images
 import profile from '../../images/main-profile.png';
 import config from '../../config';
+import { getConfig } from '../../config/template';
 
 // styles
 import useStyles from './styles';
@@ -58,6 +59,13 @@ export default function Header(props) {
   useEffect(() => {
     if (config.isBackend) {
       setCurrentUser(managementValue.currentUser);
+    } else {
+      // Mock user data for development
+      setCurrentUser({
+        firstName: 'Admin',
+        lastName: 'User',
+        avatar: null
+      });
     }
   }, [managementValue]);
 
@@ -80,7 +88,7 @@ export default function Header(props) {
     <AppBar position='fixed' className={classes.appBar}>
       <Toolbar className={classes.toolbar}>
         <IconButton
-          color='inherit'
+          color='default'
           onClick={() => toggleSidebar(layoutDispatch)}
           className={classNames(
             classes.headerMenuButton,
@@ -109,12 +117,12 @@ export default function Header(props) {
           )}
         </IconButton>
         <Typography variant='h6' weight='medium' className={classes.logotype}>
-          React Material Admin Full
+          {getConfig('COMPANY.NAME') || 'Pluming Eagle Lodge'}
         </Typography>
         <div className={classes.grow} />
         <IconButton
           aria-haspopup='true'
-          color='inherit'
+          color='default'
           className={classes.headerMenuButton}
           aria-controls='profile-menu'
           onClick={(e) => setProfileMenu(e.currentTarget)}
@@ -124,20 +132,19 @@ export default function Header(props) {
             // eslint-disable-next-line no-mixed-operators
             src={
               (currentUser?.avatar?.length >= 1 &&
-              currentUser?.avatar[currentUser.avatar.length - 1].publicUrl) || profile
+              currentUser?.avatar[currentUser.avatar.length - 1].publicUrl) || null
             }
             classes={{ root: classes.headerIcon }}
           >
-            {currentUser?.firstName?.[0]}
+            {currentUser?.firstName?.[0] || 'U'}
           </Avatar>
         </IconButton>
         <Typography
           block
           style={{ display: 'flex', alignItems: 'center', marginLeft: 8 }}
         >
-          <div className={classes.profileLabel}>Hi,&nbsp;</div>
           <Typography weight={'bold'} className={classes.profileLabel}>
-            {currentUser?.firstName}
+            {currentUser?.firstName} {currentUser?.lastName}
           </Typography>
         </Typography>
         <Menu
@@ -151,7 +158,7 @@ export default function Header(props) {
         >
           <div className={classes.profileMenuUser}>
             <Typography variant='h4' weight='medium'>
-              {currentUser?.firstName}
+              {currentUser?.firstName} {currentUser?.lastName}
             </Typography>
             <Typography
               className={classes.profileMenuLink}

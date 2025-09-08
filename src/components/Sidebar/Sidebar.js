@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { Drawer, IconButton, List } from '@mui/material';
+import { Drawer, IconButton, List, Box, Typography } from '@mui/material';
 import { useTheme } from '@mui/material';
 import { withRouter } from 'react-router-dom';
 import classNames from 'classnames';
@@ -10,6 +10,9 @@ import useStyles from './styles';
 
 // components
 import SidebarLink from './components/SidebarLink/SidebarLink';
+
+// images
+import logo from '../../images/pellogo.png';
 
 // context
 import {
@@ -70,8 +73,30 @@ function Sidebar({ location, structure }) {
       onClose={toggleDrawer(true)}
     >
       <div className={classes.toolbar} />
+      
+      {/* Logo Section */}
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: 2,
+          borderBottom: '1px solid rgba(255, 255, 255, 0.12)'
+        }}
+      >
+        <img 
+          src={logo} 
+          alt="Pluming Eagle Lodge" 
+          style={{ 
+            maxWidth: isSidebarOpenedWrapper ? '120px' : '40px',
+            height: 'auto',
+            transition: 'max-width 0.3s ease'
+          }} 
+        />
+      </Box>
+      
       <div className={classes.mobileBackButton}>
-        <IconButton onClick={() => toggleSidebar(layoutDispatch)}>
+        <IconButton onClick={() => toggleSidebar(layoutDispatch)} color="default">
           <ArrowBackIcon
             classes={{
               root: classNames(classes.headerIcon, classes.headerIconCollapse),

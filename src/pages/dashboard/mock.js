@@ -2,88 +2,88 @@ const mock = {
   tasks: [
     {
       id: 0,
-      type: "Meeting",
-      title: "Meeting with Andrew Piker",
+      type: "Patient Review",
+      title: "Review Victoria Cantrel's progress",
       time: "9:00"
     },
     {
       id: 1,
-      type: "Call",
-      title: "Call with HT Company",
+      type: "Report",
+      title: "Complete daily reports for Ward A",
       time: "12:00"
     },
     {
       id: 2,
       type: "Meeting",
-      title: "Meeting with Zoe Alison",
+      title: "Team meeting with Dr. Johnson",
       time: "14:00"
     },
     {
       id: 3,
-      type: "Interview",
-      title: "Interview with HR",
+      type: "Assessment",
+      title: "Patient assessment - Michael Brown",
       time: "15:00"
     }
   ],
   bigStat: [
     {
-      product: "Light Blue",
+      product: "Ward A",
       total: {
-        monthly: 4232,
-        weekly: 1465,
-        daily: 199,
-        percent: { value: 3.7, profit: false }
+        monthly: 145,
+        weekly: 36,
+        daily: 5,
+        percent: { value: 8.2, profit: true }
       },
       color: "primary",
       registrations: {
-        monthly: { value: 830, profit: false },
-        weekly: { value: 215, profit: true },
-        daily: { value: 33, profit: true }
+        monthly: { value: 12, profit: true },
+        weekly: { value: 3, profit: true },
+        daily: { value: 1, profit: true }
       },
       bounce: {
-        monthly: { value: 4.5, profit: false },
-        weekly: { value: 3, profit: true },
-        daily: { value: 3.25, profit: true }
+        monthly: { value: 2.1, profit: true },
+        weekly: { value: 1.8, profit: true },
+        daily: { value: 0.3, profit: true }
       }
     },
     {
-      product: "Sing App",
+      product: "Ward B",
       total: {
-        monthly: 754,
-        weekly: 180,
-        daily: 27,
-        percent: { value: 2.5, profit: true }
+        monthly: 98,
+        weekly: 24,
+        daily: 3,
+        percent: { value: 5.7, profit: true }
       },
       color: "warning",
       registrations: {
-        monthly: { value: 32, profit: true },
-        weekly: { value: 8, profit: true },
-        daily: { value: 2, profit: false }
+        monthly: { value: 8, profit: true },
+        weekly: { value: 2, profit: true },
+        daily: { value: 0, profit: false }
       },
       bounce: {
-        monthly: { value: 2.5, profit: true },
-        weekly: { value: 4, profit: false },
-        daily: { value: 4.5, profit: false }
+        monthly: { value: 3.2, profit: false },
+        weekly: { value: 2.8, profit: false },
+        daily: { value: 0.4, profit: false }
       }
     },
     {
-      product: "RNS",
+      product: "Ward C",
       total: {
-        monthly: 1025,
-        weekly: 301,
-        daily: 44,
-        percent: { value: 3.1, profit: true }
+        monthly: 167,
+        weekly: 42,
+        daily: 6,
+        percent: { value: 12.4, profit: true }
       },
       color: "secondary",
       registrations: {
-        monthly: { value: 230, profit: true },
-        weekly: { value: 58, profit: false },
-        daily: { value: 15, profit: false }
+        monthly: { value: 15, profit: true },
+        weekly: { value: 4, profit: true },
+        daily: { value: 1, profit: true }
       },
       bounce: {
-        monthly: { value: 21.5, profit: false },
-        weekly: { value: 19.35, profit: false },
-        daily: { value: 10.1, profit: true }
+        monthly: { value: 1.8, profit: true },
+        weekly: { value: 1.5, profit: true },
+        daily: { value: 0.2, profit: true }
       }
     }
   ],
@@ -93,95 +93,95 @@ const mock = {
       icon: "thumbs-up",
       color: "primary",
       content:
-        'Ken <span className="fw-semi-bold">accepts</span> your invitation'
+        'Dr. Johnson <span className="fw-semi-bold">approved</span> your report'
     },
     {
       id: 1,
       icon: "file",
       color: "success",
-      content: "Report from LT Company"
+      content: "Daily report completed for Ward A"
     },
     {
       id: 2,
       icon: "envelope",
       color: "danger",
-      content: '4 <span className="fw-semi-bold">Private</span> Mails'
+      content: '2 <span className="fw-semi-bold">Critical</span> patient alerts'
     },
     {
       id: 3,
       icon: "comment",
       color: "success",
-      content: '3 <span className="fw-semi-bold">Comments</span> to your Post'
+      content: '3 <span className="fw-semi-bold">Patient</span> reviews pending'
     },
     {
       id: 4,
       icon: "cog",
       color: "light",
-      content: 'New <span className="fw-semi-bold">Version</span> of RNS app'
+      content: 'New <span className="fw-semi-bold">Assessment</span> form available'
     },
     {
       id: 5,
       icon: "bell",
       color: "info",
       content:
-        '15 <span className="fw-semi-bold">Notifications</span> from Social Apps'
+        '5 <span className="fw-semi-bold">Reminders</span> for patient checkups'
     }
   ],
   table: [
     {
       id: 0,
-      name: "Mark Otto",
-      email: "ottoto@example.com",
-      product: "ON the Road",
-      price: "$25 224.2",
-      date: "11 May 2017",
-      city: "Otsego",
-      status: "Sent",
-      color: "primary"
+      name: "Victoria Cantrel",
+      email: "v.cantrel@patient.com",
+      product: "Daily Assessment",
+      price: "4.2/5",
+      date: "11 Jan 2024",
+      city: "Ward A",
+      status: "Completed",
+      color: "success"
     },
     {
       id: 1,
-      name: "Jacob Thornton",
-      email: "thornton@example.com",
-      product: "HP Core i7",
-      price: "$1 254.2",
-      date: "4 Jun 2017",
-      city: "Fivepointville",
-      status: "Sent",
-      color: "secondary"
+      name: "Cherokee Ware",
+      email: "c.ware@patient.com",
+      product: "Progress Review",
+      price: "4.8/5",
+      date: "4 Jan 2024",
+      city: "Ward B",
+      status: "Completed",
+      color: "success"
     },
     {
       id: 2,
-      name: "Larry the Bird",
-      email: "bird@example.com",
-      product: "Air Pro",
-      price: "$1 570.0",
-      date: "27 Aug 2017",
-      city: "Leadville North",
-      status: "Pending",
+      name: "Constance Clayton",
+      email: "c.clayton@patient.com",
+      product: "Health Check",
+      price: "2.1/5",
+      date: "27 Jan 2024",
+      city: "Ward A",
+      status: "Needs Review",
       color: "warning"
     },
     {
       id: 3,
-      name: "Joseph May",
-      email: "josephmay@example.com",
-      product: "Version Control",
-      price: "$5 224.5",
-      date: "19 Feb 2018",
-      city: "Seaforth",
-      status: "Declined",
-      color: "success"
+      name: "Robert Martinez",
+      email: "r.martinez@patient.com",
+      product: "Medication Review",
+      price: "3.5/5",
+      date: "19 Jan 2024",
+      city: "Ward C",
+      status: "In Progress",
+      color: "primary"
     },
     {
       id: 4,
-      name: "Peter Horadnia",
-      email: "horadnia@example.com",
-      product: "Let's Dance",
-      price: "$43 594.7",
-      date: "1 Mar 2018",
-      city: "Hanoverton",
-      status: "Sent",
-      color: "info"
+      name: "Jennifer Lee",
+      email: "j.lee@patient.com",
+      product: "Therapy Session",
+      price: "4.6/5",
+      date: "1 Jan 2024",
+      city: "Ward B",
+      status: "Completed",
+      color: "success"
     }
   ]
 };

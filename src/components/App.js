@@ -5,13 +5,13 @@ import { SnackbarProvider } from './Snackbar';
 
 // components
 import Layout from './Layout';
-import Documentation from './Documentation/Documentation';
 
 // pages
 import Error from '../pages/error';
 import Login from '../pages/login';
 import Verify from '../pages/verify';
 import Reset from '../pages/reset';
+import Logout from '../pages/logout';
 
 // context
 import { useUserState } from '../context/UserContext';
@@ -31,7 +31,7 @@ export default function App() {
               <Route
                 exact
                 path='/'
-                render={() => <Redirect to='/app/profile' />}
+                render={() => <Redirect to='/app/dashboard' />}
               />
 
               <Route
@@ -40,9 +40,9 @@ export default function App() {
                 render={() => <Redirect to='/app/dashboard' />}
               />
 
-              <Route path='/documentation' component={Documentation} />
               <PrivateRoute path='/app' component={Layout} />
               <PublicRoute path='/login' component={Login} />
+              <PublicRoute path='/logout' component={Logout} />
               <PublicRoute path='/verify-email' exact component={Verify} />
               <PublicRoute path='/password-reset' exact component={Reset} />
               <Redirect from='*' to='/app/dashboard' />
