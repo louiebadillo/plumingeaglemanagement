@@ -10,12 +10,6 @@ import {
 } from "@mui/material";
 import { Navigation as NavigationIcon } from "@mui/icons-material";
 import {
-  withGoogleMap,
-  withScriptjs,
-  GoogleMap,
-  Marker
-} from "react-google-maps";
-import {
   Favorite as LikeIcon,
   Chat as CommentsIcon,
   ChatBubble as ChatIcon,
