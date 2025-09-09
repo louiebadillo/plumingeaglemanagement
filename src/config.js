@@ -11,7 +11,7 @@ export default {
   baseURLApi,
   redirectUrl,
   remote: "https://sing-generator-node.herokuapp.com",
-  isBackend: process.env.REACT_APP_BACKEND,
+  isBackend: false, // Force mock mode for deployment
   auth: {
     email: 'admin@flatlogic.com',
     password: 'password',
