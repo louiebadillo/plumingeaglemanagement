@@ -197,9 +197,7 @@ export function receiveToken(token, dispatch) {
     user = jwt.decode(token).user;
     delete user.id;
   } else {
-    user = {
-      email: config.auth.email,
-    };
+    user = mockUser;
   }
 
   delete user.id;

@@ -10,7 +10,7 @@ export const mockUsers = {
     createdById: null,
     deletedAt: null,
     disabled: false,
-    email: 'admin@healthcare.com',
+    email: 'admin@plumingeagle.com',
     emailVerificationToken: null,
     emailVerificationTokenExpiresAt: null,
     emailVerified: true,
