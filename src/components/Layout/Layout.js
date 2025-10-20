@@ -12,6 +12,7 @@ import useStyles from './styles';
 import Header from '../Header';
 import Sidebar from '../Sidebar';
 import { Link } from '../Wrappers';
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 
 import EditUser from '../../pages/user/EditUser';
 import ClientProfile from '../../pages/client/ClientProfile';
@@ -96,11 +97,11 @@ function Layout(props) {
       try {
         console.log('🔄 Loading facilities for sidebar...');
         
-               const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+               const { supabaseUrl } = getSupabaseConfig();
+               const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
                  method: 'GET',
                  headers: {
-                   'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-                   'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                   ...getSupabaseHeaders(),
                    'Content-Type': 'application/json',
                    'Cache-Control': 'no-cache'
                  }

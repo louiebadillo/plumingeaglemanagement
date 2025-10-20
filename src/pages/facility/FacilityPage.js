@@ -41,6 +41,7 @@ import {
 import { useParams, useHistory } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
 import { createClientUrl } from '../../utils/urlUtils';
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 
 // Initial form data for creating/editing clients
 const initialClientFormData = {
@@ -82,14 +83,10 @@ function FacilityPage() {
         console.log('🔄 Loading facility and clients for ID:', facilityId);
         
         // Load facility information
-        const facilityResponse = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${facilityId}`, {
+        const { supabaseUrl } = getSupabaseConfig();
+        const facilityResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityId}`, {
           method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
+          headers: getSupabaseHeaders()
         });
         
         if (!facilityResponse.ok) {
@@ -103,14 +100,9 @@ function FacilityPage() {
         } else {
           console.log('❌ Facility not found, redirecting to first available facility');
           // Try to redirect to the first available facility instead of management
-          const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*&limit=1`, {
+          const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&limit=1`, {
             method: 'GET',
-            headers: {
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-cache'
-            }
+            headers: getSupabaseHeaders()
           });
           
           if (response.ok) {
@@ -129,14 +121,9 @@ function FacilityPage() {
         }
         
         // Load clients for this facility
-        const clientsResponse = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients?facility_id=eq.${facilityId}`, {
+        const clientsResponse = await fetch(`${supabaseUrl}/rest/v1/clients?facility_id=eq.${facilityId}`, {
           method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
+          headers: getSupabaseHeaders()
         });
         
         if (!clientsResponse.ok) {

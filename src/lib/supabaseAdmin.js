@@ -1,8 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://brkbypctkcczerntfpsa.supabase.co'
-// You need to get this from your Supabase dashboard -> Settings -> API -> service_role key
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw' // Replace with your actual service role key
+// Use environment variables for security - NEVER commit service keys to git
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const supabaseServiceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+
+if (!supabaseServiceKey) {
+  console.error('⚠️ REACT_APP_SUPABASE_SERVICE_KEY not found in environment variables!');
+  console.error('Please set REACT_APP_SUPABASE_SERVICE_KEY in your .env file');
+}
 
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {

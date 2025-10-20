@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 
 // Initial form data for creating/editing facilities
 const initialFormData = {
@@ -68,14 +69,10 @@ function FacilityManagement() {
         console.log('🔄 Loading facilities from Supabase...');
         
         // Use direct fetch since Supabase client might hang
-      const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+      const { supabaseUrl } = getSupabaseConfig();
+      const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
         method: 'GET',
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
+        headers: getSupabaseHeaders()
       });
         
         if (!response.ok) {
@@ -126,13 +123,9 @@ function FacilityManagement() {
         console.log('🗑️ Deleting facility:', facilityId);
         
         // Use direct fetch with service role key for deletion
-        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${facilityId}`, {
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityId}`, {
           method: 'DELETE',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Content-Type': 'application/json'
-          }
+          headers: getSupabaseHeaders()
         });
         
         if (!response.ok) {
@@ -163,13 +156,9 @@ function FacilityManagement() {
       if (isNewFacility) {
         // Create new facility
         console.log('🆕 Creating new facility...');
-        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities', {
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities`, {
           method: 'POST',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Content-Type': 'application/json'
-          },
+          headers: getSupabaseHeaders(),
           body: JSON.stringify(formData)
         });
 
@@ -197,13 +186,10 @@ function FacilityManagement() {
         } else {
           // Reload all facilities from database to get the latest data
           console.log('🔄 Reloading facilities from database...');
-          const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+          const reloadResponse = await fetch('${supabaseUrl}/rest/v1/facilities?select=*', {
             method: 'GET',
             headers: {
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-cache'
+            ...getSupabaseHeaders()
             }
           });
           
@@ -218,13 +204,9 @@ function FacilityManagement() {
       } else {
         // Update existing facility
         console.log('🔄 Updating existing facility:', editingFacility.id);
-        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${editingFacility.id}`, {
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${editingFacility.id}`, {
           method: 'PATCH',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
-            'Content-Type': 'application/json'
-          },
+          headers: getSupabaseHeaders(),
           body: JSON.stringify(formData)
         });
 

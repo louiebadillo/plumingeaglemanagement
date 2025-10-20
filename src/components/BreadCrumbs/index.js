@@ -14,8 +14,9 @@ import structure from '../Sidebar/SidebarStructure';
 import { parseClientSlug } from '../../utils/urlUtils';
 
 // Supabase configuration
-const SUPABASE_URL = 'https://brkbypctkcczerntfpsa.supabase.co';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw';
+// Get Supabase URL from configuration
+// Import Supabase configuration
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 
 // Tab styling
 const CustomTab = withStyles((theme) => ({
@@ -40,11 +41,11 @@ const BreadCrumbs = () => {
     const loadFacilities = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/facilities?select=*`, {
+        const { supabaseUrl } = getSupabaseConfig();
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
           method: 'GET',
           headers: {
-            'apikey': SUPABASE_SERVICE_KEY,
-            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+            ...getSupabaseHeaders(),
             'Content-Type': 'application/json',
             'Cache-Control': 'no-cache'
           }
@@ -74,11 +75,11 @@ const BreadCrumbs = () => {
     }
 
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/clients?select=*&id=eq.${clientId}`, {
+      const { supabaseUrl } = getSupabaseConfig();
+      const response = await fetch(`${supabaseUrl}/rest/v1/clients?select=*&id=eq.${clientId}`, {
         method: 'GET',
         headers: {
-          'apikey': SUPABASE_SERVICE_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          ...getSupabaseHeaders(),
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache'
         }
@@ -113,11 +114,11 @@ const BreadCrumbs = () => {
       // Parse the client slug to get first and last name
       const { firstName, lastName } = parseClientSlug(clientSlug);
       
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/clients?first_name=eq.${firstName}&last_name=eq.${lastName}&select=*`, {
+      const { supabaseUrl } = getSupabaseConfig();
+      const response = await fetch(`${supabaseUrl}/rest/v1/clients?first_name=eq.${firstName}&last_name=eq.${lastName}&select=*`, {
         method: 'GET',
         headers: {
-          'apikey': SUPABASE_SERVICE_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          ...getSupabaseHeaders(),
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache'
         }
