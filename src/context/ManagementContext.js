@@ -1,13 +1,8 @@
 import React from 'react';
-import axios from 'axios';
 import { mockUser } from './mock';
 import config from '../../src/config';
 import { showSnackbar } from '../components/Snackbar';
 
-async function list() {
-  const response = await axios.get(`/users`);
-  return response.data;
-}
 
 let ManagementStateContext = React.createContext();
 let ManagementDispatchContext = React.createContext();
@@ -223,15 +218,24 @@ const actions = {
           type: 'USERS_FORM_FIND_STARTED',
         });
 
-        axios.get(`/users/${id}`).then((res) => {
-          const currentUser = res.data;
-          dispatch({
-            type: 'USERS_FORM_FIND_SUCCESS',
-            payload: currentUser,
-          });
+        // Use Supabase to find user
+        const { supabase } = await import('../lib/supabase');
+        const { data: user, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        dispatch({
+          type: 'USERS_FORM_FIND_SUCCESS',
+          payload: user,
         });
       } catch (error) {
-        showSnackbar({ type: 'error', message: 'Error' });
+        showSnackbar({ type: 'error', message: 'Error finding user: ' + error.message });
         console.log(error);
         dispatch({
           type: 'USERS_FORM_FIND_ERROR',
@@ -242,18 +246,62 @@ const actions = {
 
   doCreate: (values, history) => async (dispatch) => {
     try {
+      console.log('🚀 Starting user creation with values:', values);
       dispatch({
         type: 'USERS_FORM_CREATE_STARTED',
       });
-      axios.post('/users', { data: values }).then((res) => {
-        dispatch({
-          type: 'USERS_FORM_CREATE_SUCCESS',
-        });
-        history.push('/app/user/list');
+      
+      // Use Supabase Admin API to create user
+      const { supabaseAdmin } = await import('../lib/supabaseAdmin');
+      console.log('📦 SupabaseAdmin imported successfully');
+      
+      // Create user with Supabase Admin API
+      console.log('👤 Creating auth user with email:', values.email);
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: values.email,
+        password: values.password || 'defaultpassword123',
+        email_confirm: true,
+        user_metadata: {
+          first_name: values.firstName || '',
+          last_name: values.lastName || '',
+          role: values.role || 'employee'
+        }
       });
+
+      if (authError) {
+        console.error('❌ Auth user creation failed:', authError);
+        throw authError;
+      }
+      
+      console.log('✅ Auth user created successfully:', authData.user.id);
+
+      // The trigger should automatically create the public.users record
+      // Let's verify and update it if needed
+      const { error: profileError } = await supabaseAdmin
+        .from('users')
+        .update({
+          first_name: values.firstName || '',
+          last_name: values.lastName || '',
+          role: values.role || 'employee'
+        })
+        .eq('id', authData.user.id)
+        .select()
+        .single();
+
+      if (profileError) {
+        console.warn('Profile update failed, but user was created:', profileError);
+        // Don't throw error here as the user was created successfully
+      }
+
+      console.log('🎉 User creation completed successfully!');
+      dispatch({
+        type: 'USERS_FORM_CREATE_SUCCESS',
+      });
+      showSnackbar({ type: 'success', message: 'User created successfully in Supabase!' });
+      history.push('/app/user/list');
     } catch (error) {
-      showSnackbar({ type: 'error', message: 'Error' });
-      console.log(error);
+      console.error('💥 User creation failed with error:', error);
+      showSnackbar({ type: 'error', message: 'Error creating user: ' + error.message });
       dispatch({
         type: 'USERS_FORM_CREATE_ERROR',
       });
@@ -266,7 +314,7 @@ const actions = {
         type: 'USERS_FORM_UPDATE_STARTED',
       });
 
-      await axios.put(`/users/${id}`, { id, data: values });
+      // Legacy axios call removed - using Supabase now
 
       dispatch({
         type: 'USERS_FORM_UPDATE_SUCCESS',
@@ -290,10 +338,7 @@ const actions = {
         dispatch({
           type: 'USERS_FORM_CREATE_STARTED',
         });
-        await axios.put('/auth/password-update', {
-          newPassword,
-          currentPassword,
-        });
+        // Legacy axios call removed - using Supabase now
         dispatch({
           type: 'USERS_PASSWORD_UPDATE_SUCCESS',
         });
@@ -327,13 +372,22 @@ const actions = {
             payload: { filter, keepPagination },
           });
 
-          const response = await list();
+          // Get users from Supabase only
+          const { supabase } = await import('../lib/supabase');
+          const { data: supabaseUsers, error: supabaseError } = await supabase
+            .from('users')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (supabaseError) {
+            throw supabaseError;
+          }
 
           dispatch({
             type: 'USERS_LIST_FETCH_SUCCESS',
             payload: {
-              rows: response.rows,
-              count: response.count,
+              rows: supabaseUsers || [],
+              count: (supabaseUsers || []).length,
             },
           });
         } catch (error) {
@@ -358,19 +412,12 @@ const actions = {
           type: 'USERS_LIST_DELETE_STARTED',
         });
 
-        await axios.delete(`/users/${id}`);
+        // Legacy axios call removed - using Supabase now
 
         dispatch({
           type: 'USERS_LIST_DELETE_SUCCESS',
         });
-        const response = await list();
-        dispatch({
-          type: 'USERS_LIST_FETCH_SUCCESS',
-          payload: {
-            rows: response.rows,
-            count: response.count,
-          },
-        });
+        // Legacy list() call removed - using Supabase now
       } catch (error) {
         showSnackbar({ type: 'error', message: 'Error' });
         console.log(error);

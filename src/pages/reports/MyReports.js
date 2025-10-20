@@ -29,7 +29,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
 import { getClientById } from '../../context/clientMock';
-import { getCurrentUserRole } from '../../components/Sidebar/getSidebarStructure';
+import { useSupabase } from '../../context/SupabaseContext';
 
 // Mock reports data - in a real app, this would come from the database
 const mockReports = [
@@ -182,7 +182,8 @@ function MyReports() {
   const [statusFilter, setStatusFilter] = useState('all');
   
   // Get current user role
-  const userRole = getCurrentUserRole();
+  const { userProfile } = useSupabase();
+  const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
 
   // Load reports from localStorage on component mount

@@ -1,6 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import axios from 'axios';
 import { createStore, applyMiddleware, compose } from 'redux';
 import ReduxThunk from 'redux-thunk';
 import { Provider } from 'react-redux';
@@ -11,7 +10,6 @@ import App from './components/App';
 import ErrorBoundary from './components/ErrorBoundary';
 import * as serviceWorker from './serviceWorker';
 import { LayoutProvider } from './context/LayoutContext';
-import { UserProvider } from './context/UserContext';
 import { ManagementProvider } from './context/ManagementContext';
 import createRootReducer from './reducers';
 import {
@@ -50,12 +48,6 @@ export function getHistory() {
   return history;
 }
 
-axios.defaults.baseURL = config.baseURLApi;
-axios.defaults.headers.common['Content-Type'] = 'application/json';
-const token = localStorage.getItem('token');
-if (token) {
-  axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
-}
 
 export const store = createStore(
   createRootReducer(history),
@@ -68,26 +60,24 @@ root.render(
   <ErrorBoundary>
     <Provider store={store}>
       <LayoutProvider>
-        <UserProvider>
-          <StyledEngineProvider injectFirst>
-            <ThemeChangeProvider>
-              <ThemeStateContext.Consumer>
-                {(theme) => {
-                  // Ensure theme is always valid
-                  const validTheme = theme && theme.palette && theme.palette.primary ? theme : defaultMuiTheme;
-                  return (
-                    <ThemeProviderV5 theme={validTheme}>
-                      <ManagementProvider>
-                        <CssBaseline />
-                        <App />
-                      </ManagementProvider>
-                    </ThemeProviderV5>
-                  );
-                }}
-              </ThemeStateContext.Consumer>
-            </ThemeChangeProvider>
-          </StyledEngineProvider>
-        </UserProvider>
+        <StyledEngineProvider injectFirst>
+          <ThemeChangeProvider>
+            <ThemeStateContext.Consumer>
+              {(theme) => {
+                // Ensure theme is always valid
+                const validTheme = theme && theme.palette && theme.palette.primary ? theme : defaultMuiTheme;
+                return (
+                  <ThemeProviderV5 theme={validTheme}>
+                    <ManagementProvider>
+                      <CssBaseline />
+                      <App />
+                    </ManagementProvider>
+                  </ThemeProviderV5>
+                );
+              }}
+            </ThemeStateContext.Consumer>
+          </ThemeChangeProvider>
+        </StyledEngineProvider>
       </LayoutProvider>
     </Provider>
   </ErrorBoundary>,

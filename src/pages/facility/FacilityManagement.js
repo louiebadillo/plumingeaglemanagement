@@ -20,7 +20,13 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import { 
   Search as SearchIcon, 
@@ -29,101 +35,226 @@ import {
   Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useHistory } from 'react-router-dom';
-import { getCurrentUserRole } from '../../components/Sidebar/getSidebarStructure';
+import { useSupabase } from '../../context/SupabaseContext';
 
-// Mock facility data - in a real app, this would come from a database
-const mockFacilities = [
-  {
-    id: 'facility-a',
-    name: 'Facility A',
-    description: 'Group Home - Main House',
-    address: '123 Main Street, City, State 12345'
-  },
-  {
-    id: 'facility-b',
-    name: 'Facility B',
-    description: 'Group Home - Transition House',
-    address: '456 Oak Avenue, City, State 12345'
-  },
-  {
-    id: 'facility-c',
-    name: 'Facility C',
-    description: 'Group Home - Specialized Care',
-    address: '789 Pine Road, City, State 12345'
-  }
-];
+// Initial form data for creating/editing facilities
+const initialFormData = {
+  name: '',
+  address: '',
+  phone: '',
+  description: ''
+};
 
 function FacilityManagement() {
   const history = useHistory();
-  const [facilities, setFacilities] = useState(mockFacilities);
+  const { userProfile } = useSupabase();
+  const [facilities, setFacilities] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState(null);
   const [isNewFacility, setIsNewFacility] = useState(false);
+  const [formData, setFormData] = useState(initialFormData);
+  const [submitting, setSubmitting] = useState(false);
 
-  const userRole = getCurrentUserRole();
+  const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
 
+  // Load facilities from Supabase on component mount
+  useEffect(() => {
+    const loadFacilities = async () => {
+      try {
+        setLoading(true);
+        console.log('🔄 Loading facilities from Supabase...');
+        
+        // Use direct fetch since Supabase client might hang
+      const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+        method: 'GET',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const facilitiesData = await response.json();
+        console.log('✅ Loaded facilities from Supabase:', facilitiesData);
+        setFacilities(facilitiesData || []);
+      } catch (error) {
+        console.error('💥 Error loading facilities:', error);
+        setFacilities([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadFacilities();
+  }, []);
+
   const filteredFacilities = facilities.filter(facility =>
-    facility.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    facility.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    facility.address.toLowerCase().includes(searchTerm.toLowerCase())
+    facility && facility.name && facility.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (facility && facility.address && facility.address.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const handleEditFacility = (facility) => {
     setEditingFacility(facility);
+    setFormData({
+      name: facility.name || '',
+      address: facility.address || '',
+      phone: facility.phone || '',
+      description: facility.description || ''
+    });
     setIsNewFacility(false);
     setEditDialogOpen(true);
   };
 
   const handleAddFacility = () => {
-    setEditingFacility({
-      id: '',
-      name: '',
-      description: '',
-      address: ''
-    });
+    setEditingFacility(null);
+    setFormData(initialFormData);
     setIsNewFacility(true);
     setEditDialogOpen(true);
   };
 
-  const handleDeleteFacility = (facilityId) => {
+  const handleDeleteFacility = async (facilityId) => {
     if (window.confirm('Are you sure you want to delete this facility? This action cannot be undone.')) {
-      setFacilities(facilities.filter(facility => facility.id !== facilityId));
-      alert('Facility deleted successfully!');
+      try {
+        console.log('🗑️ Deleting facility:', facilityId);
+        
+        // Use direct fetch with service role key for deletion
+        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${facilityId}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Update local state
+        setFacilities(facilities.filter(facility => facility.id !== facilityId));
+        console.log('✅ Facility deleted successfully!');
+        alert('Facility deleted successfully from Supabase!');
+      } catch (error) {
+        console.error('💥 Error deleting facility:', error);
+        alert('Error deleting facility: ' + error.message);
+      }
     }
   };
 
-  const handleSaveFacility = () => {
-    if (!editingFacility.name.trim()) {
+  const handleSaveFacility = async () => {
+    if (!formData.name.trim()) {
       alert('Please enter a facility name.');
       return;
     }
 
-    if (isNewFacility) {
-      // Generate new ID for new facility
-      const newId = `facility-${facilities.length + 1}`;
-      const newFacility = {
-        ...editingFacility,
-        id: newId
-      };
-      setFacilities([...facilities, newFacility]);
-      alert('Facility added successfully!');
-    } else {
-      // Update existing facility
-      setFacilities(facilities.map(facility => 
-        facility.id === editingFacility.id ? editingFacility : facility
-      ));
-      alert('Facility updated successfully!');
-    }
+    try {
+      setSubmitting(true);
+      console.log('💾 Saving facility:', formData);
 
-    setEditDialogOpen(false);
-    setEditingFacility(null);
+      if (isNewFacility) {
+        // Create new facility
+        console.log('🆕 Creating new facility...');
+        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities', {
+          method: 'POST',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Supabase error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+
+        const responseText = await response.text();
+        console.log('📝 Raw response:', responseText);
+        
+        let newFacility;
+        try {
+          newFacility = responseText ? JSON.parse(responseText) : [];
+        } catch (parseError) {
+          console.error('❌ JSON parse error:', parseError);
+          throw new Error(`Failed to parse response: ${parseError.message}`);
+        }
+        console.log('✅ Facility created successfully:', newFacility);
+        
+        // If Supabase returns empty array, reload facilities from database
+        if (newFacility && newFacility.length > 0) {
+          setFacilities([...facilities, newFacility[0]]);
+        } else {
+          // Reload all facilities from database to get the latest data
+          console.log('🔄 Reloading facilities from database...');
+          const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+            method: 'GET',
+            headers: {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
+            }
+          });
+          
+          if (reloadResponse.ok) {
+            const reloadedFacilities = await reloadResponse.json();
+            console.log('✅ Reloaded facilities:', reloadedFacilities);
+            setFacilities(reloadedFacilities || []);
+          }
+        }
+        
+        alert('Facility created successfully in Supabase!');
+      } else {
+        // Update existing facility
+        console.log('🔄 Updating existing facility:', editingFacility.id);
+        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${editingFacility.id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Supabase error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+
+        // Update local state
+        setFacilities(facilities.map(facility => 
+          facility.id === editingFacility.id ? { ...facility, ...formData } : facility
+        ));
+        console.log('✅ Facility updated successfully!');
+        alert('Facility updated successfully in Supabase!');
+      }
+    } catch (error) {
+      console.error('💥 Error saving facility:', error);
+      alert('Error saving facility: ' + error.message);
+    } finally {
+      setSubmitting(false);
+      setEditDialogOpen(false);
+      setEditingFacility(null);
+      setFormData(initialFormData);
+    }
   };
 
   const handleInputChange = (field, value) => {
-    setEditingFacility({
-      ...editingFacility,
+    setFormData({
+      ...formData,
       [field]: value
     });
   };
@@ -187,22 +318,35 @@ function FacilityManagement() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Name</TableCell>
-                      <TableCell>Description</TableCell>
                       <TableCell>Address</TableCell>
+                      <TableCell>Phone</TableCell>
+                      <TableCell>Description</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {filteredFacilities.length > 0 ? (
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">
+                          <Box display="flex" justifyContent="center" alignItems="center" p={2}>
+                            <CircularProgress size={24} />
+                            <Typography variant="body2" sx={{ ml: 2 }}>
+                              Loading facilities from Supabase...
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredFacilities.length > 0 ? (
                       filteredFacilities.map((facility) => (
-                        <TableRow key={facility.id}>
+                        facility && <TableRow key={facility.id}>
                           <TableCell>
                             <Typography variant="subtitle2" fontWeight="bold">
                               {facility.name}
                             </Typography>
                           </TableCell>
-                          <TableCell>{facility.description}</TableCell>
-                          <TableCell>{facility.address}</TableCell>
+                          <TableCell>{facility.address || 'Not provided'}</TableCell>
+                          <TableCell>{facility.phone || 'Not provided'}</TableCell>
+                          <TableCell>{facility.description || 'Not provided'}</TableCell>
                           <TableCell>
                             <Tooltip title="Edit Facility">
                               <IconButton 
@@ -253,7 +397,7 @@ function FacilityManagement() {
               <TextField
                 fullWidth
                 label="Facility Name"
-                value={editingFacility?.name || ''}
+                value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 required
               />
@@ -261,29 +405,45 @@ function FacilityManagement() {
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Description"
-                value={editingFacility?.description || ''}
-                onChange={(e) => handleInputChange('description', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
                 label="Address"
-                value={editingFacility?.address || ''}
+                value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
                 multiline
                 rows={2}
               />
             </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Phone"
+                value={formData.phone}
+                onChange={(e) => handleInputChange('phone', e.target.value)}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Description"
+                value={formData.description}
+                onChange={(e) => handleInputChange('description', e.target.value)}
+                multiline
+                rows={3}
+                placeholder="Enter facility description (e.g., Group Home - Main House, Specialized Care, etc.)"
+              />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>
+          <Button onClick={() => setEditDialogOpen(false)} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={handleSaveFacility} variant="contained" color="primary">
-            {isNewFacility ? 'Add Facility' : 'Save Changes'}
+          <Button 
+            onClick={handleSaveFacility} 
+            variant="contained" 
+            color="primary"
+            disabled={submitting}
+          >
+            {submitting ? 'Saving...' : (isNewFacility ? 'Add Facility' : 'Save Changes')}
           </Button>
         </DialogActions>
       </Dialog>

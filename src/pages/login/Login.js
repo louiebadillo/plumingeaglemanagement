@@ -15,12 +15,7 @@ import useStyles from './styles';
 import logo from '../../images/pellogo.png';
 
 // context
-import {
-  useUserDispatch,
-  loginUser,
-  sendPasswordResetEmail,
-} from '../../context/UserContext';
-import { receiveToken, doInit } from '../../context/UserContext';
+import { useSupabase } from '../../context/SupabaseContext';
 
 //components
 import { Button } from '../../components/Wrappers';
@@ -31,25 +26,24 @@ import { getConfig } from '../../config/template';
 
 function Login(props) {
   let classes = useStyles();
-  const tab = new URLSearchParams(props.location.search).get('tab');
+  // const tab = new URLSearchParams(props.location.search).get('tab');
 
   // global
-  let userDispatch = useUserDispatch();
+  const { signIn, supabase } = useSupabase();
 
   useEffect(() => {
+    // Handle any URL parameters if needed
     const params = new URLSearchParams(props.location.search);
     const token = params.get('token');
     if (token) {
-      receiveToken(token, userDispatch);
-      doInit()(userDispatch);
+      // Handle token-based login if needed
+      console.log('Token found:', token);
     }
   }, []); // eslint-disable-line
 
   // local
   let [isLoading, setIsLoading] = useState(false);
   let [error, setError] = useState(null);
-  let [activeTabId, setActiveTabId] = useState(+tab ?? 0);
-  let [nameValue, setNameValue] = useState('');
   let [loginValue, setLoginValue] = useState(getConfig('AUTH.DEFAULT_EMAIL') || 'admin@plumingeagle.com');
   let [passwordValue, setPasswordValue] = useState(getConfig('AUTH.DEFAULT_PASSWORD') || 'admin123');
   let [forgotEmail, setForgotEmail] = useState('');
@@ -59,16 +53,29 @@ function Login(props) {
     return loginValue.length !== 0 && passwordValue.length !== 0;
   };
 
-  let loginOnEnterKey = (event) => {
+  let loginOnEnterKey = async (event) => {
     if (event.key === 'Enter' && isLoginFormValid()) {
-      loginUser(
-        userDispatch,
-        loginValue,
-        passwordValue,
-        props.history,
-        setIsLoading,
-        setError,
-      );
+      await handleLogin();
+    }
+  };
+
+  const handleLogin = async () => {
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      const { error } = await signIn(loginValue, passwordValue);
+      
+      if (error) {
+        setError(error.message);
+      } else {
+        // Login successful, redirect to dashboard
+        props.history.push('/app/dashboard');
+      }
+    } catch (error) {
+      setError('An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -111,9 +118,18 @@ function Login(props) {
                 ) : (
                   <Button
                     disabled={forgotEmail.length === 0}
-                    onClick={() =>
-                      sendPasswordResetEmail(forgotEmail)(userDispatch)
-                    }
+                    onClick={async () => {
+                      try {
+                        const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail);
+                        if (error) {
+                          setError(error.message);
+                        } else {
+                          setError('Password reset email sent!');
+                        }
+                      } catch (error) {
+                        setError('Failed to send password reset email');
+                      }
+                    }}
                     variant='contained'
                     color='primary'
                     size='large'
@@ -212,16 +228,7 @@ function Login(props) {
                     ) : (
                       <Button
                         disabled={!isLoginFormValid()}
-                        onClick={() =>
-                          loginUser(
-                            userDispatch,
-                            loginValue,
-                            passwordValue,
-                            props.history,
-                            setIsLoading,
-                            setError,
-                          )
-                        }
+                        onClick={handleLogin}
                         variant='contained'
                         color='primary'
                         size='large'

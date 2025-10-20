@@ -1,5 +1,4 @@
 import React from 'react';
-import axios from 'axios';
 
 import config from '../config';
 
@@ -67,9 +66,8 @@ const useProductsState = () => {
 export function getProductsRequest(dispatch) {
   // We check if app runs with backend mode
   if (config.isBackend) {
-    return axios.get('/products').then((res) => {
-      dispatch({ type: 'UPDATE_PRODUCTS', payload: res.data });
-    });
+    // Legacy axios call removed - backend no longer used
+    return;
   }
 }
 
@@ -79,16 +77,15 @@ export function deleteProductRequest({ id, history, dispatch }) {
 
   if (Array.isArray(id)) {
     for (let key in id) {
-      axios.delete('/products/' + id[key]).then((res) => {});
+      // Legacy axios call removed - backend no longer used
     }
   } else {
-    axios.delete('/products/' + id).then((res) => {
-      getProductsRequest(dispatch);
-      if (history.location.pathname !== '/app/ecommerce/management') {
-        history.push('/app/ecommerce/management');
-      }
-      return;
-    });
+    // Legacy axios call removed - backend no longer used
+    getProductsRequest(dispatch);
+    if (history.location.pathname !== '/app/ecommerce/management') {
+      history.push('/app/ecommerce/management');
+    }
+    return;
   }
   getProductsRequest(dispatch);
 }
@@ -96,9 +93,7 @@ export function deleteProductRequest({ id, history, dispatch }) {
 export function getProductInfo(dispatch) {
   // We check if app runs with backend mode
   if (config.isBackend) {
-    axios.get('/products').then((res) => {
-      dispatch({ type: 'UPDATE_PRODUCTS', payload: res.data });
-    });
+    // Legacy axios call removed - backend no longer used
   }
 }
 
@@ -106,18 +101,14 @@ export function updateProduct(product, dispatch) {
   // We check if app runs with backend mode
   if (!config.isBackend) return;
 
-  axios.put('/products/' + product.id, product).then((res) => {
-    dispatch({ type: 'EDIT_PRODUCT', payload: res.data });
-  });
+  // Legacy axios call removed - backend no longer used
 }
 
 export function createProduct(product, dispatch) {
   // We check if app runs with backend mode
   if (!config.isBackend) return;
 
-  axios.post('/products', product).then((res) => {
-    dispatch({ type: 'CREATE_PRODUCT', payload: res.data });
-  });
+  // Legacy axios call removed - backend no longer used
 }
 
 export function getProductsImages(dispatch) {
@@ -133,9 +124,7 @@ export function getProductsImages(dispatch) {
     });
   };
 
-  axios.get('/products/images-list').then((res) => {
-    dispatch({ type: 'GET_IMAGES', payload: replacer(res.data) });
-  });
+  // Legacy axios call removed - backend no longer used
 }
 
 export { ProductsProvider, ProductsContext, useProductsState };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -35,104 +35,142 @@ import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Person as PersonIcon,
   Visibility as ViewIcon,
-  VisibilityOff as HideIcon,
-  PhotoCamera as PhotoCameraIcon,
-  Delete as DeletePhotoIcon
+  VisibilityOff as HideIcon
 } from '@mui/icons-material';
 
-// Mock staff data - in a real app, this would come from the database
-const mockStaff = [
-  {
-    id: 1,
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    email: 'sarah.johnson@plumingeagle.com',
-    role: 'employee',
-    status: 'active',
-    phone: '(555) 123-4567',
-    hireDate: '2023-01-15',
-    lastLogin: '2024-01-15T08:30:00Z',
-    avatar: null,
-    username: 'sarah.johnson',
-    password: 'temp123' // In real app, this would be hashed
-  },
-  {
-    id: 2,
-    firstName: 'Mike',
-    lastName: 'Chen',
-    email: 'mike.chen@plumingeagle.com',
-    role: 'employee',
-    status: 'active',
-    phone: '(555) 234-5678',
-    hireDate: '2023-03-20',
-    lastLogin: '2024-01-14T16:45:00Z',
-    avatar: null,
-    username: 'mike.chen',
-    password: 'temp123'
-  },
-  {
-    id: 3,
-    firstName: 'Emily',
-    lastName: 'Davis',
-    email: 'emily.davis@plumingeagle.com',
-    role: 'employee',
-    status: 'active',
-    phone: '(555) 345-6789',
-    hireDate: '2023-06-10',
-    lastLogin: '2024-01-15T09:15:00Z',
-    avatar: null,
-    username: 'emily.davis',
-    password: 'temp123'
-  },
-  {
-    id: 4,
-    firstName: 'Admin',
-    lastName: 'User',
-    email: 'admin@plumingeagle.com',
-    role: 'admin',
-    status: 'active',
-    phone: '(555) 000-0000',
-    hireDate: '2023-01-01',
-    lastLogin: '2024-01-15T10:00:00Z',
-    avatar: null,
-    username: 'admin',
-    password: 'admin123'
-  }
-];
+// Staff data is now loaded from Supabase
 
 function StaffManagement() {
-  const [staff, setStaff] = useState(mockStaff);
+  const [staff, setStaff] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [openDialog, setOpenDialog] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     firstName: '',
     lastName: '',
     email: '',
-    username: '',
     password: '',
     role: 'employee',
     phone: '',
-    status: 'active',
-    avatar: null
-  });
+    username: ''
+  };
+
+  const [formData, setFormData] = useState(initialFormData);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Debug: Log loading state changes
+  useEffect(() => {
+    console.log('🔄 Loading state changed to:', loading);
+  }, [loading]);
+  const [renderKey, setRenderKey] = useState(0);
+
+  // Debug: Log when staff state changes
+  useEffect(() => {
+    console.log('🔄 Staff state changed:', staff.length, 'users');
+    console.log('🔄 Full staff array:', staff);
+    if (staff.length > 0) {
+      console.log('👥 First user:', staff[0]);
+      console.log('👥 All user IDs:', staff.map(s => s.id));
+    } else {
+      console.log('⚠️ Staff array is empty!');
+    }
+  }, [staff]);
+
+  // Load users from Supabase on component mount
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        setLoading(true);
+        console.log('🔄 Loading users from Supabase...');
+        console.log('📦 Using direct fetch instead of Supabase client...');
+        
+        console.log('🔍 Making direct fetch request to Supabase API...');
+        
+        // Use direct fetch since Supabase client is hanging
+        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+          method: 'GET',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const users = await response.json();
+        const error = null;
+        
+        console.log('✅ Query completed, checking results...');
+
+        if (error) {
+          console.error('❌ Error loading users:', error);
+          return;
+        }
+
+        console.log('📋 Raw users data from Supabase:', users);
+        console.log('📊 Raw users count:', users ? users.length : 0);
+
+        if (!users || users.length === 0) {
+          console.log('⚠️ No users found in Supabase');
+          setStaff([]);
+          return;
+        }
+
+        console.log('🔄 Starting user transformation...');
+
+               // Transform Supabase users to match the expected format
+               const transformedUsers = users.map(user => ({
+                 id: user.id,
+                 firstName: user.first_name || '',
+                 lastName: user.last_name || '',
+                 email: user.email,
+                 role: user.role,
+                 phone: user.phone || '',
+                 password: '***' // Don't show actual passwords
+               }));
+
+        console.log('✅ Loaded users from Supabase:', transformedUsers);
+        console.log('📊 Number of users loaded:', transformedUsers.length);
+        console.log('🔄 Setting staff state...');
+        setStaff(transformedUsers);
+        console.log('✅ Staff state set successfully');
+      } catch (error) {
+        console.error('💥 Error in loadUsers:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Add timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.log('⏰ Loading timeout reached, setting loading to false');
+      setLoading(false);
+    }, 10000); // 10 second timeout
+
+    loadUsers();
+
+    return () => clearTimeout(timeoutId);
+  }, []); // Empty dependency array to run only once on mount
 
   const filteredStaff = staff.filter(member => {
-    const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
-    const matchesSearch = fullName.includes(searchTerm.toLowerCase()) ||
-                         member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.username.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!member || !member.id) return false; // Skip invalid members
+    
+    const fullName = `${member.firstName || ''} ${member.lastName || ''}`.toLowerCase();
+    const matchesSearch = searchTerm === '' || 
+                         fullName.includes(searchTerm.toLowerCase()) ||
+                         (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesRole = roleFilter === 'all' || member.role === roleFilter;
-    const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
     
-    return matchesSearch && matchesRole && matchesStatus;
+    return matchesSearch && matchesRole;
   });
 
   const handleAddStaff = () => {
@@ -144,59 +182,383 @@ function StaffManagement() {
       username: '',
       password: '',
       role: 'employee',
-      phone: '',
-      status: 'active',
-      avatar: null
+      phone: ''
     });
     setOpenDialog(true);
   };
 
   const handleEditStaff = (staffMember) => {
+    console.log('🔍 handleEditStaff called with:', staffMember);
+    console.log('🔍 Staff member ID:', staffMember.id);
     setEditingStaff(staffMember);
     setFormData({
       firstName: staffMember.firstName,
       lastName: staffMember.lastName,
       email: staffMember.email,
-      username: staffMember.username,
       password: '', // Don't show existing password
       role: staffMember.role,
-      phone: staffMember.phone,
-      status: staffMember.status,
-      avatar: staffMember.avatar
+      phone: staffMember.phone
     });
     setOpenDialog(true);
   };
 
-  const handleDeleteStaff = (staffId) => {
-    if (window.confirm('Are you sure you want to delete this staff member?')) {
-      setStaff(staff.filter(member => member.id !== staffId));
+  const handleDeleteStaff = async (staffId) => {
+    if (window.confirm('Are you sure you want to delete this staff member? This action cannot be undone.')) {
+      try {
+        console.log('🗑️ Deleting staff member:', staffId);
+        
+        // Import Supabase Admin for deletion
+        const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
+        console.log('📦 SupabaseAdmin imported for deletion');
+        
+        // Delete from auth.users (this will cascade to public.users due to foreign key)
+        console.log('👤 Deleting user from auth.users:', staffId);
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(staffId);
+        
+        if (authError) {
+          console.error('❌ Auth user deletion failed:', authError);
+          alert('Error deleting user: ' + authError.message);
+          return;
+        }
+        
+        console.log('✅ User deleted from auth.users successfully');
+        
+        // Also explicitly delete from public.users table (in case cascade didn't work)
+        console.log('🗑️ Deleting user profile from public.users:', staffId);
+        const { error: profileError } = await supabaseAdmin
+          .from('users')
+          .delete()
+          .eq('id', staffId);
+        
+        if (profileError) {
+          console.warn('⚠️ Profile deletion failed (may have been cascaded):', profileError);
+          // Don't show error to user as the main deletion succeeded
+        } else {
+          console.log('✅ User profile deleted from public.users successfully');
+        }
+        
+        // Update local state immediately
+        const updatedStaff = staff.filter(member => member.id !== staffId);
+        setStaff(updatedStaff);
+        setRenderKey(prev => prev + 1); // Force table re-render
+        
+        console.log('🎉 Staff member deleted successfully!');
+        alert('Staff member deleted successfully from Supabase!');
+        
+        // Reload users from Supabase to confirm deletion
+        console.log('🔄 Reloading users after deletion...');
+        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+          method: 'GET',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (reloadResponse.ok) {
+          const remainingUsers = await reloadResponse.json();
+          const transformedUsers = remainingUsers.map(user => ({
+            id: user.id,
+            firstName: user.first_name || '',
+            lastName: user.last_name || '',
+            email: user.email,
+            role: user.role,
+            phone: user.phone || '',
+            password: '***'
+          }));
+          setStaff(transformedUsers);
+          setRenderKey(prev => prev + 1);
+          console.log('✅ Users reloaded after deletion, count:', transformedUsers.length);
+        } else {
+          console.error('❌ Reload failed:', reloadResponse.status);
+        }
+        
+      } catch (error) {
+        console.error('💥 Delete operation failed with error:', error);
+        console.error('💥 Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+        alert('Error deleting staff member: ' + error.message);
+      }
     }
   };
 
-  const handleSaveStaff = () => {
-    if (editingStaff) {
-      // Update existing staff
-      setStaff(staff.map(member => 
-        member.id === editingStaff.id 
-          ? { 
-              ...member, 
-              ...formData,
-              password: formData.password || member.password // Keep existing password if not changed
-            }
-          : member
-      ));
-    } else {
-      // Add new staff
-      const newStaff = {
-        id: Math.max(...staff.map(s => s.id)) + 1,
-        ...formData,
-        hireDate: new Date().toISOString().split('T')[0],
-        lastLogin: null,
-        avatar: null
-      };
-      setStaff([...staff, newStaff]);
+  const handleSaveStaff = async () => {
+    // Prevent double submissions
+    if (submitting) {
+      console.log('⚠️ Already submitting, ignoring duplicate request');
+      return;
     }
-    setOpenDialog(false);
+    
+    try {
+      setSubmitting(true);
+      console.log('🚀 Starting staff save operation...');
+      
+      if (editingStaff) {
+        // Update existing staff in Supabase
+        console.log('🔄 Updating staff member in Supabase:', editingStaff.id);
+        console.log('📝 Form data to update:', {
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          role: formData.role
+        });
+        
+        // Update user profile in Supabase using direct fetch with service role
+        console.log('🔄 Updating user profile in public.users table...');
+        console.log('📦 Using direct fetch with service role key...');
+        
+        const updateUrl = `https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?id=eq.${editingStaff.id}`;
+        console.log('🌐 Update URL:', updateUrl);
+        
+        const requestBody = {
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          role: formData.role
+        };
+        
+        console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+        
+        const response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response ok:', response.ok);
+        console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Update failed:', response.status, errorText);
+          throw new Error(`Failed to update user: ${response.status} - ${errorText}`);
+        }
+
+        const updateData = await response.json();
+        console.log('📥 Response data:', updateData);
+        console.log('✅ Staff member updated in Supabase successfully!', updateData);
+        
+        // Update local state immediately
+        console.log('🔍 Current staff state:', staff);
+        console.log('🔍 Editing staff ID:', editingStaff.id);
+        console.log('🔍 Form data:', formData);
+        
+        const updatedStaff = staff.map(member => {
+          console.log('🔍 Checking member:', member.id, 'vs', editingStaff.id);
+          return member.id === editingStaff.id 
+            ? { 
+                ...member, 
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                email: formData.email,
+                phone: formData.phone,
+                role: formData.role,
+                password: formData.password || member.password // Keep existing password if not changed
+              }
+            : member;
+        });
+        console.log('🔄 Updating local state with:', updatedStaff);
+        setStaff([...updatedStaff]); // Force re-render with new array reference
+        setRenderKey(prev => prev + 1); // Force table re-render
+        console.log('⏰ Local state updated at:', new Date().toISOString());
+        // Close dialog and clear submitting before reloading
+        setOpenDialog(false);
+        setSubmitting(false);
+ 
+        // Reload users from Supabase to get the latest data
+        console.log('🔄 Reloading users after update...');
+        console.log('⏰ Waiting 2 seconds for database to process update...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+          method: 'GET',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (reloadResponse.ok) {
+          const updatedUsers = await reloadResponse.json();
+          console.log('📋 Raw updated users from reload:', updatedUsers);
+          const transformedUsers = updatedUsers.map(user => ({
+            id: user.id,
+            firstName: user.first_name || '',
+            lastName: user.last_name || '',
+            email: user.email,
+            role: user.role,
+            phone: user.phone || '',
+            password: '***'
+          }));
+          console.log('🔄 Transformed users for state:', transformedUsers);
+          setStaff([...transformedUsers]); // Force re-render with new array reference
+          setRenderKey(prev => prev + 1); // Force table re-render
+          console.log('⏰ Reload state updated at:', new Date().toISOString());
+          console.log('✅ Users reloaded after update');
+        } else {
+          console.error('❌ Reload failed:', reloadResponse.status);
+        }
+      } else {
+        // Add new staff using Supabase
+        console.log('🚀 Creating staff member with data:', formData);
+        
+        // Import Supabase Admin
+        const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
+        console.log('📦 SupabaseAdmin imported successfully');
+        
+        // Try to create user with Supabase Admin API
+        console.log('👤 Creating auth user with email:', formData.email);
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: formData.email,
+          password: formData.password || 'defaultpassword123',
+          email_confirm: true,
+          user_metadata: {
+            first_name: formData.firstName || '',
+            last_name: formData.lastName || '',
+            role: formData.role || 'employee',
+            phone: formData.phone || ''
+          }
+        });
+
+        let userId;
+        if (authError) {
+          if (authError.message.includes('already been registered')) {
+            console.log('⚠️ User already exists in auth, attempting to create profile only');
+            // User exists in auth but not in public.users, try to find their ID
+            try {
+              const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+              if (listError) {
+                console.error('❌ Failed to list users:', listError);
+                alert('A user with this email already exists. Please use a different email address.');
+                return;
+              }
+              
+              const existingUser = existingUsers.users.find(u => u.email === formData.email);
+              if (existingUser) {
+                console.log('✅ Found existing user in auth:', existingUser.id);
+                userId = existingUser.id;
+              } else {
+                console.error('❌ User not found in auth list');
+                alert('A user with this email already exists. Please use a different email address.');
+                return;
+              }
+            } catch (error) {
+              console.error('❌ Error finding existing user:', error);
+              alert('A user with this email already exists. Please use a different email address.');
+              return;
+            }
+          } else {
+            console.error('❌ Auth user creation failed:', authError);
+            alert('Error creating staff member: ' + authError.message);
+            return;
+          }
+        } else {
+          console.log('✅ Auth user created successfully:', authData.user.id);
+          userId = authData.user.id;
+        }
+
+        // Create the user profile manually (in case trigger failed)
+        console.log('🔄 Creating user profile in public.users table...');
+        const profileUrl = 'https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users';
+        const profileBody = {
+          id: userId,
+          email: formData.email || '',
+          first_name: formData.firstName || '',
+          last_name: formData.lastName || '',
+          phone: formData.phone || '',
+          role: formData.role || 'employee'
+        };
+        console.log('📤 Profile upsert body:', JSON.stringify(profileBody, null, 2));
+        const profileResp = await fetch(profileUrl, {
+          method: 'POST',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation'
+          },
+          body: JSON.stringify(profileBody)
+        });
+        console.log('📡 Profile upsert status:', profileResp.status, 'ok:', profileResp.ok);
+        if (!profileResp.ok) {
+          const errText = await profileResp.text();
+          console.error('❌ Profile creation failed:', profileResp.status, errText);
+          alert('User created but profile failed: ' + errText);
+          return;
+        }
+        const profileData = await profileResp.json();
+        console.log('✅ User profile created successfully:', profileData);
+
+        console.log('🎉 Staff member created successfully!');
+        // Close dialog and clear submitting before reloading
+        setOpenDialog(false);
+        setSubmitting(false);
+        
+        // Wait a moment for the database to process the changes
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Reload users from Supabase to get the latest data
+        console.log('🔄 Reloading users after creation...');
+        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*&order=created_at.desc', {
+          method: 'GET',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        if (reloadResponse.ok) {
+          const updatedUsers = await reloadResponse.json();
+          console.log('📋 Raw updated users from reload:', updatedUsers);
+          const transformedUsers = updatedUsers.map(user => ({
+            id: user.id,
+            firstName: user.first_name || '',
+            lastName: user.last_name || '',
+            email: user.email,
+            role: user.role,
+            phone: user.phone || '',
+            password: '***'
+          }));
+          console.log('🔄 Transformed users for state:', transformedUsers);
+          setStaff([...transformedUsers]); // Force re-render with new array reference
+          setRenderKey(prev => prev + 1); // Force table re-render
+          console.log('✅ Users reloaded after creation');
+        } else {
+          console.error('❌ Reload failed:', reloadResponse.status);
+        }
+      }
+      
+    } catch (error) {
+      console.error('💥 Staff operation failed with error:', error);
+      console.error('💥 Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      alert('Error: ' + error.message);
+      setSubmitting(false);
+    } finally {
+      // Always close form and reset data, regardless of success or failure
+      // Note: setSubmitting(false) is handled in success paths to avoid race conditions
+      setOpenDialog(false);
+      setFormData(initialFormData);
+      setEditingStaff(null);
+    }
   };
 
   const getRoleColor = (role) => {
@@ -228,36 +590,6 @@ function StaffManagement() {
     return password;
   };
 
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
-        return;
-      }
-      
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size must be less than 5MB');
-        return;
-      }
-
-      setUploadingImage(true);
-      
-      // Create a preview URL for the image
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFormData({ ...formData, avatar: e.target.result });
-        setUploadingImage(false);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemoveImage = () => {
-    setFormData({ ...formData, avatar: null });
-  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -284,6 +616,8 @@ function StaffManagement() {
       <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={4}>
           <TextField
+            id="search-staff"
+            name="search-staff"
             fullWidth
             variant="outlined"
             placeholder="Search by name, email, or username"
@@ -312,100 +646,113 @@ function StaffManagement() {
             </Select>
           </FormControl>
         </Grid>
-        <Grid item xs={12} sm={4}>
-          <FormControl fullWidth>
-            <InputLabel>Status</InputLabel>
-            <Select
-              value={statusFilter}
-              label="Status"
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <MenuItem value="all">All Status</MenuItem>
-              <MenuItem value="active">Active</MenuItem>
-              <MenuItem value="inactive">Inactive</MenuItem>
-            </Select>
-          </FormControl>
-        </Grid>
       </Grid>
 
       {/* Staff Table */}
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Staff Members ({filteredStaff.length})
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6">
+              Staff Members ({filteredStaff.length})
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={async () => {
+                console.log('🔄 Manual refresh triggered');
+                setLoading(true);
+                try {
+                  const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+                    method: 'GET',
+                    headers: {
+                      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+                      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+                      'Content-Type': 'application/json',
+                      'Cache-Control': 'no-cache'
+                    }
+                  });
+                  
+                  if (response.ok) {
+                    const users = await response.json();
+                    const transformedUsers = users.map(user => ({
+                      id: user.id,
+                      firstName: user.first_name || '',
+                      lastName: user.last_name || '',
+                      email: user.email,
+                      role: user.role,
+                      phone: user.phone || '',
+                      password: '***'
+                    }));
+                    setStaff([...transformedUsers]);
+                    setRenderKey(prev => prev + 1);
+                    console.log('✅ Manual refresh completed:', transformedUsers.length, 'users');
+                  } else {
+                    console.error('❌ Manual refresh failed:', response.status);
+                  }
+                } catch (error) {
+                  console.error('💥 Manual refresh error:', error);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              size="small"
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </Box>
           
           <TableContainer component={Paper}>
-            <Table>
+            <Table key={renderKey}>
               <TableHead>
                 <TableRow>
-                  <TableCell>Staff Member</TableCell>
-                  <TableCell>Contact</TableCell>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Phone</TableCell>
                   <TableCell>Role</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Hire Date</TableCell>
-                  <TableCell>Last Login</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredStaff.length > 0 ? (
-                  filteredStaff.map((member) => (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      <Box display="flex" justifyContent="center" alignItems="center" p={2}>
+                        <CircularProgress size={24} />
+                        <Typography variant="body2" sx={{ ml: 2 }}>
+                          Loading staff members from Supabase...
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredStaff.length > 0 ? (
+                  filteredStaff.filter(member => member && member.id).map((member) => (
                     <TableRow key={member.id}>
                       <TableCell>
                         <Box display="flex" alignItems="center" gap={2}>
-                          <Avatar 
-                            src={member.avatar} 
-                            sx={{ width: 40, height: 40 }}
-                          >
-                            {member.firstName[0]}{member.lastName[0]}
+                          <Avatar sx={{ width: 40, height: 40 }}>
+                            {(member.firstName || 'U')[0]}{(member.lastName || 'U')[0]}
                           </Avatar>
-                          <Box>
-                            <Typography variant="subtitle2">
-                              {member.firstName} {member.lastName}
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                              @{member.username}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box>
-                          <Typography variant="body2">
-                            {member.email}
-                          </Typography>
-                          <Typography variant="body2" color="textSecondary">
-                            {member.phone}
+                          <Typography variant="subtitle2">
+                            {member.firstName || 'Unknown'} {member.lastName || 'User'}
                           </Typography>
                         </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={member.role.charAt(0).toUpperCase() + member.role.slice(1)} 
-                          color={getRoleColor(member.role)}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={member.status.charAt(0).toUpperCase() + member.status.slice(1)} 
-                          color={getStatusColor(member.status)}
-                          size="small"
-                        />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {new Date(member.hireDate).toLocaleDateString()}
+                          {member.email || 'No email'}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="textSecondary">
-                          {member.lastLogin 
-                            ? new Date(member.lastLogin).toLocaleString()
-                            : 'Never'
-                          }
+                        <Typography variant="body2">
+                          {member.phone || 'Not provided'}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={(member.role || 'employee').charAt(0).toUpperCase() + (member.role || 'employee').slice(1)} 
+                          color={getRoleColor(member.role || 'employee')}
+                          size="small"
+                        />
                       </TableCell>
                       <TableCell>
                         <Box display="flex" gap={1}>
@@ -433,7 +780,7 @@ function StaffManagement() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} align="center">
+                    <TableCell colSpan={5} align="center">
                       <Typography variant="body2" color="textSecondary">
                         No staff members found
                       </Typography>
@@ -453,59 +800,11 @@ function StaffManagement() {
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            {/* Profile Picture Upload */}
-            <Grid item xs={12}>
-              <Box display="flex" alignItems="center" gap={3} sx={{ mb: 2 }}>
-                <Avatar 
-                  src={formData.avatar} 
-                  sx={{ width: 80, height: 80 }}
-                >
-                  {formData.firstName[0]}{formData.lastName[0]}
-                </Avatar>
-                <Box>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Profile Picture
-                  </Typography>
-                  <Box display="flex" gap={1}>
-                    <input
-                      accept="image/*"
-                      style={{ display: 'none' }}
-                      id="profile-picture-upload"
-                      type="file"
-                      onChange={handleImageUpload}
-                    />
-                    <label htmlFor="profile-picture-upload">
-                      <Button
-                        variant="outlined"
-                        component="span"
-                        startIcon={uploadingImage ? <CircularProgress size={16} /> : <PhotoCameraIcon />}
-                        disabled={uploadingImage}
-                        size="small"
-                      >
-                        {uploadingImage ? 'Uploading...' : 'Upload Photo'}
-                      </Button>
-                    </label>
-                    {formData.avatar && (
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        startIcon={<DeletePhotoIcon />}
-                        onClick={handleRemoveImage}
-                        size="small"
-                      >
-                        Remove
-                      </Button>
-                    )}
-                  </Box>
-                  <Typography variant="caption" color="textSecondary">
-                    JPG, PNG or GIF. Max size 5MB.
-                  </Typography>
-                </Box>
-              </Box>
-            </Grid>
             
             <Grid item xs={12} sm={6}>
               <TextField
+                id="firstName"
+                name="firstName"
                 fullWidth
                 label="First Name"
                 value={formData.firstName}
@@ -522,6 +821,8 @@ function StaffManagement() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
+                id="lastName"
+                name="lastName"
                 fullWidth
                 label="Last Name"
                 value={formData.lastName}
@@ -539,6 +840,8 @@ function StaffManagement() {
             
             <Grid item xs={12} sm={6}>
               <TextField
+                id="email"
+                name="email"
                 fullWidth
                 label="Email"
                 type="email"
@@ -549,6 +852,8 @@ function StaffManagement() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
+                id="phone"
+                name="phone"
                 fullWidth
                 label="Phone"
                 value={formData.phone}
@@ -557,15 +862,8 @@ function StaffManagement() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
-                fullWidth
-                label="Username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                required
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
+                id="password"
+                name="password"
                 fullWidth
                 label="Password"
                 type={showPassword ? 'text' : 'password'}
@@ -600,24 +898,11 @@ function StaffManagement() {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={formData.status}
-                  label="Status"
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                >
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
             {!editingStaff && (
               <Grid item xs={12}>
                 <Alert severity="info">
                   <Typography variant="body2">
-                    <strong>Login Credentials:</strong> Username: {formData.username} | 
+                    <strong>Login Credentials:</strong> Email: {formData.email} | 
                     Password: {formData.password || 'Will be generated'}
                   </Typography>
                 </Alert>
@@ -637,8 +922,19 @@ function StaffManagement() {
               Generate Password
             </Button>
           )}
-          <Button onClick={handleSaveStaff} variant="contained">
-            {editingStaff ? 'Update' : 'Create'} Staff Member
+          <Button 
+            onClick={async () => {
+              console.log('🔘 Update/Create button clicked!');
+              console.log('🔍 Current loading state:', loading);
+              console.log('🔍 Current submitting state:', submitting);
+              console.log('🔍 Current editingStaff:', editingStaff);
+              console.log('🔍 Current formData:', formData);
+              await handleSaveStaff();
+            }} 
+            variant="contained"
+            disabled={loading || submitting}
+          >
+            {submitting ? 'Saving...' : (editingStaff ? 'Update' : 'Create')} Staff Member
           </Button>
         </DialogActions>
       </Dialog>

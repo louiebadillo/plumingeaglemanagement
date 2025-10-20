@@ -55,11 +55,8 @@ export default function SidebarLink({
 
   // Logout onClick
   function onLogout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_id');
-    document.cookie = 'token=;expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-    window.location.href = '/login';
+    // Use Supabase signOut instead of localStorage
+    window.location.href = '/logout';
   }
 
   onLogout.clickName = 'onLogout';

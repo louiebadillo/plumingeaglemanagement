@@ -22,7 +22,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
 import { getClientById } from '../../context/clientMock';
-import { getCurrentUserRole } from '../../components/Sidebar/getSidebarStructure';
+import { useSupabase } from '../../context/SupabaseContext';
 import { dataService, QUESTIONNAIRE_METRICS } from '../../services/dataService';
 
 function CreateReport() {
@@ -37,7 +37,8 @@ function CreateReport() {
   const facilityId = urlParams.get('facility');
   
   const client = clientId ? getClientById(parseInt(clientId)) : null;
-  const userRole = getCurrentUserRole();
+  const { userProfile } = useSupabase();
+  const userRole = userProfile?.role || 'employee';
   
   // Initialize form data with configurable metrics
   const initializeFormData = () => {

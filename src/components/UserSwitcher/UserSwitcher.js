@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -10,12 +10,14 @@ import {
   Divider
 } from '@mui/material';
 import { Person as PersonIcon, AdminPanelSettings as AdminIcon } from '@mui/icons-material';
+import { useSupabase } from '../../context/SupabaseContext';
 import { mockUsers } from '../../context/mock';
 
 function UserSwitcher() {
+  const { userProfile, user } = useSupabase();
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('devUser') || '{}');
       // If no user or invalid user, default to admin
       if (!user.role || !user.firstName) {
         return mockUsers.admin;
@@ -26,10 +28,42 @@ function UserSwitcher() {
     }
   });
 
+  // Update current user when userProfile changes
+  useEffect(() => {
+    if (userProfile) {
+      const devUser = {
+        id: userProfile.id,
+        firstName: userProfile.first_name || 'User',
+        lastName: userProfile.last_name || '',
+        email: userProfile.email,
+        role: userProfile.role || 'employee',
+        phoneNumber: userProfile.phone || '',
+      };
+      setCurrentUser(devUser);
+    }
+  }, [userProfile]);
+
   const switchUser = (userType) => {
     const user = mockUsers[userType];
-    localStorage.setItem('user', JSON.stringify(user));
-    localStorage.setItem('token', 'mock-token-' + userType);
+    
+    // Store the development user in localStorage for the switcher
+    localStorage.setItem('devUser', JSON.stringify(user));
+    
+    // For development purposes, we'll update the userProfile in localStorage
+    // and then reload the page to apply the new role
+    const updatedProfile = {
+      ...userProfile,
+      role: user.role,
+      first_name: user.firstName,
+      last_name: user.lastName,
+      email: user.email,
+      phone: user.phoneNumber
+    };
+    
+    // Store the updated profile in localStorage for the SupabaseContext to pick up
+    localStorage.setItem('devUserProfile', JSON.stringify(updatedProfile));
+    
+    // Force a context update by triggering a re-render
     setCurrentUser(user);
     
     // Reload the page to apply new sidebar structure
@@ -62,7 +96,7 @@ function UserSwitcher() {
     <Card sx={{ maxWidth: 400, margin: 2 }}>
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          User Role Switcher
+          User Role Switcher (Development)
         </Typography>
         
         <Box mb={2}>

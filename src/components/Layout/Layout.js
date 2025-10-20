@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import classnames from 'classnames';
 
@@ -72,12 +72,10 @@ import BreadCrumbs from '../../components/BreadCrumbs';
 // context
 import { useLayoutState } from '../../context/LayoutContext';
 import { ProductsProvider } from '../../context/ProductContext'
-
-import UsersFormPage from 'pages/CRUD/Users/form/UsersFormPage';
-import UsersTablePage from 'pages/CRUD/Users/table/UsersTablePage';
+import { useSupabase } from '../../context/SupabaseContext';
 
 //Sidebar structure
-import { getSidebarStructure, getCurrentUserRole } from '../Sidebar/getSidebarStructure'
+import { getSidebarStructure } from '../Sidebar/getSidebarStructure'
 
 const Redirect = (props) => {
   useEffect(() => window.location.replace(props.url));
@@ -89,10 +87,46 @@ function Layout(props) {
 
   // global
   let layoutState = useLayoutState();
+  const { userProfile } = useSupabase();
+  const [facilities, setFacilities] = useState([]);
   
-  // Get sidebar structure based on user role
-  const userRole = getCurrentUserRole();
-  const sidebarStructure = getSidebarStructure(userRole);
+  // Load facilities from Supabase
+  useEffect(() => {
+    const loadFacilities = async () => {
+      try {
+        console.log('🔄 Loading facilities for sidebar...');
+        
+               const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?select=*', {
+                 method: 'GET',
+                 headers: {
+                   'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                   'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                   'Content-Type': 'application/json',
+                   'Cache-Control': 'no-cache'
+                 }
+               });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const facilitiesData = await response.json();
+        console.log('✅ Loaded facilities for sidebar:', facilitiesData);
+        setFacilities(facilitiesData || []);
+      } catch (error) {
+        console.error('💥 Error loading facilities for sidebar:', error);
+        setFacilities([]);
+      }
+    };
+
+    loadFacilities();
+  }, []);
+  
+  // Get sidebar structure based on user role from Supabase
+  const userRole = userProfile?.role || 'employee'; // Default to employee if no role
+  const sidebarStructure = getSidebarStructure(userRole, facilities);
+  
+  console.log('🔍 Layout - User role:', userRole, 'Profile:', userProfile, 'Facilities:', facilities);
 
   return (
     <div className={classes.root}>
@@ -107,7 +141,6 @@ function Layout(props) {
         <BreadCrumbs />
         <Switch>
           <Route path='/app/dashboard' component={Dashboard} />
-          <Route path='/app/user/edit' component={EditUser} />
 
           {/* Facility Management Routes */}
           <Route path="/app/facility/management" component={FacilityManagement} />
@@ -168,19 +201,19 @@ function Layout(props) {
           <Route path="/app/extra/invoice" component={Invoice} />
           <Route path="/app/extra/calendar" component={Calendar} />
 
-          <Route exact path="/app/facility" render={() => <Redirect to="/app/facility/facility-a" />} />
+          <Route exact path="/app/facility" render={() => {
+            // Redirect to the first available facility, or facility management if none exist
+            if (facilities && facilities.length > 0) {
+              return <Redirect to={`/app/facility/${facilities[0].id}`} />;
+            } else {
+              return <Redirect to="/app/facility/management" />;
+            }
+          }} />
 
-          <Route path="/app/client/:clientId" component={ClientProfile} />
-          <Route path="/app/client/:clientId/edit" component={ClientProfile} />
+          <Route path="/app/client/:clientSlug" component={ClientProfile} />
+          <Route path="/app/client/:clientSlug/edit" component={ClientProfile} />
           <Route path="/app/client/new" component={ClientProfile} />
 
-          <Route path={'/app/users'} exact component={UsersTablePage} />
-          <Route path={'/app/user/new'} exact component={UsersFormPage} />
-          <Route
-            path={'/app/users/:id/edit'}
-            exact
-            component={UsersFormPage}
-          />
         </Switch>
       </div>
     </div>

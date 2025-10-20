@@ -9,18 +9,20 @@ import Layout from './Layout';
 // pages
 import Error from '../pages/error';
 import Login from '../pages/login';
-import Verify from '../pages/verify';
-import Reset from '../pages/reset';
 import Logout from '../pages/logout';
 
 // context
-import { useUserState } from '../context/UserContext';
+import { SupabaseProvider, useSupabase } from '../context/SupabaseContext';
 import { getHistory } from '../index';
 
-export default function App() {
+function AppContent() {
   // global
-  let { isAuthenticated } = useUserState();
-  const isAuth = isAuthenticated();
+  const { user, loading } = useSupabase();
+  const isAuth = !!user;
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <>
@@ -40,12 +42,10 @@ export default function App() {
                 render={() => <Redirect to='/app/dashboard' />}
               />
 
-              <PrivateRoute path='/app' component={Layout} />
-              <PublicRoute path='/login' component={Login} />
-              <PublicRoute path='/logout' component={Logout} />
-              <PublicRoute path='/verify-email' exact component={Verify} />
-              <PublicRoute path='/password-reset' exact component={Reset} />
-              <Redirect from='*' to='/app/dashboard' />
+                     <PrivateRoute path='/app' component={Layout} />
+                     <PublicRoute path='/login' component={Login} />
+                     <PublicRoute path='/logout' component={Logout} />
+                     <Redirect from='*' to='/app/dashboard' />
               <Route component={Error} />
             </Switch>
           </Router>
@@ -75,8 +75,13 @@ export default function App() {
     return (
       <Route
         {...rest}
-        render={(props) =>
-          isAuth ? (
+        render={(props) => {
+          // Allow logout route even when authenticated
+          if (props.location.pathname === '/logout') {
+            return React.createElement(component, props);
+          }
+          
+          return isAuth ? (
             <Redirect
               to={{
                 pathname: '/',
@@ -84,9 +89,17 @@ export default function App() {
             />
           ) : (
             React.createElement(component, props)
-          )
-        }
+          );
+        }}
       />
     );
   }
+}
+
+export default function App() {
+  return (
+    <SupabaseProvider>
+      <AppContent />
+    </SupabaseProvider>
+  );
 }

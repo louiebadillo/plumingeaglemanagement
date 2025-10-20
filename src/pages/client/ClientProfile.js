@@ -44,11 +44,13 @@ import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Favorite as FavoriteIcon
 } from '@mui/icons-material';
 import { useParams, useHistory } from 'react-router-dom';
-import { getClientById, formatDate, calculateAge } from '../../context/clientMock';
-import { getCurrentUserRole } from '../../components/Sidebar/getSidebarStructure';
+import { formatDate, calculateAge } from '../../context/clientMock';
+import { useSupabase } from '../../context/SupabaseContext';
+import { parseClientSlug, createClientUrl } from '../../utils/urlUtils';
 import { 
   getReportsByClientId, 
   processChartData, 
@@ -69,7 +71,7 @@ import {
 import html2canvas from 'html2canvas';
 
 function ClientProfile() {
-  const { clientId } = useParams();
+  const { clientSlug } = useParams();
   const history = useHistory();
   const urlParams = new URLSearchParams(window.location.search);
   const facilityFromUrl = urlParams.get('facility');
@@ -86,10 +88,13 @@ function ClientProfile() {
   const [chartRefs, setChartRefs] = useState({});
   const [clientReports, setClientReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [facility, setFacility] = useState(null);
   
-  const userRole = getCurrentUserRole();
+  const { userProfile } = useSupabase();
+  const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
-  const isNewClient = clientId === 'new';
+  const isNewClient = clientSlug === 'new';
+
 
   // Load reports when client or date range changes
   useEffect(() => {
@@ -196,19 +201,19 @@ function ClientProfile() {
         id: null,
         firstName: '',
         lastName: '',
+        gender: '',
         age: '',
         dateOfBirth: '',
         phone: '',
         email: '',
-        facility: facilityFromUrl || 'facility-a', // Use facility from URL or default
+        address: '',
+        albertaHealthCardNumber: '',
+        admissionDate: '',
         room: '',
-        admissionDate: new Date().toISOString().split('T')[0], // Today's date
-        status: 'Active',
-        profilePhoto: null,
-        dietaryRestrictions: [],
-        activityPreferences: [],
-        otherPreferences: [],
         medicalNotes: '',
+        dietaryRestrictions: '',
+        activityPreferences: '',
+        otherPreferences: '',
         emergencyContact: {
           name: '',
           relationship: '',
@@ -221,6 +226,8 @@ function ClientProfile() {
           phone: '',
           email: ''
         },
+        facility: facilityFromUrl || null, // Use facility from URL or null
+        status: 'Active',
         assignedStaff: [],
         lastUpdated: new Date().toISOString()
       };
@@ -228,16 +235,135 @@ function ClientProfile() {
       setEditingClient(newClient);
       setEditDialogOpen(true); // Open edit dialog immediately for new client
     } else {
-      const clientData = getClientById(clientId);
-      if (clientData) {
-        setClient(clientData);
-        setEditingClient(clientData);
-      } else {
-        // Redirect to facility page if client not found
-        history.push('/app/facility/facility-a');
-      }
+      // Load existing client from Supabase
+      const loadClient = async () => {
+        try {
+          // Parse the client slug to get possible first and last name combinations
+          const nameParts = clientSlug.split('-');
+          
+          // Try different combinations of first/last name splits
+          let clients = [];
+          let foundClient = null;
+          
+          for (let i = 1; i < nameParts.length; i++) {
+            const firstNameParts = nameParts.slice(0, i);
+            const lastNameParts = nameParts.slice(i);
+            
+            const firstName = firstNameParts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+            const lastName = lastNameParts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+            
+            // Properly encode the names for the Supabase query
+            const encodedFirstName = encodeURIComponent(firstName);
+            const encodedLastName = encodeURIComponent(lastName);
+            const queryUrl = `https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients?first_name=eq.${encodedFirstName}&last_name=eq.${encodedLastName}&select=*`;
+            
+            const response = await fetch(queryUrl, {
+              method: 'GET',
+              headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data && data.length > 0) {
+              foundClient = data[0];
+              break;
+            }
+          }
+          
+          if (foundClient) {
+            clients = [foundClient];
+          } else {
+            clients = [];
+          }
+          
+          if (clients && clients.length > 0) {
+            const supabaseClient = clients[0];
+            
+            // Load facility information using the client's facility_id
+            if (supabaseClient.facility_id) {
+              try {
+                const facilityResponse = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/facilities?id=eq.${supabaseClient.facility_id}`, {
+                  method: 'GET',
+                  headers: {
+                    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache'
+                  }
+                });
+                
+                if (facilityResponse.ok) {
+                  const facilityData = await facilityResponse.json();
+                  if (facilityData && facilityData.length > 0) {
+                    setFacility(facilityData[0]);
+                  }
+                }
+              } catch (error) {
+                console.error('Error loading facility:', error);
+              }
+            }
+            
+            // Transform Supabase data to match the expected client structure
+            const transformedClient = {
+              id: supabaseClient.id,
+              firstName: supabaseClient.first_name,
+              lastName: supabaseClient.last_name,
+              gender: supabaseClient.gender,
+              age: supabaseClient.date_of_birth ? calculateAge(supabaseClient.date_of_birth) : '',
+              dateOfBirth: supabaseClient.date_of_birth,
+              phone: supabaseClient.phone,
+              email: supabaseClient.email,
+              address: supabaseClient.address,
+              albertaHealthCardNumber: supabaseClient.alberta_health_card_number,
+              admissionDate: supabaseClient.admission_date,
+              room: supabaseClient.room,
+              medicalNotes: supabaseClient.medical_notes,
+              dietaryRestrictions: supabaseClient.dietary_restrictions,
+              activityPreferences: supabaseClient.activity_preferences,
+              otherPreferences: supabaseClient.other_preferences,
+              emergencyContact: {
+                name: supabaseClient.emergency_contact_name,
+                relationship: supabaseClient.emergency_contact_relationship,
+                phone: supabaseClient.emergency_contact_phone,
+                email: supabaseClient.emergency_contact_email
+              },
+              secondaryEmergencyContact: {
+                name: supabaseClient.secondary_emergency_contact_name,
+                relationship: supabaseClient.secondary_emergency_contact_relationship,
+                phone: supabaseClient.secondary_emergency_contact_phone,
+                email: supabaseClient.secondary_emergency_contact_email
+              },
+              facility: supabaseClient.facility_id,
+              status: 'Active',
+              assignedStaff: [],
+              lastUpdated: supabaseClient.updated_at
+            };
+            
+            setClient(transformedClient);
+            setEditingClient(transformedClient);
+          } else {
+            // Redirect to facility management if client not found
+            history.push('/app/facility/management');
+          }
+        } catch (error) {
+          console.error('💥 Error loading client from Supabase:', error);
+          // Redirect to facility management on error
+          history.push('/app/facility/management');
+        }
+      };
+      
+      loadClient();
     }
-  }, [clientId, history, isNewClient]);
+  }, [clientSlug, history, isNewClient]);
 
   const handleEdit = () => {
     setEditDialogOpen(true);
@@ -247,27 +373,118 @@ function ClientProfile() {
     setDeleteDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
-    // In a real app, this would update the database
-    console.log('Saving client:', editingClient);
-    
-    if (isNewClient) {
-      // For new clients, generate a temporary ID and redirect to the client profile
-      const newClientWithId = {
-        ...editingClient,
-        id: Date.now(), // Temporary ID until SQLite setup
-        lastUpdated: new Date().toISOString()
-      };
-      setClient(newClientWithId);
-      setEditDialogOpen(false);
-      // Redirect to the new client's profile page
-      history.push(`/app/client/${newClientWithId.id}`);
-      alert('New client created successfully!');
-    } else {
-      // For existing clients, just update the data
-      setClient(editingClient);
-      setEditDialogOpen(false);
-      alert('Client information updated successfully!');
+  const handleSaveEdit = async () => {
+    try {
+      console.log('💾 Saving client:', editingClient);
+      
+      if (isNewClient) {
+        // Create new client in Supabase
+        const clientData = {
+          first_name: editingClient.firstName,
+          last_name: editingClient.lastName,
+          gender: editingClient.gender,
+          date_of_birth: editingClient.dateOfBirth,
+          phone: editingClient.phone,
+          email: editingClient.email,
+          address: editingClient.address,
+          alberta_health_card_number: editingClient.albertaHealthCardNumber,
+          admission_date: editingClient.admissionDate,
+          room: editingClient.room,
+          medical_notes: editingClient.medicalNotes,
+          dietary_restrictions: editingClient.dietaryRestrictions,
+          activity_preferences: editingClient.activityPreferences,
+          other_preferences: editingClient.otherPreferences,
+          emergency_contact_name: editingClient.emergencyContact?.name,
+          emergency_contact_relationship: editingClient.emergencyContact?.relationship,
+          emergency_contact_phone: editingClient.emergencyContact?.phone,
+          emergency_contact_email: editingClient.emergencyContact?.email,
+          secondary_emergency_contact_name: editingClient.secondaryEmergencyContact?.name,
+          secondary_emergency_contact_relationship: editingClient.secondaryEmergencyContact?.relationship,
+          secondary_emergency_contact_phone: editingClient.secondaryEmergencyContact?.phone,
+          secondary_emergency_contact_email: editingClient.secondaryEmergencyContact?.email,
+          facility_id: facilityFromUrl // Use the facility ID from URL
+        };
+        
+        console.log('🆕 Creating new client with data:', clientData);
+        
+        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients', {
+          method: 'POST',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(clientData)
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Supabase error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        const newClient = await response.json();
+        console.log('✅ Client created successfully:', newClient);
+        
+        setEditDialogOpen(false);
+        // Redirect to the new client's profile page
+        const clientUrl = createClientUrl(newClient[0]);
+        history.push(clientUrl);
+        alert('New client created successfully!');
+      } else {
+        // Update existing client in Supabase
+        const clientData = {
+          first_name: editingClient.firstName,
+          last_name: editingClient.lastName,
+          gender: editingClient.gender,
+          date_of_birth: editingClient.dateOfBirth,
+          phone: editingClient.phone,
+          email: editingClient.email,
+          address: editingClient.address,
+          alberta_health_card_number: editingClient.albertaHealthCardNumber,
+          admission_date: editingClient.admissionDate,
+          room: editingClient.room,
+          medical_notes: editingClient.medicalNotes,
+          dietary_restrictions: editingClient.dietaryRestrictions,
+          activity_preferences: editingClient.activityPreferences,
+          other_preferences: editingClient.otherPreferences,
+          emergency_contact_name: editingClient.emergencyContact?.name,
+          emergency_contact_relationship: editingClient.emergencyContact?.relationship,
+          emergency_contact_phone: editingClient.emergencyContact?.phone,
+          emergency_contact_email: editingClient.emergencyContact?.email,
+          secondary_emergency_contact_name: editingClient.secondaryEmergencyContact?.name,
+          secondary_emergency_contact_relationship: editingClient.secondaryEmergencyContact?.relationship,
+          secondary_emergency_contact_phone: editingClient.secondaryEmergencyContact?.phone,
+          secondary_emergency_contact_email: editingClient.secondaryEmergencyContact?.email
+        };
+        
+        console.log('🔄 Updating client with data:', clientData);
+        
+        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients?id=eq.${client.id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(clientData)
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Supabase error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        console.log('✅ Client updated successfully');
+        setClient(editingClient);
+        setEditDialogOpen(false);
+        alert('Client information updated successfully!');
+      }
+    } catch (error) {
+      console.error('💥 Error saving client:', error);
+      alert(`Error saving client: ${error.message}`);
     }
   };
 
@@ -380,7 +597,7 @@ function ClientProfile() {
             </Typography>
             <Box display="flex" alignItems="center" gap={2}>
               <Typography variant="body2" color="textSecondary">
-                Room {client.room} • Facility {client.facility.toUpperCase()}
+                Room {client.room || 'Not assigned'} • {facility?.name || 'Facility not found'}
               </Typography>
             </Box>
           </Box>
@@ -443,11 +660,77 @@ function ClientProfile() {
                 <ListItem>
                   <ListItemIcon><RoomIcon /></ListItemIcon>
                   <ListItemText 
+                    primary="Previous Address" 
+                    secondary={client.address || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><RoomIcon /></ListItemIcon>
+                  <ListItemText 
                     primary="Admission Date" 
                     secondary={formatDate(client.admissionDate)} 
                   />
                 </ListItem>
               </List>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Emergency Contacts */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Emergency Contacts
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              {/* Primary Emergency Contact */}
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
+                Primary Emergency Contact
+              </Typography>
+              <List dense sx={{ mb: 2 }}>
+                <ListItem>
+                  <ListItemText 
+                    primary={client.emergencyContact?.name || 'Not provided'}
+                    secondary={`${client.emergencyContact?.relationship || 'Not provided'}`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><PhoneIcon /></ListItemIcon>
+                  <ListItemText primary={client.emergencyContact?.phone || 'Not provided'} />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><EmailIcon /></ListItemIcon>
+                  <ListItemText primary={client.emergencyContact?.email || 'Not provided'} />
+                </ListItem>
+              </List>
+
+              {/* Secondary Emergency Contact */}
+              {client.secondaryEmergencyContact?.name && (
+                <>
+                  <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
+                    Secondary Emergency Contact
+                  </Typography>
+                  <List dense>
+                    <ListItem>
+                      <ListItemText 
+                        primary={client.secondaryEmergencyContact.name}
+                        secondary={`${client.secondaryEmergencyContact.relationship}`}
+                      />
+                    </ListItem>
+                    <ListItem>
+                      <ListItemIcon><PhoneIcon /></ListItemIcon>
+                      <ListItemText primary={client.secondaryEmergencyContact.phone} />
+                    </ListItem>
+                    <ListItem>
+                      <ListItemIcon><EmailIcon /></ListItemIcon>
+                      <ListItemText primary={client.secondaryEmergencyContact.email} />
+                    </ListItem>
+                  </List>
+                </>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -467,134 +750,63 @@ function ClientProfile() {
               </Typography>
               <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
                 <Typography variant="body2">
-                  {client.medicalNotes}
+                  {client.medicalNotes || 'No medical notes available'}
                 </Typography>
               </Paper>
-
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Dietary Restrictions */}
+        {/* Preferences Section */}
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                <RestaurantIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                <FavoriteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Preferences
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              {/* Dietary Restrictions */}
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
                 Dietary Restrictions
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <Box display="flex" flexWrap="wrap" gap={1}>
-                {client.dietaryRestrictions.map((restriction, index) => (
-                  <Chip key={index} label={restriction} color="warning" size="small" />
-                ))}
+              <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+                {client.dietaryRestrictions ? 
+                  client.dietaryRestrictions.split(',').map((restriction, index) => (
+                    <Chip key={index} label={restriction.trim()} color="warning" size="small" />
+                  )) : <Typography variant="body2" color="textSecondary">No dietary restrictions specified</Typography>
+                }
               </Box>
-            </CardContent>
-          </Card>
-        </Grid>
 
-        {/* Activity Preferences */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <SportsIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              {/* Activity Preferences */}
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
                 Activity Preferences
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <Box display="flex" flexWrap="wrap" gap={1}>
-                {client.activityPreferences.map((activity, index) => (
-                  <Chip key={index} label={activity} color="primary" size="small" />
-                ))}
+              <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+                {client.activityPreferences ? 
+                  client.activityPreferences.split(',').map((activity, index) => (
+                    <Chip key={index} label={activity.trim()} color="primary" size="small" />
+                  )) : <Typography variant="body2" color="textSecondary">No activity preferences specified</Typography>
+                }
               </Box>
-            </CardContent>
-          </Card>
-        </Grid>
 
-        {/* Other Preferences */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <NotesIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              {/* Other Preferences */}
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
                 Other Preferences
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
               <List dense>
-                {client.otherPreferences.map((preference, index) => (
-                  <ListItem key={index}>
-                    <ListItemText primary={preference} />
-                  </ListItem>
-                ))}
+                {client.otherPreferences ? 
+                  client.otherPreferences.split(',').map((preference, index) => (
+                    <ListItem key={index}>
+                      <ListItemText primary={preference.trim()} />
+                    </ListItem>
+                  )) : <Typography variant="body2" color="textSecondary">No other preferences specified</Typography>
+                }
               </List>
             </CardContent>
           </Card>
         </Grid>
-
-        {/* Emergency Contact */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Emergency Contact
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                <ListItem>
-                  <ListItemText 
-                    primary={client.emergencyContact.name}
-                    secondary={`${client.emergencyContact.relationship}`}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><PhoneIcon /></ListItemIcon>
-                  <ListItemText primary={client.emergencyContact.phone} />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><EmailIcon /></ListItemIcon>
-                  <ListItemText primary={client.emergencyContact.email} />
-                </ListItem>
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Secondary Emergency Contact */}
-        {client.secondaryEmergencyContact?.name && (
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Secondary Emergency Contact
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-                
-                <List dense>
-                  <ListItem>
-                    <ListItemText 
-                      primary={client.secondaryEmergencyContact.name}
-                      secondary={`${client.secondaryEmergencyContact.relationship}`}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemIcon><PhoneIcon /></ListItemIcon>
-                    <ListItemText primary={client.secondaryEmergencyContact.phone} />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemIcon><EmailIcon /></ListItemIcon>
-                    <ListItemText primary={client.secondaryEmergencyContact.email} />
-                  </ListItem>
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
       </Grid>
 
       {/* Analytics Section */}
@@ -920,68 +1132,11 @@ function ClientProfile() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{isNewClient ? 'Add New Client' : 'Edit Client Information'}</DialogTitle>
+        <DialogTitle>
+          {isNewClient ? `Add New Client - ${facility?.name || 'Facility'}` : 'Edit Client Information'}
+        </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            {/* Profile Photo Section */}
-            <Grid item xs={12}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Profile Photo</Typography>
-              <Box display="flex" alignItems="center" gap={2}>
-                <Avatar
-                  sx={{ width: 80, height: 80 }}
-                  src={editingClient.profilePhoto}
-                >
-                  {editingClient.firstName?.[0]}{editingClient.lastName?.[0]}
-                </Avatar>
-                <Box>
-                  <input
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    id="profile-photo-upload"
-                    type="file"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          handleInputChange('profilePhoto', event.target.result);
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                  <Box display="flex" gap={1} flexDirection="column">
-                    <label htmlFor="profile-photo-upload">
-                      <Button
-                        variant="outlined"
-                        component="span"
-                        startIcon={<PhotoCameraIcon />}
-                        size="small"
-                      >
-                        Upload Photo
-                      </Button>
-                    </label>
-                    {editingClient.profilePhoto && (
-                      <Button
-                        variant="text"
-                        color="error"
-                        size="small"
-                        onClick={() => handleInputChange('profilePhoto', null)}
-                      >
-                        Remove Photo
-                      </Button>
-                    )}
-                  </Box>
-                  <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                    Click to upload a new profile photo
-                  </Typography>
-                </Box>
-              </Box>
-            </Grid>
-            
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-            </Grid>
             
             <Grid item xs={12} sm={6}>
               <TextField
@@ -1000,6 +1155,21 @@ function ClientProfile() {
               />
             </Grid>
             <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Gender</InputLabel>
+                <Select
+                  value={editingClient.gender || ''}
+                  onChange={(e) => handleInputChange('gender', e.target.value)}
+                  label="Gender"
+                >
+                  <MenuItem value="Male">Male</MenuItem>
+                  <MenuItem value="Female">Female</MenuItem>
+                  <MenuItem value="Other">Other</MenuItem>
+                  <MenuItem value="Prefer not to say">Prefer not to say</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Phone"
@@ -1013,6 +1183,15 @@ function ClientProfile() {
                 label="Email"
                 value={editingClient.email || ''}
                 onChange={(e) => handleInputChange('email', e.target.value)}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Previous Address"
+                value={editingClient.address || ''}
+                onChange={(e) => handleInputChange('address', e.target.value)}
+                placeholder="Enter previous address"
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1044,17 +1223,13 @@ function ClientProfile() {
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Facility</InputLabel>
-                <Select
-                  value={editingClient.facility || ''}
-                  onChange={(e) => handleInputChange('facility', e.target.value)}
-                >
-                  <MenuItem value="facility-a">Facility A</MenuItem>
-                  <MenuItem value="facility-b">Facility B</MenuItem>
-                  <MenuItem value="facility-c">Facility C</MenuItem>
-                </Select>
-              </FormControl>
+              <TextField
+                fullWidth
+                label="Alberta Health Card Number"
+                value={editingClient.albertaHealthCardNumber || ''}
+                onChange={(e) => handleInputChange('albertaHealthCardNumber', e.target.value)}
+                placeholder="e.g., 1234-567-890"
+              />
             </Grid>
             <Grid item xs={12}>
               <TextField
@@ -1072,8 +1247,8 @@ function ClientProfile() {
                 multiline
                 rows={2}
                 label="Dietary Restrictions (comma-separated)"
-                value={editingClient.dietaryRestrictions ? editingClient.dietaryRestrictions.join(', ') : ''}
-                onChange={(e) => handleInputChange('dietaryRestrictions', e.target.value.split(',').map(item => item.trim()).filter(item => item))}
+                value={editingClient.dietaryRestrictions || ''}
+                onChange={(e) => handleInputChange('dietaryRestrictions', e.target.value)}
                 placeholder="e.g., Gluten-free, No nuts, Vegetarian"
               />
             </Grid>
@@ -1083,8 +1258,8 @@ function ClientProfile() {
                 multiline
                 rows={2}
                 label="Activity Preferences (comma-separated)"
-                value={editingClient.activityPreferences ? editingClient.activityPreferences.join(', ') : ''}
-                onChange={(e) => handleInputChange('activityPreferences', e.target.value.split(',').map(item => item.trim()).filter(item => item))}
+                value={editingClient.activityPreferences || ''}
+                onChange={(e) => handleInputChange('activityPreferences', e.target.value)}
                 placeholder="e.g., Reading, Art, Sports, Music"
               />
             </Grid>
@@ -1094,90 +1269,94 @@ function ClientProfile() {
                 multiline
                 rows={2}
                 label="Other Preferences (comma-separated)"
-                value={editingClient.otherPreferences ? editingClient.otherPreferences.join(', ') : ''}
-                onChange={(e) => handleInputChange('otherPreferences', e.target.value.split(',').map(item => item.trim()).filter(item => item))}
+                value={editingClient.otherPreferences || ''}
+                onChange={(e) => handleInputChange('otherPreferences', e.target.value)}
                 placeholder="e.g., Private room preferred, Evening study time"
               />
             </Grid>
             
-            {/* Emergency Contact Section */}
+            {/* Emergency Contacts Section - Side by Side */}
             <Grid item xs={12}>
-              <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>Emergency Contact</Typography>
+              <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>Emergency Contacts</Typography>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Emergency Contact Name"
-                value={editingClient.emergencyContact?.name || ''}
-                onChange={(e) => handleEmergencyContactChange('name', e.target.value)}
-              />
+            
+            {/* Primary Emergency Contact */}
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>Primary Emergency Contact</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Emergency Contact Name"
+                    value={editingClient.emergencyContact?.name || ''}
+                    onChange={(e) => handleEmergencyContactChange('name', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Relationship"
+                    value={editingClient.emergencyContact?.relationship || ''}
+                    onChange={(e) => handleEmergencyContactChange('relationship', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Emergency Contact Phone"
+                    value={editingClient.emergencyContact?.phone || ''}
+                    onChange={(e) => handleEmergencyContactChange('phone', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Emergency Contact Email"
+                    value={editingClient.emergencyContact?.email || ''}
+                    onChange={(e) => handleEmergencyContactChange('email', e.target.value)}
+                  />
+                </Grid>
+              </Grid>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Relationship"
-                value={editingClient.emergencyContact?.relationship || ''}
-                onChange={(e) => handleEmergencyContactChange('relationship', e.target.value)}
-              />
+            
+            {/* Secondary Emergency Contact */}
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>Secondary Emergency Contact (Optional)</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Secondary Contact Name"
+                    value={editingClient.secondaryEmergencyContact?.name || ''}
+                    onChange={(e) => handleSecondaryEmergencyContactChange('name', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Secondary Contact Relationship"
+                    value={editingClient.secondaryEmergencyContact?.relationship || ''}
+                    onChange={(e) => handleSecondaryEmergencyContactChange('relationship', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Secondary Contact Phone"
+                    value={editingClient.secondaryEmergencyContact?.phone || ''}
+                    onChange={(e) => handleSecondaryEmergencyContactChange('phone', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Secondary Contact Email"
+                    value={editingClient.secondaryEmergencyContact?.email || ''}
+                    onChange={(e) => handleSecondaryEmergencyContactChange('email', e.target.value)}
+                  />
+                </Grid>
+              </Grid>
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Emergency Contact Phone"
-                value={editingClient.emergencyContact?.phone || ''}
-                onChange={(e) => handleEmergencyContactChange('phone', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Emergency Contact Email"
-                value={editingClient.emergencyContact?.email || ''}
-                onChange={(e) => handleEmergencyContactChange('email', e.target.value)}
-              />
-            </Grid>
-          </Grid>
-          
-          {/* Secondary Emergency Contact Section */}
-          <Grid item xs={12}>
-            <Divider sx={{ my: 2 }} />
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-              Secondary Emergency Contact (Optional)
-            </Typography>
-          </Grid>
-          
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              label="Secondary Contact Name"
-              value={editingClient.secondaryEmergencyContact?.name || ''}
-              onChange={(e) => handleSecondaryEmergencyContactChange('name', e.target.value)}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              label="Secondary Contact Relationship"
-              value={editingClient.secondaryEmergencyContact?.relationship || ''}
-              onChange={(e) => handleSecondaryEmergencyContactChange('relationship', e.target.value)}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              label="Secondary Contact Phone"
-              value={editingClient.secondaryEmergencyContact?.phone || ''}
-              onChange={(e) => handleSecondaryEmergencyContactChange('phone', e.target.value)}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              label="Secondary Contact Email"
-              value={editingClient.secondaryEmergencyContact?.email || ''}
-              onChange={(e) => handleSecondaryEmergencyContactChange('email', e.target.value)}
-            />
           </Grid>
         </DialogContent>
         <DialogActions>

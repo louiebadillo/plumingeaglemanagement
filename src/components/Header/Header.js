@@ -11,7 +11,6 @@ import classNames from 'classnames';
 
 //images
 import profile from '../../images/main-profile.png';
-import config from '../../config';
 import { getConfig } from '../../config/template';
 
 // styles
@@ -26,13 +25,7 @@ import {
   useLayoutDispatch,
   toggleSidebar,
 } from '../../context/LayoutContext';
-import {
-  useManagementDispatch,
-  useManagementState,
-} from '../../context/ManagementContext';
-
-import { actions } from '../../context/ManagementContext';
-import { useUserDispatch, signOut } from '../../context/UserContext';
+import { useSupabase } from '../../context/SupabaseContext';
 
 export default function Header(props) {
   let classes = useStyles();
@@ -41,33 +34,35 @@ export default function Header(props) {
   // global
   let layoutState = useLayoutState();
   let layoutDispatch = useLayoutDispatch();
-  let userDispatch = useUserDispatch();
-  const managementDispatch = useManagementDispatch();
+  const { userProfile, signOut } = useSupabase();
 
   // local
   const [profileMenu, setProfileMenu] = useState(null);
   const [currentUser, setCurrentUser] = useState();
   const [isSmall, setSmall] = useState(false);
 
-  const managementValue = useManagementState();
 
   useEffect(() => {
-    actions.doFind(sessionStorage.getItem('user_id'))(managementDispatch);
+    // User data is now handled by Supabase context
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (config.isBackend) {
-      setCurrentUser(managementValue.currentUser);
+    if (userProfile) {
+      setCurrentUser({
+        firstName: userProfile.first_name || 'Admin',
+        lastName: userProfile.last_name || 'User',
+        avatar: null
+      });
     } else {
-      // Mock user data for development
+      // Default user data
       setCurrentUser({
         firstName: 'Admin',
         lastName: 'User',
         avatar: null
       });
     }
-  }, [managementValue]);
+  }, [userProfile]);
 
   useEffect(function () {
     window.addEventListener('resize', handleWindowWidthChange);
@@ -184,7 +179,7 @@ export default function Header(props) {
             <Typography
               className={classes.profileMenuLink}
               color='primary'
-              onClick={() => signOut(userDispatch, props.history)}
+              onClick={() => signOut()}
             >
               Sign Out
             </Typography>

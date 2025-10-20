@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Widget from '../Widget';
 import { Link } from 'react-router-dom';
 import { Box, Grid, Breadcrumbs, Tabs, Tab } from '@mui/material';
@@ -9,16 +9,13 @@ import {
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 import { withStyles } from '@mui/styles';
-import { getClientById } from '../../context/clientMock';
 import useStyles from '../Layout/styles';
 import structure from '../Sidebar/SidebarStructure';
+import { parseClientSlug } from '../../utils/urlUtils';
 
-// Facility information for breadcrumbs
-const facilityData = {
-  'facility-a': 'Facility A',
-  'facility-b': 'Facility B', 
-  'facility-c': 'Facility C'
-};
+// Supabase configuration
+const SUPABASE_URL = 'https://brkbypctkcczerntfpsa.supabase.co';
+const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODIxOTQ4MSwiZXhwIjoyMDczNzk1NDgxfQ.cYWIFwvE3FvF3rVfcP8HOuppqD71t44kdHk6Ti0Z5cw';
 
 // Tab styling
 const CustomTab = withStyles((theme) => ({
@@ -34,6 +31,116 @@ const BreadCrumbs = () => {
   const location = useLocation();
   const classes = useStyles();
   const [value, setValue] = React.useState(2);
+  const [facilities, setFacilities] = useState([]);
+  const [clients, setClients] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  // Load facilities from Supabase
+  useEffect(() => {
+    const loadFacilities = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/facilities?select=*`, {
+          method: 'GET',
+          headers: {
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const facilitiesData = await response.json();
+        setFacilities(facilitiesData || []);
+      } catch (error) {
+        console.error('💥 Error loading facilities for breadcrumbs:', error);
+        setFacilities([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadFacilities();
+  }, []);
+
+  // Load client data when needed
+  const loadClient = async (clientId) => {
+    if (clients[clientId]) {
+      return clients[clientId];
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/clients?select=*&id=eq.${clientId}`, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const clientData = await response.json();
+      if (clientData && clientData.length > 0) {
+        const client = clientData[0];
+        setClients(prev => ({
+          ...prev,
+          [clientId]: client
+        }));
+        return client;
+      }
+    } catch (error) {
+      console.error('💥 Error loading client for breadcrumbs:', error);
+    }
+    return null;
+  };
+
+  // Load client data by slug
+  const loadClientBySlug = async (clientSlug) => {
+    if (clients[clientSlug]) {
+      return clients[clientSlug];
+    }
+
+    try {
+      // Parse the client slug to get first and last name
+      const { firstName, lastName } = parseClientSlug(clientSlug);
+      
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/clients?first_name=eq.${firstName}&last_name=eq.${lastName}&select=*`, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const clientData = await response.json();
+      if (clientData && clientData.length > 0) {
+        const client = clientData[0];
+        setClients(prev => ({
+          ...prev,
+          [clientSlug]: client
+        }));
+        return client;
+      }
+    } catch (error) {
+      console.error('💥 Error loading client by slug for breadcrumbs:', error);
+    }
+    return null;
+  };
 
   const renderBreadCrumbs = () => {
     let url = location.pathname;
@@ -57,54 +164,69 @@ const BreadCrumbs = () => {
           });
           i += 2; // Skip both 'facility' and 'management'
         } else {
-          // Handle individual facility route
-          const facilityName = facilityData[facilityId] || `Facility ${facilityId}`;
+          // Handle individual facility route - use Supabase data
+          const facility = facilities.find(f => f.id === facilityId);
+          const facilityName = facility ? facility.name : `Facility ${facilityId}`;
           breadcrumbItems.push({
             label: facilityName,
             url: '/' + urlParts.slice(0, i + 2).join('/')
           });
-          i += 2; // Skip both 'facility' and 'facility-a'
+          i += 2; // Skip both 'facility' and facility ID
         }
       } else if (segment === 'client' && i + 1 < urlParts.length) {
         // Handle client route
-        const clientId = urlParts[i + 1];
-        let clientName;
+        const clientSlug = urlParts[i + 1];
+        let clientName = `Client ${clientSlug}`;
         let clientFacility = null;
+        let facilityId = null;
         
-        if (clientId === 'new') {
+        if (clientSlug === 'new') {
           clientName = 'New Client';
           // For new client, try to get facility from URL params
           const urlParams = new URLSearchParams(window.location.search);
-          const facilityParam = urlParams.get('facility');
-          if (facilityParam) {
-            clientFacility = facilityData[facilityParam] || `Facility ${facilityParam}`;
+          facilityId = urlParams.get('facility');
+          if (facilityId) {
+            const facility = facilities.find(f => f.id === facilityId);
+            clientFacility = facility ? facility.name : `Facility ${facilityId}`;
           }
         } else {
-          const client = getClientById(parseInt(clientId));
+          // For existing client, use cached client data or load it
+          const client = clients[clientSlug];
           if (client) {
-            clientName = `${client.firstName} ${client.lastName}`;
-            clientFacility = facilityData[client.facility] || `Facility ${client.facility}`;
+            clientName = `${client.first_name} ${client.last_name}`;
+            // Find the facility for this client
+            const facility = facilities.find(f => f.id === client.facility_id);
+            if (facility) {
+              clientFacility = facility.name;
+              facilityId = facility.id;
+            }
           } else {
-            clientName = `Client ${clientId}`;
+            // Load client data asynchronously using the slug
+            loadClientBySlug(clientSlug).then(client => {
+              if (client) {
+                // Update the clients state to trigger re-render
+                setClients(prev => ({
+                  ...prev,
+                  [clientSlug]: client
+                }));
+              }
+            });
+            // Parse the slug to show a better name while loading
+            try {
+              const { firstName, lastName } = parseClientSlug(clientSlug);
+              clientName = `${firstName} ${lastName}`;
+            } catch (error) {
+              clientName = `Client ${clientSlug}`;
+            }
           }
         }
         
         // Add facility breadcrumb if we have facility info
-        if (clientFacility) {
-          let facilityId;
-          if (clientId === 'new') {
-            facilityId = new URLSearchParams(window.location.search).get('facility');
-          } else {
-            const client = getClientById(parseInt(clientId));
-            facilityId = client ? client.facility : null;
-          }
-          
-          if (facilityId) {
-            breadcrumbItems.push({
-              label: clientFacility,
-              url: `/app/facility/${facilityId}`
-            });
-          }
+        if (clientFacility && facilityId) {
+          breadcrumbItems.push({
+            label: clientFacility,
+            url: `/app/facility/${facilityId}`
+          });
         }
         
         // Add client breadcrumb
@@ -112,7 +234,7 @@ const BreadCrumbs = () => {
           label: clientName,
           url: '/' + urlParts.slice(0, i + 2).join('/')
         });
-        i += 2; // Skip both 'client' and client ID
+        i += 2; // Skip both 'client' and client slug
       } else {
         // Handle regular segments
         const label = segment

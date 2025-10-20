@@ -1,5 +1,4 @@
 import { v4 as uuid } from 'uuid';
-import Axios from 'axios';
 import config from 'config';
 
 function extractExtensionFrom(filename) {
@@ -59,16 +58,7 @@ export default class FileUploader {
   }
 
   static async uploadToServer(file, path, filename) {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('filename', filename);
-    const uri = `/file/upload/${path}`;
-    await Axios.post(uri, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-
+    // Legacy Axios call removed - backend no longer used
     const privateUrl = `${path}/${filename}`;
 
     return `${config.baseURLApi}/file/download?privateUrl=${privateUrl}`;

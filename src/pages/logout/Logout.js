@@ -1,18 +1,33 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { withRouter } from 'react-router-dom';
-import { useUserDispatch } from '../../context/UserContext';
-import { signOut } from '../../context/UserContext';
+import { useSupabase } from '../../context/SupabaseContext';
 
 function Logout(props) {
-  const userDispatch = useUserDispatch();
+  const { signOut } = useSupabase();
 
   useEffect(() => {
-    // Call the signOut function which handles clearing tokens and redirecting
-    signOut(userDispatch, props.history);
-  }, [userDispatch, props.history]);
+    // Call the Supabase signOut function immediately
+    console.log('🔄 Logout component: Starting logout...');
+    signOut();
+  }, [signOut]);
 
-  // This component doesn't render anything as it immediately redirects
-  return null;
+  // Show loading message while logging out
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      height: '100vh',
+      flexDirection: 'column',
+      fontSize: '18px',
+      color: '#666'
+    }}>
+      <div>Logging out...</div>
+      <div style={{ fontSize: '14px', marginTop: '10px' }}>
+        Please wait while we sign you out...
+      </div>
+    </div>
+  );
 }
 
 export default withRouter(Logout);
