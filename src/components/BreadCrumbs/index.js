@@ -8,9 +8,17 @@ import {
   CalendarToday as CalendarIcon,
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
-import { withStyles } from '@mui/styles';
+import { withStyles, makeStyles } from '@mui/styles';
 import useStyles from '../Layout/styles';
 import structure from '../Sidebar/SidebarStructure';
+
+const useBreadcrumbStyles = makeStyles((theme) => ({
+  transparentPaper: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5) !important',
+    backdropFilter: 'blur(10px)',
+    boxShadow: 'none !important',
+  },
+}));
 import { parseClientSlug } from '../../utils/urlUtils';
 
 // Supabase configuration
@@ -31,6 +39,7 @@ const CustomTab = withStyles((theme) => ({
 const BreadCrumbs = () => {
   const location = useLocation();
   const classes = useStyles();
+  const breadcrumbClasses = useBreadcrumbStyles();
   const [value, setValue] = React.useState(2);
   const [facilities, setFacilities] = useState([]);
   const [clients, setClients] = useState({});
@@ -42,12 +51,13 @@ const BreadCrumbs = () => {
       try {
         setLoading(true);
         const { supabaseUrl } = getSupabaseConfig();
-        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&order=name.asc`, {
           method: 'GET',
           headers: {
             ...getSupabaseHeaders(),
             'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           }
         });
 
@@ -56,7 +66,9 @@ const BreadCrumbs = () => {
         }
 
         const facilitiesData = await response.json();
-        setFacilities(facilitiesData || []);
+        // Filter out any null or undefined facilities (safety check)
+        const validFacilities = (facilitiesData || []).filter(f => f && f.id && f.name);
+        setFacilities(validFacilities);
       } catch (error) {
         console.error('💥 Error loading facilities for breadcrumbs:', error);
         setFacilities([]);
@@ -66,7 +78,7 @@ const BreadCrumbs = () => {
     };
 
     loadFacilities();
-  }, []);
+  }, [location.pathname]); // Reload when route changes
 
   // Load client data when needed
   const loadClient = async (clientId) => {
@@ -191,6 +203,10 @@ const BreadCrumbs = () => {
             clientFacility = facility ? facility.name : `Facility ${facilityId}`;
           }
         } else {
+          // Check if clientSlug is a UUID (client ID)
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const isClientId = uuidRegex.test(clientSlug);
+          
           // For existing client, use cached client data or load it
           const client = clients[clientSlug];
           if (client) {
@@ -202,22 +218,36 @@ const BreadCrumbs = () => {
               facilityId = facility.id;
             }
           } else {
-            // Load client data asynchronously using the slug
-            loadClientBySlug(clientSlug).then(client => {
-              if (client) {
-                // Update the clients state to trigger re-render
-                setClients(prev => ({
-                  ...prev,
-                  [clientSlug]: client
-                }));
+            // Load client data asynchronously - use ID if it's a UUID, otherwise use slug
+            if (isClientId) {
+              // Load by client ID (UUID)
+              loadClient(clientSlug).then(client => {
+                if (client) {
+                  // Update the clients state to trigger re-render
+                  setClients(prev => ({
+                    ...prev,
+                    [clientSlug]: client
+                  }));
+                }
+              });
+            } else {
+              // Load by slug (name-based)
+              loadClientBySlug(clientSlug).then(client => {
+                if (client) {
+                  // Update the clients state to trigger re-render
+                  setClients(prev => ({
+                    ...prev,
+                    [clientSlug]: client
+                  }));
+                }
+              });
+              // Parse the slug to show a better name while loading
+              try {
+                const { firstName, lastName } = parseClientSlug(clientSlug);
+                clientName = `${firstName} ${lastName}`;
+              } catch (error) {
+                clientName = `Client ${clientSlug}`;
               }
-            });
-            // Parse the slug to show a better name while loading
-            try {
-              const { firstName, lastName } = parseClientSlug(clientSlug);
-              clientName = `${firstName} ${lastName}`;
-            } catch (error) {
-              clientName = `Client ${clientSlug}`;
             }
           }
         }
@@ -309,6 +339,7 @@ const BreadCrumbs = () => {
       inheritHeight
       className={classes.margin}
       bodyClass={classes.navPadding}
+      paperClass={breadcrumbClasses.transparentPaper}
     >
       <Grid
         container

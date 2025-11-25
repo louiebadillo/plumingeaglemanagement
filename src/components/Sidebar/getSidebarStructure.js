@@ -1,31 +1,32 @@
-import adminStructure from './SidebarStructureAdmin';
-import employeeStructure from './SidebarStructureEmployee';
+import { getAdminStructure } from './SidebarStructureAdmin';
+import { getEmployeeStructure } from './SidebarStructureEmployee';
 import { Settings as SettingsIcon } from '@mui/icons-material';
 
 /**
  * Get sidebar structure based on user role
  * @param {string} userRole - The role of the current user
  * @param {Array} facilities - Array of facilities from Supabase
+ * @param {number} draftCount - Number of draft reports for employees
  * @returns {Array} - The appropriate sidebar structure
  */
-export function getSidebarStructure(userRole, facilities = []) {
+export function getSidebarStructure(userRole, facilities = [], draftCount = 0) {
   let structure;
   
   switch (userRole) {
     case 'admin':
-      structure = [...adminStructure];
+      structure = [...getAdminStructure(draftCount)];
       break;
     case 'employee':
-      structure = [...employeeStructure];
+      structure = [...getEmployeeStructure(draftCount)];
       break;
     default:
-      structure = [...employeeStructure]; // Default to employee structure
+      structure = [...getEmployeeStructure(draftCount)]; // Default to employee structure
   }
 
-  // Find the facility menu item and update it with real facilities
-  const facilityMenuItem = structure.find(item => item.label === 'Facility');
-  if (facilityMenuItem && facilityMenuItem.children) {
-    if (userRole === 'admin') {
+  // Find the facility menu item and update it with real facilities (only for admins)
+  if (userRole === 'admin') {
+    const facilityMenuItem = structure.find(item => item.label === 'Facility');
+    if (facilityMenuItem && facilityMenuItem.children) {
       // Admin gets "Manage Facilities" + all facilities
       facilityMenuItem.children = [
         {
@@ -38,12 +39,6 @@ export function getSidebarStructure(userRole, facilities = []) {
           link: `/app/facility/${facility.id}`,
         }))
       ];
-    } else {
-      // Employee gets only the facilities they can access
-      facilityMenuItem.children = facilities.map(facility => ({
-        label: facility.name,
-        link: `/app/facility/${facility.id}`,
-      }));
     }
   }
 

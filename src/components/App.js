@@ -5,6 +5,7 @@ import { SnackbarProvider } from './Snackbar';
 
 // components
 import Layout from './Layout';
+import AutoLogout from './AutoLogout/AutoLogout';
 
 // pages
 import Error from '../pages/error';
@@ -27,29 +28,31 @@ function AppContent() {
   return (
     <>
       <SnackbarProvider>
-        <ConnectedRouter history={getHistory()}>
-          <Router history={getHistory()}>
-            <Switch>
-              <Route
-                exact
-                path='/'
-                render={() => <Redirect to='/app/dashboard' />}
-              />
+        <AutoLogout>
+          <ConnectedRouter history={getHistory()}>
+            <Router history={getHistory()}>
+              <Switch>
+                <Route
+                  exact
+                  path='/'
+                  render={() => <Redirect to='/app/dashboard' />}
+                />
 
-              <Route
-                exact
-                path='/app'
-                render={() => <Redirect to='/app/dashboard' />}
-              />
+                <Route
+                  exact
+                  path='/app'
+                  render={() => <Redirect to='/app/dashboard' />}
+                />
 
-                     <PrivateRoute path='/app' component={Layout} />
-                     <PublicRoute path='/login' component={Login} />
-                     <PublicRoute path='/logout' component={Logout} />
-                     <Redirect from='*' to='/app/dashboard' />
-              <Route component={Error} />
-            </Switch>
-          </Router>
-        </ConnectedRouter>
+                       <PrivateRoute path='/app' component={Layout} />
+                       <PublicRoute path='/login' component={Login} />
+                       <PublicRoute path='/logout' component={Logout} />
+                       <Redirect from='*' to='/app/dashboard' />
+                <Route component={Error} />
+              </Switch>
+            </Router>
+          </ConnectedRouter>
+        </AutoLogout>
       </SnackbarProvider>
     </>
   );

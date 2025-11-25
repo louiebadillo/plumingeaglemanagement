@@ -9,8 +9,7 @@ import {
 } from '@mui/icons-material';
 import classNames from 'classnames';
 
-//images
-import profile from '../../images/main-profile.png';
+//images - using default avatar instead
 import { getConfig } from '../../config/template';
 
 // styles
@@ -52,6 +51,7 @@ export default function Header(props) {
       setCurrentUser({
         firstName: userProfile.first_name || 'Admin',
         lastName: userProfile.last_name || 'User',
+        role: userProfile.role || 'employee',
         avatar: null
       });
     } else {
@@ -59,6 +59,7 @@ export default function Header(props) {
       setCurrentUser({
         firstName: 'Admin',
         lastName: 'User',
+        role: 'admin',
         avatar: null
       });
     }
@@ -156,12 +157,14 @@ export default function Header(props) {
               {currentUser?.firstName} {currentUser?.lastName}
             </Typography>
             <Typography
-              className={classes.profileMenuLink}
-              component='a'
-              color='primary'
-              href='https://flatlogic.com'
+              variant='body2'
+              style={{ 
+                textTransform: 'capitalize',
+                color: 'rgba(0, 0, 0, 0.6)',
+                marginTop: 4
+              }}
             >
-              Flatlogic.com
+              {currentUser?.role || 'employee'}
             </Typography>
           </div>
           <MenuItem
@@ -169,21 +172,14 @@ export default function Header(props) {
               classes.profileMenuItem,
               classes.headerMenuItem,
             )}
+            onClick={() => {
+              setProfileMenu(null);
+              signOut();
+            }}
           >
             <AccountIcon className={classes.profileMenuIcon} />
-            <Link to='/app/user/edit' style={{ textDecoration: 'none' }}>
-              Profile
-            </Link>
+            <Typography>Sign Out</Typography>
           </MenuItem>
-          <div className={classes.profileMenuUser}>
-            <Typography
-              className={classes.profileMenuLink}
-              color='primary'
-              onClick={() => signOut()}
-            >
-              Sign Out
-            </Typography>
-          </div>
         </Menu>
       </Toolbar>
     </AppBar>

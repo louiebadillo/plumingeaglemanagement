@@ -15,461 +15,357 @@ import {
   Chip,
   IconButton,
   Tooltip,
-  TextField,
-  InputAdornment,
-  Grid,
-  MenuItem
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import { 
-  Search as SearchIcon,
   Edit as EditIcon,
-  Visibility as ViewIcon,
   Assignment as ReportIcon,
-  Download as DownloadIcon
+  Save as SaveIcon,
+  AccessTime as DraftIcon
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
-import { getClientById } from '../../context/clientMock';
 import { useSupabase } from '../../context/SupabaseContext';
+import { getCurrentFacilityFromGeofencing } from '../../utils/geofencing';
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { getOperationalDate } from '../../utils/dateHelpers';
 
-// Mock reports data - in a real app, this would come from the database
-const mockReports = [
-  {
-    id: 1,
-    clientId: 1,
-    date: '2024-01-15',
-    shift: 'Morning',
-    staffMember: 'Current User',
-    status: 'incomplete',
-    lastSaved: '2024-01-15T10:30:00Z',
-    questionnaire: {
-      mood: 7,
-      behavior: 6,
-      sleep: 8,
-      appetite: 5,
-      social: 7,
-      physical: 6,
-      cognitive: 7,
-      emotional: 6
-    },
-    notes: 'Client had a good morning, participated in activities...',
-    incidents: '',
-    medications: 'Took morning medication as scheduled',
-    goalsProgress: 'Working on social interaction goals'
-  },
-  {
-    id: 2,
-    clientId: 2,
-    date: '2024-01-15',
-    shift: 'Afternoon',
-    staffMember: 'Current User',
-    status: 'submitted',
-    lastSaved: '2024-01-15T14:45:00Z',
-    questionnaire: {
-      mood: 8,
-      behavior: 7,
-      sleep: 6,
-      appetite: 8,
-      social: 9,
-      physical: 7,
-      cognitive: 8,
-      emotional: 7
-    },
-    notes: 'Excellent afternoon session, very engaged',
-    incidents: '',
-    medications: 'All medications taken on time',
-    goalsProgress: 'Great progress on communication goals'
-  },
-  {
-    id: 3,
-    clientId: 1,
-    date: '2024-01-14',
-    shift: 'Evening',
-    staffMember: 'Current User',
-    status: 'submitted',
-    lastSaved: '2024-01-14T22:15:00Z',
-    questionnaire: {
-      mood: 5,
-      behavior: 4,
-      sleep: 6,
-      appetite: 5,
-      social: 4,
-      physical: 5,
-      cognitive: 6,
-      emotional: 5
-    },
-    notes: 'Client seemed tired in the evening, less engaged',
-    incidents: 'Minor incident during dinner - became agitated',
-    medications: 'Evening medication taken',
-    goalsProgress: 'Some regression in social goals today'
-  },
-  // Reports from other employees
-  {
-    id: 4,
-    clientId: 2,
-    date: '2024-01-15',
-    shift: 'Morning',
-    staffMember: 'Sarah Johnson',
-    status: 'submitted',
-    lastSaved: '2024-01-15T08:30:00Z',
-    questionnaire: {
-      mood: 8,
-      behavior: 7,
-      sleep: 9,
-      appetite: 8,
-      social: 7,
-      physical: 8,
-      cognitive: 8,
-      emotional: 7
-    },
-    notes: 'Client had a great morning, very cooperative',
-    incidents: 'None',
-    medications: 'Morning medication taken on time',
-    goalsProgress: 'Excellent progress on communication goals'
-  },
-  {
-    id: 5,
-    clientId: 3,
-    date: '2024-01-15',
-    shift: 'Afternoon',
-    staffMember: 'Mike Chen',
-    status: 'submitted',
-    lastSaved: '2024-01-15T14:45:00Z',
-    questionnaire: {
-      mood: 6,
-      behavior: 5,
-      sleep: 7,
-      appetite: 6,
-      social: 5,
-      physical: 6,
-      cognitive: 7,
-      emotional: 6
-    },
-    notes: 'Client was somewhat withdrawn during activities',
-    incidents: 'Minor behavioral issue during group activity',
-    medications: 'Afternoon medication taken',
-    goalsProgress: 'Moderate progress on social interaction goals'
-  },
-  {
-    id: 6,
-    clientId: 1,
-    date: '2024-01-14',
-    shift: 'Morning',
-    staffMember: 'Emily Davis',
-    status: 'submitted',
-    lastSaved: '2024-01-14T09:15:00Z',
-    questionnaire: {
-      mood: 7,
-      behavior: 6,
-      sleep: 8,
-      appetite: 7,
-      social: 6,
-      physical: 7,
-      cognitive: 7,
-      emotional: 6
-    },
-    notes: 'Client was in good spirits, participated well in activities',
-    incidents: 'None',
-    medications: 'Morning medication taken',
-    goalsProgress: 'Good progress on daily living skills'
-  }
-];
 
 function MyReports() {
   const history = useHistory();
-  const location = useLocation();
-  const [reports, setReports] = useState(mockReports);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  
-  // Get current user role
-  const { userProfile } = useSupabase();
-  const userRole = userProfile?.role || 'employee';
-  const isAdmin = userRole === 'admin';
+  const { supabase, userProfile } = useSupabase();
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [currentFacilityId, setCurrentFacilityId] = useState(null);
 
-  // Load reports from localStorage on component mount
+  const currentUserId = userProfile?.id;
+  const isAdmin = userProfile?.role === 'admin';
+  const employeeFacilityId = userProfile?.facility_id; // Fallback facility from user profile
+
+  // Get current facility from geofencing (for employees)
   useEffect(() => {
-    const savedReports = JSON.parse(localStorage.getItem('dailyReports') || '[]');
-    if (savedReports.length > 0) {
-      setReports(prevReports => [...savedReports, ...prevReports]);
-    }
-  }, []);
+    const detectFacility = async () => {
+      if (isAdmin || !userProfile) {
+        setCurrentFacilityId(null);
+        return;
+      }
 
-  // Handle URL parameters for filtering
-  useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const statusParam = urlParams.get('status');
-    if (statusParam && ['all', 'submitted', 'incomplete'].includes(statusParam)) {
-      setStatusFilter(statusParam);
-    }
-  }, [location.search]);
-
-  const filteredReports = reports.filter(report => {
-    const client = getClientById(report.clientId);
-    const clientName = client ? `${client.firstName} ${client.lastName}` : 'Unknown Client';
-    
-    const matchesSearch = clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         report.shift.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         report.date.includes(searchTerm) ||
-                         report.staffMember.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
-    
-    // For admins: show all reports
-    // For employees: show only their own reports
-    const matchesUser = isAdmin || report.staffMember === 'Current User';
-    
-    return matchesSearch && matchesStatus && matchesUser;
-  });
-
-  const handleEditReport = (reportId) => {
-    const report = reports.find(r => r.id === reportId);
-    if (report) {
-      history.push(`/app/reports/create?clientId=${report.clientId}&edit=${reportId}`);
-    }
-  };
-
-  const handleViewReport = (reportId) => {
-    history.push(`/app/reports/view/${reportId}`);
-  };
-
-  const handleExportReport = (reportId) => {
-    const report = reports.find(r => r.id === reportId);
-    if (!report) return;
-
-    const client = getClientById(report.clientId);
-    const clientName = client ? `${client.firstName} ${client.lastName}` : 'Unknown Client';
-
-    // Create a comprehensive report document
-    const reportData = {
-      'Report ID': report.id,
-      'Date': new Date(report.date).toLocaleDateString(),
-      'Client': clientName,
-      'Staff Member': report.staffMember,
-      'Shift': report.shift,
-      'Status': getStatusLabel(report.status),
-      'Last Saved': new Date(report.lastSaved).toLocaleString(),
-      '': '', // Empty line for spacing
-      'Health Assessment (1-10 Scale)': '',
-      'Mood': report.questionnaire.mood,
-      'Behavior': report.questionnaire.behavior,
-      'Sleep Quality': report.questionnaire.sleep,
-      'Appetite': report.questionnaire.appetite,
-      'Social Interaction': report.questionnaire.social,
-      'Physical Health': report.questionnaire.physical,
-      'Cognitive Function': report.questionnaire.cognitive,
-      'Emotional State': report.questionnaire.emotional,
-      '': '', // Empty line for spacing
-      'Notes': report.notes || 'No notes provided',
-      'Incidents': report.incidents || 'No incidents reported',
-      'Medications': report.medications || 'No medication notes',
-      'Goals Progress': report.goalsProgress || 'No progress notes'
+      try {
+        // Get facility from geofencing (location-based detection)
+        let facilityId = await getCurrentFacilityFromGeofencing();
+        
+        // Fallback: If geofencing not implemented or employee not at a facility,
+        // use facility_id from user profile (temporary until geofencing is fully implemented)
+        if (!facilityId) {
+          facilityId = employeeFacilityId;
+        }
+        
+        setCurrentFacilityId(facilityId);
+        
+        if (!facilityId) {
+          console.warn('📍 No facility detected for employee');
+        } else {
+          console.log('📍 MyReports - Detected facility:', facilityId);
+        }
+      } catch (err) {
+        console.error('Error detecting facility:', err);
+        // Fallback to user profile facility
+        setCurrentFacilityId(employeeFacilityId);
+      }
     };
 
-    // Convert to CSV format
-    const csvContent = Object.entries(reportData)
-      .map(([key, value]) => `"${key}","${value}"`)
-      .join('\n');
+    detectFacility();
+  }, [userProfile, isAdmin, employeeFacilityId]);
 
-    // Create and download the file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Daily_Report_${clientName.replace(/\s+/g, '_')}_${report.date}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Fetch reports based on facility (for employees) or all reports (for admins)
+  useEffect(() => {
+    const fetchReports = async () => {
+      if (!userProfile) return;
+      
+      // For employees, wait for facility detection
+      if (!isAdmin && !currentFacilityId) {
+        return; // Wait for facility to be detected
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const { supabaseUrl } = getSupabaseConfig();
+        
+        // Get the current operational date (6 AM - 6 AM logic)
+        const operationalDate = getOperationalDate();
+        
+        // Build query URL
+        // For employees: filter by facility_id (geofenced facility) and operational date
+        // For admins: Show ALL draft reports (no date or facility filter)
+        let queryUrl;
+        if (!isAdmin && currentFacilityId) {
+          // Employee view: Filter by facility_id and operational date to show only today's in-progress reports for clients in the geofenced facility
+          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&facility_id=eq.${currentFacilityId}&report_date=eq.${operationalDate}&select=*,clients(first_name,last_name,room,facility_id),facilities(name)&order=report_date.desc`;
+        } else {
+          // Admin view: Show ALL draft reports across all dates and facilities
+          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&select=*,clients(first_name,last_name,room,facility_id),facilities(name)&order=report_date.desc,created_at.desc`;
+        }
+
+        const response = await fetch(queryUrl, {
+          method: 'GET',
+          headers: getSupabaseHeaders()
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('🔍 MyReports fetched data:', data);
+        console.log('🔍 Operational date filter:', operationalDate);
+        
+        // For employees: Additional filter to ensure only clients in the geofenced facility are shown
+        // Also ensure report_date matches operational date (double-check)
+        // For admins: No filtering - show all draft reports
+        let filteredData = data || [];
+        if (!isAdmin && currentFacilityId) {
+          filteredData = filteredData.filter(report => {
+            // Filter by client's facility_id to ensure only clients in the detected facility
+            const clientFacilityId = report.clients?.facility_id;
+            // Also ensure report_date matches operational date
+            const reportDate = report.report_date?.split('T')[0]; // Normalize date format
+            return clientFacilityId === currentFacilityId && reportDate === operationalDate;
+          });
+        }
+        // For admins: No filtering needed - show all draft reports
+        
+        setReports(filteredData);
+      } catch (err) {
+        console.error('Error fetching reports:', err);
+        setError('Failed to load reports.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchReports();
+  }, [userProfile, isAdmin, currentFacilityId]);
+
+  // Show all draft reports without filtering
+  const draftReports = reports;
+
+  const handleViewEditReport = (report) => {
+    const clientName = `${report.clients?.first_name || ''}-${report.clients?.last_name || ''}`.toLowerCase();
+    
+    // Use facility_id from report, or fallback to client's facility_id
+    const facilityId = report.facility_id || report.clients?.facility_id;
+    
+    if (!facilityId) {
+      console.error('❌ Cannot edit report: no facility_id available', report);
+      alert('Cannot edit this report: Facility information is missing. Please contact an administrator.');
+      return;
+    }
+    
+    const url = `/app/reports/daily-report?reportId=${report.id}&clientId=${report.client_id}&facility=${facilityId}&date=${report.report_date}`;
+    console.log('🔍 Navigating to:', url, 'Report data:', report, 'Using facilityId:', facilityId);
+    history.push(url);
+  };
+
+  const handleCreateNewReport = () => {
+    history.push('/app/facility');
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  const formatDateTime = (dateString) => {
+    return new Date(dateString).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Determine if report is "In Progress" (today's operational date) or "Past Due" (past operational date)
+  const getReportStatus = (report) => {
+    if (report.status !== 'draft') {
+      return { label: 'Submitted', color: 'success', icon: <ReportIcon /> };
+    }
+    
+    const operationalDate = getOperationalDate();
+    const reportDate = report.report_date?.split('T')[0]; // Normalize date format
+    
+    if (reportDate === operationalDate) {
+      // In Progress - today's operational date
+      return { label: 'In Progress', color: 'warning', icon: <SaveIcon /> };
+    } else {
+      // Past Due - from past operational dates
+      return { label: 'Past Due', color: 'error', icon: <SaveIcon /> };
+    }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'incomplete': return 'warning';
+      case 'draft': return 'warning';
       case 'submitted': return 'success';
       default: return 'default';
     }
   };
 
-  const getStatusLabel = (status) => {
+  const getStatusIcon = (status) => {
     switch (status) {
-      case 'incomplete': return 'Draft';
-      case 'submitted': return 'Submitted';
-      default: return status;
+      case 'draft': return <SaveIcon />;
+      default: return <ReportIcon />;
     }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+        <CircularProgress />
+        <Typography variant="h6" sx={{ ml: 2 }}>Loading your reports...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        {isAdmin ? 'All Daily Reports' : 'My Daily Reports'}
+        {isAdmin ? 'All In-Progress Reports' : 'In-Progress Reports'}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
         {isAdmin 
-          ? 'View and manage all daily reports submitted by staff members'
-          : 'View and manage your daily reports for clients'
-        }
+          ? 'View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.'
+          : currentFacilityId
+            ? 'Continue editing in-progress reports for clients in your current facility. Submit them when complete.'
+            : 'Loading facility information...'}
       </Typography>
+      
+      {!isAdmin && !currentFacilityId && !loading && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          Unable to detect your current facility. Please ensure you are at a facility location and that geofencing is configured. 
+          Reports will be shown once your facility is detected.
+        </Alert>
+      )}
 
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            placeholder={isAdmin 
-              ? "Search by client name, shift, date, or staff member"
-              : "Search by client name, shift, or date"
-            }
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6}>
-          <TextField
-            fullWidth
-            select
-            label="Filter by Status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+      {/* Create New Report Button - Only for employees */}
+      {!isAdmin && (
+        <Box sx={{ mb: 3 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleCreateNewReport}
+            startIcon={<ReportIcon />}
           >
-            <MenuItem value="all">All Reports</MenuItem>
-            <MenuItem value="incomplete">Drafts</MenuItem>
-            <MenuItem value="submitted">Submitted</MenuItem>
-          </TextField>
-        </Grid>
-      </Grid>
+            Create New Report
+          </Button>
+        </Box>
+      )}
 
+      {/* Draft Reports Table */}
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Reports ({filteredReports.length})
-          </Typography>
-          
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Client</TableCell>
-                  <TableCell>Shift</TableCell>
-                  {isAdmin && <TableCell>Staff Member</TableCell>}
-                  <TableCell>Status</TableCell>
-                  <TableCell>Last Saved</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredReports.length > 0 ? (
-                  filteredReports.map((report) => {
-                    const client = getClientById(report.clientId);
-                    const clientName = client ? `${client.firstName} ${client.lastName}` : 'Unknown Client';
-                    
-                    return (
-                      <TableRow key={report.id}>
-                        <TableCell>
-                          {new Date(report.date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <ReportIcon color="primary" />
-                            <Typography variant="subtitle2">
-                              {clientName}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>{report.shift}</TableCell>
-                        {isAdmin && (
-                          <TableCell>
-                            <Typography variant="body2">
-                              {report.staffMember}
-                            </Typography>
-                          </TableCell>
-                        )}
-                        <TableCell>
-                          <Chip 
-                            label={getStatusLabel(report.status)} 
+          {draftReports.length > 0 ? (
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Client Name</TableCell>
+                    <TableCell>Facility</TableCell>
+                    <TableCell>Report Date</TableCell>
+                    <TableCell>Last Saved</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {draftReports.map((report) => (
+                    <TableRow key={report.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight="medium">
+                          {report.clients?.first_name} {report.clients?.last_name}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          Room {report.clients?.room}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{report.facilities?.name}</TableCell>
+                      <TableCell>{formatDate(report.report_date)}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {formatDateTime(report.updated_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {isAdmin ? (
+                          <Chip
+                            icon={getReportStatus(report).icon}
+                            label={getReportStatus(report).label}
+                            color={getReportStatus(report).color}
+                            size="small"
+                          />
+                        ) : (
+                          <Chip
+                            icon={getStatusIcon(report.status)}
+                            label={report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                             color={getStatusColor(report.status)}
                             size="small"
                           />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="textSecondary">
-                            {new Date(report.lastSaved).toLocaleString()}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Box display="flex" gap={1}>
-                            {report.status === 'incomplete' ? (
-                              <Tooltip title="Continue Editing">
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleEditReport(report.id)}
-                                  color="primary"
-                                >
-                                  <EditIcon />
-                                </IconButton>
-                              </Tooltip>
-                            ) : (
-                              <>
-                                {isAdmin ? (
-                                  <Tooltip title="Edit Report (Admin)">
-                                    <IconButton 
-                                      size="small" 
-                                      onClick={() => handleEditReport(report.id)}
-                                      color="primary"
-                                    >
-                                      <EditIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                ) : (
-                                  <Tooltip title="View Report">
-                                    <IconButton 
-                                      size="small" 
-                                      onClick={() => handleViewReport(report.id)}
-                                      color="primary"
-                                    >
-                                      <ViewIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                )}
-                              </>
-                            )}
-                            {isAdmin && (
-                              <Tooltip title="Export Report">
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleExportReport(report.id)}
-                                  color="secondary"
-                                >
-                                  <DownloadIcon />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">
-                      <Typography variant="body2" color="textSecondary">
-                        {searchTerm || statusFilter !== 'all' 
-                          ? 'No reports found matching your criteria.' 
-                          : 'No reports found. Create your first report from a facility page.'}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip title="Continue Editing">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleViewEditReport(report)}
+                            color="primary"
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <DraftIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="textSecondary" gutterBottom>
+                No In-Progress Reports
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                {isAdmin 
+                  ? 'There are no draft reports across all facilities.'
+                  : currentFacilityId
+                    ? 'There are no in-progress reports for clients in your current facility. Create a new report to get started.'
+                    : 'No reports available.'}
+              </Typography>
+              {!isAdmin && (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleCreateNewReport}
+                  startIcon={<ReportIcon />}
+                >
+                  Create New Report
+                </Button>
+              )}
+            </Box>
+          )}
         </CardContent>
       </Card>
     </Box>

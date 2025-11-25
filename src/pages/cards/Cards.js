@@ -19,11 +19,11 @@ import {
 } from "@mui/icons-material";
 import useStyles from "./styles";
 
-//images
-import backImg from "../../images/cards/lifestyle.jpg";
-import isometricImg from "../../images/cards/isometric.jpg";
-import mountainsImg from "../../images/cards/mountains.jpeg";
-import rnsImg from "../../images/cards/rns.png";
+//images - placeholder since images were removed
+const backImg = "";
+const isometricImg = "";
+const mountainsImg = "";
+const rnsImg = "";
 
 // components
 import { Typography, Button, Link, Avatar } from "../../components/Wrappers";

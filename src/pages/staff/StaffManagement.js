@@ -39,6 +39,8 @@ import {
   VisibilityOff as HideIcon
 } from '@mui/icons-material';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import SuccessModal from '../../components/Modals/SuccessModal';
+import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 
 // Staff data is now loaded from Supabase
 
@@ -62,6 +64,11 @@ function StaffManagement() {
   const [formData, setFormData] = useState(initialFormData);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   
   // Debug: Log loading state changes
   useEffect(() => {
@@ -203,87 +210,102 @@ function StaffManagement() {
     setOpenDialog(true);
   };
 
-  const handleDeleteStaff = async (staffId) => {
-    if (window.confirm('Are you sure you want to delete this staff member? This action cannot be undone.')) {
-      try {
-        console.log('🗑️ Deleting staff member:', staffId);
-        
-        // Import Supabase Admin for deletion
-        const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
-        console.log('📦 SupabaseAdmin imported for deletion');
-        
-        // Delete from auth.users (this will cascade to public.users due to foreign key)
-        console.log('👤 Deleting user from auth.users:', staffId);
-        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(staffId);
-        
-        if (authError) {
-          console.error('❌ Auth user deletion failed:', authError);
-          alert('Error deleting user: ' + authError.message);
-          return;
-        }
-        
-        console.log('✅ User deleted from auth.users successfully');
-        
-        // Also explicitly delete from public.users table (in case cascade didn't work)
-        console.log('🗑️ Deleting user profile from public.users:', staffId);
-        const { error: profileError } = await supabaseAdmin
-          .from('users')
-          .delete()
-          .eq('id', staffId);
-        
-        if (profileError) {
-          console.warn('⚠️ Profile deletion failed (may have been cascaded):', profileError);
-          // Don't show error to user as the main deletion succeeded
-        } else {
-          console.log('✅ User profile deleted from public.users successfully');
-        }
-        
-        // Update local state immediately
-        const updatedStaff = staff.filter(member => member.id !== staffId);
-        setStaff(updatedStaff);
-        setRenderKey(prev => prev + 1); // Force table re-render
-        
-        console.log('🎉 Staff member deleted successfully!');
-        alert('Staff member deleted successfully from Supabase!');
-        
-        // Reload users from Supabase to confirm deletion
-        console.log('🔄 Reloading users after deletion...');
-        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
-          method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (reloadResponse.ok) {
-          const remainingUsers = await reloadResponse.json();
-          const transformedUsers = remainingUsers.map(user => ({
-            id: user.id,
-            firstName: user.first_name || '',
-            lastName: user.last_name || '',
-            email: user.email,
-            role: user.role,
-            phone: user.phone || '',
-            password: '***'
-          }));
-          setStaff(transformedUsers);
-          setRenderKey(prev => prev + 1);
-          console.log('✅ Users reloaded after deletion, count:', transformedUsers.length);
-        } else {
-          console.error('❌ Reload failed:', reloadResponse.status);
-        }
-        
-      } catch (error) {
-        console.error('💥 Delete operation failed with error:', error);
-        console.error('💥 Error details:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        });
-        alert('Error deleting staff member: ' + error.message);
+  const handleDeleteStaff = (staffMember) => {
+    setStaffToDelete(staffMember);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!staffToDelete) return;
+
+    try {
+      setDeleting(true);
+      console.log('🗑️ Deleting staff member:', staffToDelete.id);
+      
+      // Import Supabase Admin for deletion
+      const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
+      console.log('📦 SupabaseAdmin imported for deletion');
+      
+      // Delete from auth.users (this will cascade to public.users due to foreign key)
+      console.log('👤 Deleting user from auth.users:', staffToDelete.id);
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(staffToDelete.id);
+      
+      if (authError) {
+        console.error('❌ Auth user deletion failed:', authError);
+        alert('Error deleting user: ' + authError.message);
+        setDeleting(false);
+        return;
       }
+      
+      console.log('✅ User deleted from auth.users successfully');
+      
+      // Also explicitly delete from public.users table (in case cascade didn't work)
+      console.log('🗑️ Deleting user profile from public.users:', staffToDelete.id);
+      const { error: profileError } = await supabaseAdmin
+        .from('users')
+        .delete()
+        .eq('id', staffToDelete.id);
+      
+      if (profileError) {
+        console.warn('⚠️ Profile deletion failed (may have been cascaded):', profileError);
+        // Don't show error to user as the main deletion succeeded
+      } else {
+        console.log('✅ User profile deleted from public.users successfully');
+      }
+      
+      // Update local state immediately
+      const updatedStaff = staff.filter(member => member.id !== staffToDelete.id);
+      setStaff(updatedStaff);
+      setRenderKey(prev => prev + 1); // Force table re-render
+      
+      console.log('🎉 Staff member deleted successfully!');
+      
+      // Close delete dialog and show success
+      setDeleteDialogOpen(false);
+      const deletedName = `${staffToDelete.firstName} ${staffToDelete.lastName}`;
+      setStaffToDelete(null);
+      setSuccessMessage(`Staff member "${deletedName}" has been deleted successfully.`);
+      setSuccessModalOpen(true);
+      
+      // Reload users from Supabase to confirm deletion
+      console.log('🔄 Reloading users after deletion...');
+      const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+        method: 'GET',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (reloadResponse.ok) {
+        const remainingUsers = await reloadResponse.json();
+        const transformedUsers = remainingUsers.map(user => ({
+          id: user.id,
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
+          email: user.email,
+          role: user.role,
+          phone: user.phone || '',
+          password: '***'
+        }));
+        setStaff(transformedUsers);
+        setRenderKey(prev => prev + 1);
+        console.log('✅ Users reloaded after deletion, count:', transformedUsers.length);
+      } else {
+        console.error('❌ Reload failed:', reloadResponse.status);
+      }
+      
+    } catch (error) {
+      console.error('💥 Delete operation failed with error:', error);
+      console.error('💥 Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      alert('Error deleting staff member: ' + error.message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -372,9 +394,13 @@ function StaffManagement() {
         setStaff([...updatedStaff]); // Force re-render with new array reference
         setRenderKey(prev => prev + 1); // Force table re-render
         console.log('⏰ Local state updated at:', new Date().toISOString());
-        // Close dialog and clear submitting before reloading
+        // Close dialog and show success modal
         setOpenDialog(false);
         setSubmitting(false);
+        setEditingStaff(null);
+        setFormData(initialFormData);
+        setSuccessMessage(`Staff member "${formData.firstName} ${formData.lastName}" has been updated successfully.`);
+        setSuccessModalOpen(true);
  
         // Reload users from Supabase to get the latest data
         console.log('🔄 Reloading users after update...');
@@ -500,9 +526,12 @@ function StaffManagement() {
         console.log('✅ User profile created successfully:', profileData);
 
         console.log('🎉 Staff member created successfully!');
-        // Close dialog and clear submitting before reloading
+        // Close dialog and show success modal
         setOpenDialog(false);
         setSubmitting(false);
+        setFormData(initialFormData);
+        setSuccessMessage(`Staff member "${formData.firstName} ${formData.lastName}" has been created successfully.`);
+        setSuccessModalOpen(true);
         
         // Wait a moment for the database to process the changes
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -765,7 +794,7 @@ function StaffManagement() {
                           <Tooltip title="Delete Staff">
                             <IconButton 
                               size="small" 
-                              onClick={() => handleDeleteStaff(member.id)}
+                              onClick={() => handleDeleteStaff(member)}
                               color="error"
                             >
                               <DeleteIcon />
@@ -934,9 +963,32 @@ function StaffManagement() {
             {submitting ? 'Saving...' : (editingStaff ? 'Update' : 'Create')} Staff Member
           </Button>
         </DialogActions>
-      </Dialog>
-    </Box>
-  );
-}
+        </Dialog>
 
-export default StaffManagement;
+        {/* Success Modal */}
+        <SuccessModal
+          open={successModalOpen}
+          onClose={() => setSuccessModalOpen(false)}
+          title="Success!"
+          message={successMessage}
+        />
+
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmModal
+          open={deleteDialogOpen}
+          onClose={() => {
+            setDeleteDialogOpen(false);
+            setStaffToDelete(null);
+          }}
+          onConfirm={handleConfirmDelete}
+          title="Delete Staff Member"
+          itemName={staffToDelete ? `${staffToDelete.firstName} ${staffToDelete.lastName}` : ''}
+          message={`Are you sure you want to delete the staff member "${staffToDelete ? `${staffToDelete.firstName} ${staffToDelete.lastName}` : ''}"?`}
+          warningMessage="This action cannot be undone. The staff member will be permanently removed from the system."
+          loading={deleting}
+        />
+      </Box>
+    );
+  }
+  
+  export default StaffManagement;

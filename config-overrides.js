@@ -27,5 +27,24 @@ module.exports = function override(config) {
       fullySpecified: false,
     },
   });
+  
+  // Suppress ResizeObserver runtime errors in webpack-dev-server overlay
+  if (config.devServer) {
+    config.devServer.client = config.devServer.client || {};
+    config.devServer.client.overlay = {
+      errors: true, // Show critical errors
+      warnings: false, // Suppress warnings
+      runtimeErrors: (error) => {
+        // Filter out ResizeObserver errors
+        const errorMessage = error?.message?.toString() || error?.toString() || '';
+        if (errorMessage.includes('ResizeObserver loop') || 
+            errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
+          return false; // Don't show in overlay
+        }
+        return true; // Show other runtime errors
+      },
+    };
+  }
+  
   return config;
 };

@@ -70,16 +70,6 @@ CREATE TABLE daily_reports (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create announcements table
-CREATE TABLE announcements (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    content TEXT NOT NULL,
-    author_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    is_urgent BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
 
 -- Create indexes for better performance
 CREATE INDEX idx_clients_facility_id ON clients(facility_id);
@@ -90,14 +80,12 @@ CREATE INDEX idx_users_facility_id ON public.users(facility_id);
 CREATE INDEX idx_daily_reports_client_id ON daily_reports(client_id);
 CREATE INDEX idx_daily_reports_staff_id ON daily_reports(staff_member_id);
 CREATE INDEX idx_daily_reports_date ON daily_reports(report_date);
-CREATE INDEX idx_announcements_author_id ON announcements(author_id);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE facilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for facilities (admin only)
 CREATE POLICY "Admins can view all facilities" ON facilities
@@ -195,17 +183,6 @@ CREATE POLICY "Admins can manage all reports" ON daily_reports
         )
     );
 
--- RLS Policies for announcements
-CREATE POLICY "All authenticated users can view announcements" ON announcements
-    FOR SELECT USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Admins can manage announcements" ON announcements
-    FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM public.users 
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
 
 -- Create function to handle new user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

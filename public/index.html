@@ -8,7 +8,7 @@
     />
     <meta
       name="description"
-      content="React Material Admin Full"
+      content="PEL Client Management Software"
     />
     <meta name="theme-color" content="#000000" />
     <meta name="referrer" content="no-referrer-when-downgrade" />
@@ -16,11 +16,9 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap"
     />
-    <link rel="icon" href="favicon.png" sizes="16x16" type="image/png">
-    <link rel="icon" href="favicon.png" sizes="32x32" type="image/png">
-    <link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
-    <link rel="icon" href="favicon.png" sizes="62x62" type="image/png">
-    <link rel="icon" href="favicon.png" sizes="80x80" type="image/png">
+    <link rel="icon" href="%PUBLIC_URL%/pellogofinal.png" type="image/png">
+    <link rel="shortcut icon" href="%PUBLIC_URL%/pellogofinal.png" type="image/png">
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/pellogofinal.png">
     <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
@@ -35,7 +33,72 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React Material Admin Full</title>
+    <title>PEL Client Management Software</title>
+    <script>
+      // Suppress ResizeObserver errors before React loads
+      (function() {
+        const originalError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          const errorMessage = message?.toString() || error?.message?.toString() || '';
+          if (errorMessage.includes('ResizeObserver loop') || 
+              errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
+            return true; // Suppress ResizeObserver errors
+          }
+          if (originalError) {
+            return originalError(message, source, lineno, colno, error);
+          }
+          return false;
+        };
+
+        // Suppress unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+          const errorMessage = event.reason?.message?.toString() || event.reason?.toString() || '';
+          if (errorMessage.includes('ResizeObserver loop') || 
+              errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
+            event.preventDefault();
+          }
+        });
+
+        // Suppress error events
+        window.addEventListener('error', function(event) {
+          const errorMessage = event.message?.toString() || event.error?.message?.toString() || '';
+          if (errorMessage.includes('ResizeObserver loop') || 
+              errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+
+        // Intercept React error overlay hook when it's created
+        // Use a polling approach to catch the hook when it's set up
+        const checkAndInterceptHook = function() {
+          if (window.__REACT_ERROR_OVERLAY_GLOBAL_HOOK__) {
+            const hook = window.__REACT_ERROR_OVERLAY_GLOBAL_HOOK__;
+            if (hook.onError && !hook._resizeObserverSuppressed) {
+              const originalOnError = hook.onError;
+              hook.onError = function(error) {
+                const errorMessage = error?.message?.toString() || error?.toString() || '';
+                if (errorMessage.includes('ResizeObserver loop') || 
+                    errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
+                  return; // Suppress ResizeObserver errors
+                }
+                if (originalOnError) {
+                  return originalOnError(error);
+                }
+              };
+              hook._resizeObserverSuppressed = true;
+            }
+          } else {
+            // Keep checking until the hook is available
+            setTimeout(checkAndInterceptHook, 100);
+          }
+        };
+        // Start checking immediately and after a delay
+        checkAndInterceptHook();
+        setTimeout(checkAndInterceptHook, 500);
+        setTimeout(checkAndInterceptHook, 1000);
+      })();
+    </script>
   </head>
   <body style="font-family: 'Roboto', sans-serif">
     <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Route, Switch, withRouter } from 'react-router-dom';
+import { Route, Switch, withRouter, Redirect as RouterRedirect } from 'react-router-dom';
 import classnames from 'classnames';
 
 
@@ -16,67 +16,30 @@ import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfi
 
 import EditUser from '../../pages/user/EditUser';
 import ClientProfile from '../../pages/client/ClientProfile';
+import ClientMasterlist from '../../pages/client/ClientMasterlist';
+import ClientFiles from '../../pages/client/ClientFiles';
 
 // pages
 import Dashboard from '../../pages/dashboard';
 import FacilityPage from '../../pages/facility/FacilityPage';
 import FacilityManagement from '../../pages/facility/FacilityManagement';
 import CreateReport from '../../pages/reports/CreateReport';
+import DailyReportForm from '../../pages/reports/DailyReportForm';
 import MyReports from '../../pages/reports/MyReports';
+import AdminReports from '../../pages/reports/AdminReports';
+import ProgressReport from '../../pages/reports/ProgressReport';
 import StaffManagement from '../../pages/staff/StaffManagement';
-import AnnouncementsManagement from '../../pages/announcements/AnnouncementsManagement';
-import TypographyPage from '../../pages/typography'
-import ColorsPage from '../../pages/colors'
-import GridPage from '../../pages/grid'
-
-import StaticTablesPage from '../../pages/tables'
-import DynamicTablesPage from '../../pages/tables/dynamic'
-
-import IconsPage from '../../pages/icons'
-import BadgesPage from '../../pages/badge'
-import CarouselsPage from '../../pages/carousel'
-import CardsPage from '../../pages/cards'
-import ModalsPage from '../../pages/modal'
-import NotificationsPage from '../../pages/notifications'
-import NavbarsPage from '../../pages/nav'
-import TooltipsPage from '../../pages/tooltips'
-import TabsPage from '../../pages/tabs'
-import ProgressPage from '../../pages/progress'
-import WidgetsPage from '../../pages/widget'
-
-import Ecommerce from '../../pages/ecommerce'
-import Product from '../../pages/ecommerce/Products'
-import ProductsGrid from '../../pages/ecommerce/ProductsGrid'
-import CreateProduct from '../../pages/ecommerce/CreateProduct'
-
-import FormsElements from '../../pages/forms/elements'
-import FormValidation from '../../pages/forms/validation'
-
-import Charts from '../../pages/charts'
-import LineCharts from '../../pages/charts/LineCharts'
-import BarCharts from '../../pages/charts/BarCharts'
-import PieCharts from '../../pages/charts/PieCharts'
-
-import DraggableGrid from '../../pages/draggablegrid'
-
-import MapsGoogle from '../../pages/maps'
-import VectorMaps from '../../pages/maps/VectorMap'
-
-import Timeline from '../../pages/timeline'
-import Search from '../../pages/search'
-import Gallery from '../../pages/gallery'
-import Invoice from '../../pages/invoice'
-import Calendar from '../../pages/calendar'
+// Template pages removed - not in use
 
 import BreadCrumbs from '../../components/BreadCrumbs';
 
 // context
 import { useLayoutState } from '../../context/LayoutContext';
-import { ProductsProvider } from '../../context/ProductContext'
 import { useSupabase } from '../../context/SupabaseContext';
 
 //Sidebar structure
-import { getSidebarStructure } from '../Sidebar/getSidebarStructure'
+import { getSidebarStructure } from '../Sidebar/getSidebarStructure';
+import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 
 const Redirect = (props) => {
   useEffect(() => window.location.replace(props.url));
@@ -90,30 +53,38 @@ function Layout(props) {
   let layoutState = useLayoutState();
   const { userProfile } = useSupabase();
   const [facilities, setFacilities] = useState([]);
+  const { draftCount } = useDraftReportsCount();
   
   // Load facilities from Supabase
+  // Reload when navigating to/from facility management (to refresh after deletions)
+  // Also listen for custom events when facilities are modified
   useEffect(() => {
     const loadFacilities = async () => {
       try {
         console.log('🔄 Loading facilities for sidebar...');
         
-               const { supabaseUrl } = getSupabaseConfig();
-               const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
-                 method: 'GET',
-                 headers: {
-                   ...getSupabaseHeaders(),
-                   'Content-Type': 'application/json',
-                   'Cache-Control': 'no-cache'
-                 }
-               });
+        const { supabaseUrl } = getSupabaseConfig();
+        // Only fetch active facilities (exclude any that might have a status field indicating deletion)
+        // Since facilities are hard-deleted, this should only return existing facilities
+        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&order=name.asc`, {
+          method: 'GET',
+          headers: {
+            ...getSupabaseHeaders(),
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const facilitiesData = await response.json();
-        console.log('✅ Loaded facilities for sidebar:', facilitiesData);
-        setFacilities(facilitiesData || []);
+        // Filter out any null or undefined facilities (safety check)
+        const validFacilities = (facilitiesData || []).filter(f => f && f.id && f.name);
+        console.log('✅ Loaded facilities for sidebar:', validFacilities);
+        setFacilities(validFacilities);
       } catch (error) {
         console.error('💥 Error loading facilities for sidebar:', error);
         setFacilities([]);
@@ -121,13 +92,25 @@ function Layout(props) {
     };
 
     loadFacilities();
-  }, []);
+
+    // Listen for facility changes (when facilities are added/deleted/updated)
+    const handleFacilitiesChanged = () => {
+      console.log('🔄 Facilities changed event detected, reloading...');
+      loadFacilities();
+    };
+
+    window.addEventListener('facilitiesChanged', handleFacilitiesChanged);
+
+    return () => {
+      window.removeEventListener('facilitiesChanged', handleFacilitiesChanged);
+    };
+  }, [props.location?.pathname]); // Reload when route changes (especially after facility management actions)
   
   // Get sidebar structure based on user role from Supabase
   const userRole = userProfile?.role || 'employee'; // Default to employee if no role
-  const sidebarStructure = getSidebarStructure(userRole, facilities);
+  const sidebarStructure = getSidebarStructure(userRole, facilities, draftCount);
   
-  console.log('🔍 Layout - User role:', userRole, 'Profile:', userProfile, 'Facilities:', facilities);
+  console.log('🔍 Layout - User role:', userRole, 'Profile:', userProfile, 'Facilities:', facilities, 'Draft count:', draftCount);
 
   return (
     <div className={classes.root}>
@@ -148,72 +131,41 @@ function Layout(props) {
           <Route path="/app/facility/:facilityId" component={FacilityPage} />
 
           {/* Daily Reports Routes */}
+          <Route exact path="/app/reports" render={() => {
+            // Redirect based on user role
+            if (userRole === 'admin') {
+              return <RouterRedirect to="/app/reports/admin-reports" />;
+            } else {
+              return <RouterRedirect to="/app/reports/my-reports" />;
+            }
+          }} />
           <Route path="/app/reports/create" component={CreateReport} />
+          <Route path="/app/reports/daily-report" component={DailyReportForm} />
           <Route path="/app/reports/my-reports" component={MyReports} />
+          <Route path="/app/reports/admin-reports" component={AdminReports} />
+          <Route path="/app/reports/progress" component={ProgressReport} />
 
           {/* Staff Management Routes */}
           <Route path="/app/staff/management" component={StaffManagement} />
 
-          {/* Announcements Management Routes */}
-          <Route path="/app/announcements/management" component={AnnouncementsManagement} />
+          {/* Client Management Routes */}
+          <Route path="/app/client-masterlist" component={ClientMasterlist} />
+          <Route path="/app/client/:clientId/files" component={ClientFiles} />
 
-          <Route exact path="/app/core" render={() => <Redirect to="/app/core/typography" />} />
-          <Route path="/app/core/typography" component={TypographyPage} />
-          <Route path="/app/core/colors" component={ColorsPage} />
-          <Route path="/app/core/grid" component={GridPage} />
 
-          <Route exact path="/app/tables" render={() => <Redirect to={'/app/tables/static'} />} />
-          <Route path="/app/tables/static" component={StaticTablesPage} />
-          <Route path="/app/tables/dynamic" component={DynamicTablesPage} />
-
-          <Route exact path="/app/ui" render={() => <Redirect to="/app/ui/icons" />} />
-          <Route path="/app/ui/icons" component={IconsPage} />
-          <Route path="/app/ui/badge" component={BadgesPage} />
-          <Route path="/app/ui/carousel" component={CarouselsPage} />
-          <Route path="/app/ui/modal" component={ModalsPage} />
-          <Route path="/app/ui/navbar" component={NavbarsPage} />
-          <Route path="/app/ui/tooltips" component={TooltipsPage} />
-          <Route path="/app/ui/tabs" component={TabsPage} />
-          <Route path="/app/ui/cards" component={CardsPage} />
-          <Route path="/app/ui/widget" component={WidgetsPage} />
-          <Route path="/app/ui/progress" component={ProgressPage} />
-          <Route path="/app/ui/notifications" component={NotificationsPage} />
-
-          <Route exact path="/app/forms" render={() => <Redirect to="/app/forms/elements" />} />
-          <Route path="/app/forms/elements" component={FormsElements} />
-          <Route path="/app/forms/validation" component={FormValidation} />
-
-          <Route exact path="/app/charts" render={() => <Redirect to={'/app/charts/overview'} />} />
-          <Route path="/app/charts/overview" component={Charts} />
-          <Route path="/app/charts/line" component={LineCharts} />
-          <Route path="/app/charts/bar" component={BarCharts} />
-          <Route path="/app/charts/pie" component={PieCharts} />
-
-          <Route path="/app/grid" component={DraggableGrid} />
-
-          <Route exact path="/app/maps" render={() => <Redirect to="/app/maps/google" />} />
-          <Route path="/app/maps/google" component={MapsGoogle} />
-          <Route path="/app/maps/vector" component={VectorMaps} />
-
-          <Route exact path="/app/extra" render={() => <Redirect to="/app/extra/timeline" />}/>
-          <Route path="/app/extra/timeline" component={Timeline} />
-          <Route path="/app/extra/search" component={Search} />
-          <Route path="/app/extra/gallery" component={Gallery} />
-          <Route path="/app/extra/invoice" component={Invoice} />
-          <Route path="/app/extra/calendar" component={Calendar} />
+          {/* Template pages removed - not in use */}
 
           <Route exact path="/app/facility" render={() => {
             // Redirect to the first available facility, or facility management if none exist
             if (facilities && facilities.length > 0) {
-              return <Redirect to={`/app/facility/${facilities[0].id}`} />;
+              return <RouterRedirect to={`/app/facility/${facilities[0].id}`} />;
             } else {
-              return <Redirect to="/app/facility/management" />;
+              return <RouterRedirect to="/app/facility/management" />;
             }
           }} />
 
+          <Route exact path="/app/client/new" component={ClientProfile} />
           <Route path="/app/client/:clientSlug" component={ClientProfile} />
-          <Route path="/app/client/:clientSlug/edit" component={ClientProfile} />
-          <Route path="/app/client/new" component={ClientProfile} />
 
         </Switch>
       </div>

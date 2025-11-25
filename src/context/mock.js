@@ -1,56 +1,28 @@
-// Mock users with different roles
+// Mock data for development/testing
+// This file provides mock user data when needed
+
+export const mockUser = {
+  id: 'mock-user-id',
+  email: 'mock@example.com',
+  first_name: 'Mock',
+  last_name: 'User',
+  role: 'admin'
+};
+
 export const mockUsers = {
   admin: {
-    avatars: [],
-    id: '98cea92c-84e5-4c0d-ac21-9998f4b23883',
-    firstName: 'Admin',
-    authenticationUid: null,
-    avatar: null,
-    createdAt: '2020-05-12T11:04:00.864Z',
-    createdById: null,
-    deletedAt: null,
-    disabled: false,
-    email: 'admin@plumingeagle.com',
-    emailVerificationToken: null,
-    emailVerificationTokenExpiresAt: null,
-    emailVerified: true,
-    importHash: null,
-    lastName: 'User',
-    password: 'admin123',
-    passwordResetToken: null,
-    passwordResetTokenExpiresAt: null,
-    phoneNumber: '+1-555-0101',
-    provider: 'local',
-    role: 'admin',
-    updatedAt: '2020-05-12T11:04:00.864Z',
-    updatedById: null,
+    id: 'mock-admin-id',
+    email: 'admin@example.com',
+    first_name: 'Admin',
+    last_name: 'User',
+    role: 'admin'
   },
   employee: {
-    avatars: [],
-    id: '88cea92c-84e5-4c0d-ac21-9998f4b23884',
-    firstName: 'Sarah',
-    authenticationUid: null,
-    avatar: null,
-    createdAt: '2020-05-12T11:04:00.864Z',
-    createdById: null,
-    deletedAt: null,
-    disabled: false,
-    email: 'sarah@healthcare.com',
-    emailVerificationToken: null,
-    emailVerificationTokenExpiresAt: null,
-    emailVerified: true,
-    importHash: null,
-    lastName: 'Johnson',
-    password: 'employee123',
-    passwordResetToken: null,
-    passwordResetTokenExpiresAt: null,
-    phoneNumber: '+1-555-0102',
-    provider: 'local',
-    role: 'employee',
-    updatedAt: '2020-05-12T11:04:00.864Z',
-    updatedById: null,
+    id: 'mock-employee-id',
+    email: 'employee@example.com',
+    first_name: 'Employee',
+    last_name: 'User',
+    role: 'employee'
   }
 };
 
-// Default user (for backward compatibility)
-export const mockUser = mockUsers.admin;

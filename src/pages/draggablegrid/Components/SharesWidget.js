@@ -3,10 +3,11 @@ import { withStyles } from '@mui/styles';
 
 import Dot from '../../../components/Dot/Dot';
 
-import a1 from '../../../images/grid/a1.jpg';
-import a2 from '../../../images/grid/a2.jpg';
-import a3 from '../../../images/grid/a3.jpg';
-import a4 from '../../../images/grid/a4.jpg';
+//images - placeholder since images were removed
+const a1 = "";
+const a2 = "";
+const a3 = "";
+const a4 = "";
 
 
 const styles = (theme) => ({

@@ -1,46 +1,23 @@
 import React from 'react';
 import {
-  Home as HomeIcon,
-  Person as PersonIcon,
   AccountCircle as ProfileIcon,
-  ShoppingCart as ShoppingCartIcon,
   Assignment as AssignmentIcon,
-  Business as BuildingIcon,
   Logout as LogoutIcon
 } from '@mui/icons-material';
+import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 
 // components
 import Dot from './components/Dot';
 
 // Employee sidebar structure - Limited access
-const employeeStructure = [
+const getEmployeeStructure = (draftCount) => [
   { id: 0, label: 'Dashboard', link: '/app/dashboard', icon: <ProfileIcon /> },
   {
     id: 1,
-    label: 'Facility',
-    link: '/app/facility',
-    icon: <BuildingIcon />,
-    children: [
-      {
-        label: 'Facility A',
-        link: '/app/facility/facility-a',
-      },
-      {
-        label: 'Facility B',
-        link: '/app/facility/facility-b',
-      },
-      {
-        label: 'Facility C',
-        link: '/app/facility/facility-c',
-      },
-    ],
-  },
-  {
-    id: 2,
     label: 'Daily Reports',
     link: '/app/reports',
     icon: <AssignmentIcon />,
-    badge: '3',
+    badge: draftCount > 0 ? draftCount.toString() : null,
     badgeColor: 'warning',
     children: [
       {
@@ -49,9 +26,9 @@ const employeeStructure = [
       },
     ],
   },
-  { id: 3, type: 'divider' },
+  { id: 2, type: 'divider' },
   {
-    id: 4,
+    id: 3,
     label: 'Logout',
     click: function(...rest) {
       const name = 'onLogout'
@@ -66,4 +43,11 @@ const employeeStructure = [
   },
 ];
 
-export default employeeStructure;
+// Hook-based component for dynamic sidebar
+const EmployeeSidebarStructure = () => {
+  const { draftCount } = useDraftReportsCount();
+  return getEmployeeStructure(draftCount);
+};
+
+export { getEmployeeStructure };
+export default EmployeeSidebarStructure;

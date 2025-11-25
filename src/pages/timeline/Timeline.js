@@ -17,13 +17,13 @@ import {
 } from "@mui/icons-material";
 import useStyles from "./styles";
 
-//images
-import img1 from "../../images/timeline/a2.jpg";
-import img2 from "../../images/timeline/a3.jpg";
-import img3 from "../../images/timeline/profile.jpg";
-import img4 from "../../images/timeline/a4.jpg";
-import img5 from "../../images/timeline/a1.jpg";
-import mountains from "../../images/timeline/mountains.jpeg";
+//images - placeholder since images were removed
+const img1 = "";
+const img2 = "";
+const img3 = "";
+const img4 = "";
+const img5 = "";
+const mountains = "";
 
 //components
 import { Typography, Avatar, Link, Button } from "../../components/Wrappers";

@@ -7,11 +7,36 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
+    // Suppress ResizeObserver errors and React 19 deprecation warnings - don't show error boundary for these
+    const errorMessage = error?.message?.toString() || error?.toString() || '';
+    const errorStack = error?.stack?.toString() || '';
+    const fullErrorText = errorMessage + ' ' + errorStack;
+    
+    if (fullErrorText.includes('ResizeObserver loop') || 
+        fullErrorText.includes('ResizeObserver loop completed with undelivered notifications') ||
+        fullErrorText.includes('Accessing element.ref was removed in React 19') ||
+        fullErrorText.includes('ref is now a regular prop')) {
+      // Don't update state for ResizeObserver errors or React 19 deprecation warnings - just return null to ignore
+      return null;
+    }
     // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
+    // Suppress ResizeObserver errors and React 19 deprecation warnings - don't log these
+    const errorMessage = error?.message?.toString() || error?.toString() || '';
+    const errorStack = error?.stack?.toString() || '';
+    const componentStack = errorInfo?.componentStack?.toString() || '';
+    const fullErrorText = errorMessage + ' ' + errorStack + ' ' + componentStack;
+    
+    if (fullErrorText.includes('ResizeObserver loop') || 
+        fullErrorText.includes('ResizeObserver loop completed with undelivered notifications') ||
+        fullErrorText.includes('Accessing element.ref was removed in React 19') ||
+        fullErrorText.includes('ref is now a regular prop')) {
+      // Don't log ResizeObserver errors or React 19 deprecation warnings
+      return;
+    }
     // Log the error to console
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }

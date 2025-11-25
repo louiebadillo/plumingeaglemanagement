@@ -13,6 +13,21 @@ export default makeStyles((theme) => ({
     width: `calc(100vw - 240px)`,
     minHeight: '100vh',
     paddingBottom: 70,
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      left: '-35px', // Extend to cover the left margin
+      right: '-35px', // Extend to cover the right margin
+      bottom: 0,
+      backgroundImage: 'url(/images/bg1-1.jpg)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundAttachment: 'fixed',
+      zIndex: -1,
+      margin: 0,
+    },
   },
   contentShift: {
     width: `calc(100vw - (240px + ${theme.spacing(8)}))`,
@@ -52,6 +67,6 @@ export default makeStyles((theme) => ({
   },
   date: {
     marginRight: 38,
-    color: theme.palette.type === 'dark' ? '#D6D6D6' : '#4A494A',
+    color: '#4A494A',
   },
 }));

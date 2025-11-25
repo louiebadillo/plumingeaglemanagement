@@ -11,16 +11,14 @@ import { withRouter } from 'react-router-dom';
 // styles
 import useStyles from './styles';
 
-// logo
-import logo from '../../images/pellogo.png';
+// logo - using public path
+const logo = '/pellogofinal.png';
 
 // context
 import { useSupabase } from '../../context/SupabaseContext';
 
 //components
 import { Button } from '../../components/Wrappers';
-import Widget from '../../components/Widget';
-import config from '../../config';
 import { getConfig } from '../../config/template';
 
 
@@ -46,7 +44,6 @@ function Login(props) {
   let [error, setError] = useState(null);
   let [loginValue, setLoginValue] = useState(getConfig('AUTH.DEFAULT_EMAIL') || 'admin@plumingeagle.com');
   let [passwordValue, setPasswordValue] = useState(getConfig('AUTH.DEFAULT_PASSWORD') || 'admin123');
-  let [forgotEmail, setForgotEmail] = useState('');
   let [isForgot, setIsForgot] = useState(false);
 
   let isLoginFormValid = () => {
@@ -97,51 +94,33 @@ function Login(props) {
         <div className={classes.form}>
           {isForgot ? (
             <div>
-              <Input
-                id='password'
-                InputProps={{
-                  classes: {
-                    underline: classes.InputUnderline,
-                    input: classes.Input,
-                  },
+              <div className={classes.logoMessageContainer}>
+                <img src={logo} alt='logo' className={classes.formLogo} />
+                <Typography variant='h4' className={classes.signInMessage}>
+                  Forgot Password
+                </Typography>
+              </div>
+              <Typography
+                variant='body1'
+                style={{
+                  textAlign: 'center',
+                  marginTop: 32,
+                  marginBottom: 32,
+                  padding: '16px',
+                  backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                  borderRadius: 4,
+                  color: 'rgba(0, 0, 0, 0.87)'
                 }}
-                value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
-                margin='normal'
-                placeholder='Email'
-                type='Email'
-                fullWidth
-              />
+              >
+                Please notify an admin or supervisor to change your password. Thank you.
+              </Typography>
               <div className={classes.formButtons}>
-                {isLoading ? (
-                  <CircularProgress size={26} className={classes.loginLoader} />
-                ) : (
-                  <Button
-                    disabled={forgotEmail.length === 0}
-                    onClick={async () => {
-                      try {
-                        const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail);
-                        if (error) {
-                          setError(error.message);
-                        } else {
-                          setError('Password reset email sent!');
-                        }
-                      } catch (error) {
-                        setError('Failed to send password reset email');
-                      }
-                    }}
-                    variant='contained'
-                    color='primary'
-                    size='large'
-                  >
-                    Send
-                  </Button>
-                )}
                 <Button
                   color='primary'
                   size='large'
                   onClick={() => setIsForgot(!isForgot)}
-                  className={classes.forgetButton}
+                  variant='contained'
+                  fullWidth
                 >
                   Back to login
                 </Button>
@@ -150,26 +129,6 @@ function Login(props) {
           ) : (
             <>
               <React.Fragment>
-                  {config.isBackend ? (
-                    <Widget
-                      disableWidgetMenu
-                      inheritHeight
-                      style={{ marginTop: 32 }}
-                    >
-                      <Typography
-                        variant={'body2'}
-                        component="div"
-                        style={{ textAlign: 'center' }}
-                      >
-                        Healthcare Management System - use
-                        <Typography variant={'body2'} weight={'bold'}>
-                          "admin@plumingeagle.com / admin123"
-                        </Typography>{' '}
-                        to login!
-                      </Typography>
-                    </Widget>
-                  ) : null}
-                  
                   {/* Logo and Sign-in Message Section */}
                   <div className={classes.logoMessageContainer}>
                     <img src={logo} alt='logo' className={classes.formLogo} />

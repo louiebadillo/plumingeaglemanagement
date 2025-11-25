@@ -1,5 +1,5 @@
 {
-  "buildCommand": "yarn run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "build",
   "rewrites": [
     {

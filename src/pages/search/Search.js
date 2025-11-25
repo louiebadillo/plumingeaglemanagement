@@ -19,11 +19,11 @@ import {
 } from "@mui/icons-material";
 import useStyles from "./styles";
 
-//images
-import img1 from "../../images/search/img1.jpg";
-import img2 from "../../images/search/img2.jpg";
-import img3 from "../../images/search/img3.jpg";
-import img4 from "../../images/search/img4.jpg";
+//images - placeholder since images were removed
+const img1 = "";
+const img2 = "";
+const img3 = "";
+const img4 = "";
 
 //components
 import { Typography, Button, Link, Chip } from "../../components/Wrappers";

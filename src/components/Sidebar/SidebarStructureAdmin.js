@@ -1,32 +1,20 @@
 import React from 'react';
 import {
-  Home as HomeIcon,
-  FilterNone as UIElementsIcon,
-  BorderAll as TableIcon,
-  LibraryBooks as LibraryIcon,
-  BarChart as ChartIcon,
-  Map as MapIcon,
-  Apps as CoreIcon,
-  Description as DescriptionIcon,
-  ShoppingCart as ShoppingCartIcon,
-  StarBorder as ExtraIcon,
-  AddCircle as AddSectionIcon,
-  FolderOpen as FolderIcon,
   Person as PersonIcon,
   AccountCircle as ProfileIcon,
   People as PeopleIcon,
   Assignment as AssignmentIcon,
   Business as BuildingIcon,
-  Announcement as AnnouncementIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  Assessment as AssessmentIcon
 } from '@mui/icons-material';
-import ViewCompactRoundedIcon from '@mui/icons-material/ViewCompactRounded';
+import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 
 // components
 import Dot from './components/Dot';
 
 // Admin sidebar structure - Full access
-const adminStructure = [
+const getAdminStructure = (draftCount) => [
   { id: 0, label: 'Dashboard', link: '/app/dashboard', icon: <ProfileIcon /> },
   {
     id: 1,
@@ -54,6 +42,14 @@ const adminStructure = [
   },
   {
     id: 2,
+    label: 'Client Masterlist',
+    link: '/app/client-masterlist',
+    badge: 'Admin',
+    badgeColor: 'secondary',
+    icon: <PersonIcon />,
+  },
+  {
+    id: 3,
     label: 'Staff Management',
     link: '/app/staff/management',
     badge: 'Admin',
@@ -61,69 +57,32 @@ const adminStructure = [
     icon: <PeopleIcon />,
   },
   {
-    id: 3,
+    id: 4,
     label: 'Daily Reports',
     link: '/app/reports',
     icon: <AssignmentIcon />,
-    badge: '5',
+    badge: draftCount > 0 ? draftCount.toString() : null,
     badgeColor: 'warning',
     children: [
       {
-        label: 'My Reports',
+        label: 'In Progress',
         link: '/app/reports/my-reports',
       },
       {
-        label: 'All Reports',
-        link: '/app/reports/all-reports',
+        label: 'Submitted Reports',
+        link: '/app/reports/admin-reports',
       },
     ],
   },
   {
-    id: 4,
-    label: 'Announcements',
-    link: '/app/announcements/management',
-    badge: 'Admin',
-    badgeColor: 'secondary',
-    icon: <AnnouncementIcon />,
+    id: 7,
+    label: 'Progress Analytics',
+    link: '/app/reports/progress',
+    icon: <AssessmentIcon />,
   },
   { id: 5, type: 'divider' },
-  { id: 6, type: 'title', label: 'TEMPLATE' },
   {
-    id: 7,
-    label: 'Core',
-    link: '/app/core',
-    icon: <CoreIcon />,
-    children: [
-      { label: 'Typography', link: '/app/core/typography' },
-      { label: 'Colors', link: '/app/core/colors' },
-      { label: 'Grid', link: '/app/core/grid' },
-    ],
-  },
-  {
-    id: 8,
-    label: 'Tables',
-    link: '/app/tables',
-    icon: <TableIcon />,
-    children: [
-      { label: 'Static Tables', link: '/app/tables/static' },
-      { label: 'Dynamic Tables', link: '/app/tables/dynamic' },
-    ],
-  },
-  {
-    id: 9,
-    label: 'Charts',
-    link: '/app/charts',
-    icon: <ChartIcon />,
-    children: [
-      { label: 'Overview', link: '/app/charts/overview' },
-      { label: 'Line Charts', link: '/app/charts/line' },
-      { label: 'Bar Charts', link: '/app/charts/bar' },
-      { label: 'Pie Charts', link: '/app/charts/pie' },
-    ],
-  },
-  { id: 10, type: 'divider' },
-  {
-    id: 11,
+    id: 6,
     label: 'Logout',
     click: function(...rest) {
       const name = 'onLogout'
@@ -138,4 +97,11 @@ const adminStructure = [
   },
 ];
 
-export default adminStructure;
+// Hook-based component for dynamic sidebar
+const AdminSidebarStructure = () => {
+  const { draftCount } = useDraftReportsCount();
+  return getAdminStructure(draftCount);
+};
+
+export { getAdminStructure };
+export default AdminSidebarStructure;

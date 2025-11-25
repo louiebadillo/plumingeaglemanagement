@@ -11,8 +11,8 @@ import useStyles from './styles';
 // components
 import SidebarLink from './components/SidebarLink/SidebarLink';
 
-// images
-import logo from '../../images/pellogo.png';
+// images - using public path
+const logo = '/pellogofinal.png';
 
 // context
 import {

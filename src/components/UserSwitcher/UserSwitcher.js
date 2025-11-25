@@ -50,14 +50,15 @@ function UserSwitcher() {
     localStorage.setItem('devUser', JSON.stringify(user));
     
     // For development purposes, we'll update the userProfile in localStorage
-    // and then reload the page to apply the new role
+    // The SupabaseContext checks for 'devUserProfile' in localStorage
     const updatedProfile = {
-      ...userProfile,
-      role: user.role,
+      id: userProfile?.id || user.id,
+      email: user.email,
       first_name: user.firstName,
       last_name: user.lastName,
-      email: user.email,
-      phone: user.phoneNumber
+      role: user.role,
+      phone: user.phoneNumber,
+      facility_id: userProfile?.facility_id || null
     };
     
     // Store the updated profile in localStorage for the SupabaseContext to pick up
@@ -66,7 +67,7 @@ function UserSwitcher() {
     // Force a context update by triggering a re-render
     setCurrentUser(user);
     
-    // Reload the page to apply new sidebar structure
+    // Reload the page to apply new sidebar structure and role changes
     window.location.reload();
   };
 

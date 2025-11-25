@@ -42,6 +42,7 @@ import { useParams, useHistory } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
 import { createClientUrl } from '../../utils/urlUtils';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 
 // Initial form data for creating/editing clients
 const initialClientFormData = {
@@ -66,6 +67,8 @@ function FacilityPage() {
   const [isNewClient, setIsNewClient] = useState(false);
   const [formData, setFormData] = useState(initialClientFormData);
   const [submitting, setSubmitting] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -203,11 +206,25 @@ function FacilityPage() {
   };
 
   const handleAddClient = () => {
-    history.push(`/app/client/new?facility=${facilityId}`);
+    console.log('🔍 handleAddClient called:', { facilityId, facility });
+    if (!facilityId) {
+      console.error('❌ No facilityId available');
+      alert('Error: Facility ID is missing. Please try again.');
+      return;
+    }
+    const url = `/app/client/new?facility=${facilityId}`;
+    console.log('🚀 Navigating to:', url);
+    history.push(url);
   };
 
-  const handleCreateReport = (clientId) => {
-    history.push(`/app/reports/create?clientId=${clientId}&facility=${facilityId}`);
+  const handleCreateReport = (client) => {
+    setSelectedClient(client);
+    setReportModalOpen(true);
+  };
+
+  const handleCloseReportModal = () => {
+    setReportModalOpen(false);
+    setSelectedClient(null);
   };
 
   return (
@@ -274,7 +291,20 @@ function FacilityPage() {
                             </Avatar>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2" fontWeight="medium">
+                            <Typography 
+                              variant="body2" 
+                              fontWeight="medium"
+                              sx={{ 
+                                cursor: 'pointer',
+                                color: 'primary.main',
+                                '&:hover': { textDecoration: 'underline' }
+                              }}
+                              onClick={() => {
+                                // Use client ID for more reliable routing
+                                const clientUrl = `/app/client/${client.id}`;
+                                history.push(clientUrl);
+                              }}
+                            >
                               {client.first_name} {client.last_name}
                             </Typography>
                           </TableCell>
@@ -305,7 +335,7 @@ function FacilityPage() {
                               <Tooltip title="Create Daily Report">
                                 <IconButton 
                                   size="small" 
-                                  onClick={() => handleCreateReport(client.id)}
+                                  onClick={() => handleCreateReport(client)}
                                   color="success"
                                 >
                                   <ReportIcon />
@@ -353,6 +383,14 @@ function FacilityPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Date Selection Modal */}
+      <DateSelectionModal
+        open={reportModalOpen}
+        onClose={handleCloseReportModal}
+        client={selectedClient}
+        facilityId={facilityId}
+      />
     </Box>
   );
 }

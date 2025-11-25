@@ -1,0 +1,431 @@
+// Data aggregation utilities for progress reports
+// Processes daily reports data to generate analytics and charts
+
+/**
+ * Aggregate reports data for a specific date range
+ * @param {Array} reports - Array of daily reports
+ * @param {Object} dateRange - Date range object with start and end dates
+ * @returns {Object} Aggregated data with scores and metrics
+ */
+export const aggregateReportsData = (reports, dateRange) => {
+  if (!reports || reports.length === 0) {
+    return {
+      healthScore: 0,
+      routineScore: 0,
+      wellbeingScore: 0,
+      behaviourScore: 0,
+      overallScore: 0,
+      indicator: 'Needs Improvement',
+      pieChartData: {},
+      trendData: [],
+      summaryTables: {}
+    };
+  }
+
+  // Filter out null reports (exclude from analytics)
+  const validReports = reports.filter(report => report.status !== 'null_report');
+  
+  if (validReports.length === 0) {
+    return {
+      healthScore: 0,
+      routineScore: 0,
+      wellbeingScore: 0,
+      behaviourScore: 0,
+      overallScore: 0,
+      indicator: 'Needs Improvement',
+      pieChartData: {},
+      trendData: [],
+      summaryTables: {}
+    };
+  }
+
+  // Calculate section scores for each report
+  const sectionScores = validReports.map(report => ({
+    health: calculateHealthScore(report),
+    routine: calculateRoutineScore(report),
+    wellbeing: calculateWellBeingScore(report),
+    behaviour: calculateBehaviourScore(report)
+  }));
+
+  // Calculate average scores
+  const healthScore = Math.round(sectionScores.reduce((sum, s) => sum + s.health, 0) / sectionScores.length);
+  const routineScore = Math.round(sectionScores.reduce((sum, s) => sum + s.routine, 0) / sectionScores.length);
+  const wellbeingScore = Math.round(sectionScores.reduce((sum, s) => sum + s.wellbeing, 0) / sectionScores.length);
+  const behaviourScore = Math.round(sectionScores.reduce((sum, s) => sum + s.behaviour, 0) / sectionScores.length);
+
+  const overallScore = Math.round((healthScore + routineScore + wellbeingScore + behaviourScore) / 4);
+  const indicator = getIndicatorValue(overallScore);
+
+  return {
+    healthScore,
+    routineScore,
+    wellbeingScore,
+    behaviourScore,
+    overallScore,
+    indicator,
+    pieChartData: generatePieChartData(validReports),
+    trendData: generateTrendData(validReports, sectionScores),
+    summaryTables: generateSummaryTables(validReports)
+  };
+};
+
+/**
+ * Generate pie chart data for various metrics
+ * @param {Array} reports - Array of daily reports
+ * @returns {Object} Pie chart data for different metrics
+ */
+export const generatePieChartData = (reports) => {
+  const pieChartData = {};
+
+  // Medication adherence pie chart
+  const medicationData = reports.reduce((acc, report) => {
+    const status = report.medication_status || report.afternoon_medication_status || report.evening_medication_status;
+    if (status === 'Taken') acc.taken++;
+    else acc.notTaken++;
+    return acc;
+  }, { taken: 0, notTaken: 0 });
+  pieChartData.medication = [
+    { name: 'Taken', value: medicationData.taken, color: '#4caf50' },
+    { name: 'Not Taken', value: medicationData.notTaken, color: '#f44336' }
+  ];
+
+  // Sleep score pie chart
+  const sleepData = reports.reduce((acc, report) => {
+    if (report.sleep_woke_on_time) acc.onTime++;
+    else acc.late++;
+    return acc;
+  }, { onTime: 0, late: 0 });
+  pieChartData.sleep = [
+    { name: 'On Time', value: sleepData.onTime, color: '#4caf50' },
+    { name: 'Late', value: sleepData.late, color: '#f44336' }
+  ];
+
+  // Diet score pie chart
+  const dietData = reports.reduce((acc, report) => {
+    if (report.diet_ate_well) acc.ateWell++;
+    else acc.skipped++;
+    return acc;
+  }, { ateWell: 0, skipped: 0 });
+  pieChartData.diet = [
+    { name: 'Ate Well', value: dietData.ateWell, color: '#4caf50' },
+    { name: 'Skipped/Poor', value: dietData.skipped, color: '#f44336' }
+  ];
+
+  // Dental hygiene pie chart
+  const dentalData = reports.reduce((acc, report) => {
+    if (report.dental_hygiene_done || report.afternoon_dental_hygiene_done) acc.done++;
+    else acc.notDone++;
+    return acc;
+  }, { done: 0, notDone: 0 });
+  pieChartData.dental = [
+    { name: 'Done', value: dentalData.done, color: '#4caf50' },
+    { name: 'Not Done', value: dentalData.notDone, color: '#f44336' }
+  ];
+
+  // Shower pie chart
+  const showerData = reports.reduce((acc, report) => {
+    if (report.afternoon_shower_taken) acc.taken++;
+    else acc.notTaken++;
+    return acc;
+  }, { taken: 0, notTaken: 0 });
+  pieChartData.shower = [
+    { name: 'Taken', value: showerData.taken, color: '#4caf50' },
+    { name: 'Not Taken', value: showerData.notTaken, color: '#f44336' }
+  ];
+
+  // Health appointments pie chart
+  const healthAppointments = reports.flatMap(report => 
+    (report.appointments || []).filter(apt => apt.type === 'health')
+  );
+  const healthApptData = healthAppointments.reduce((acc, apt) => {
+    if (apt.compliance === 'attended') acc.attended++;
+    else acc.notAttended++;
+    return acc;
+  }, { attended: 0, notAttended: 0 });
+  pieChartData.healthAppointments = [
+    { name: 'Attended', value: healthApptData.attended, color: '#4caf50' },
+    { name: 'Not Attended', value: healthApptData.notAttended, color: '#f44336' }
+  ];
+
+  // School attendance pie chart
+  const schoolData = reports.reduce((acc, report) => {
+    if (report.afternoon_school_supposed_to_go) {
+      if (report.afternoon_school_status === 'Attended') acc.attended++;
+      else acc.notAttended++;
+    }
+    return acc;
+  }, { attended: 0, notAttended: 0 });
+  pieChartData.school = [
+    { name: 'Attended', value: schoolData.attended, color: '#4caf50' },
+    { name: 'Not Attended', value: schoolData.notAttended, color: '#f44336' }
+  ];
+
+  // Behaviour pie charts
+  const behaviourData = reports.reduce((acc, report) => {
+    // Observation
+    if (report.behaviour_observation === 'positive' || report.afternoon_behaviour_observation === 'positive') {
+      acc.observation.positive++;
+    } else {
+      acc.observation.negative++;
+    }
+    
+    // Followed rules
+    if (report.behaviour_followed_rules || report.afternoon_behaviour_followed_rules) {
+      acc.followedRules.yes++;
+    } else {
+      acc.followedRules.no++;
+    }
+    
+    // Listened to instructions
+    if (report.behaviour_listened || report.afternoon_behaviour_listened) {
+      acc.listened.yes++;
+    } else {
+      acc.listened.no++;
+    }
+    
+    // Control behaviour
+    if (report.behaviour_control || report.afternoon_behaviour_control) {
+      acc.control.yes++;
+    } else {
+      acc.control.no++;
+    }
+    
+    return acc;
+  }, {
+    observation: { positive: 0, negative: 0 },
+    followedRules: { yes: 0, no: 0 },
+    listened: { yes: 0, no: 0 },
+    control: { yes: 0, no: 0 }
+  });
+
+  pieChartData.behaviour = {
+    observation: [
+      { name: 'Positive', value: behaviourData.observation.positive, color: '#4caf50' },
+      { name: 'Negative', value: behaviourData.observation.negative, color: '#f44336' }
+    ],
+    followedRules: [
+      { name: 'Yes', value: behaviourData.followedRules.yes, color: '#4caf50' },
+      { name: 'No', value: behaviourData.followedRules.no, color: '#f44336' }
+    ],
+    listened: [
+      { name: 'Yes', value: behaviourData.listened.yes, color: '#4caf50' },
+      { name: 'No', value: behaviourData.listened.no, color: '#f44336' }
+    ],
+    control: [
+      { name: 'Yes', value: behaviourData.control.yes, color: '#4caf50' },
+      { name: 'No', value: behaviourData.control.no, color: '#f44336' }
+    ]
+  };
+
+  // BIR, AWOL, and Injury pie charts
+  const incidentData = reports.reduce((acc, report) => {
+    // BIR incidents
+    if (report.bir_incidents && report.bir_incidents.hasBIR) {
+      report.bir_incidents.incidents.forEach(incident => {
+        acc.bir[incident] = (acc.bir[incident] || 0) + 1;
+      });
+    }
+    
+    // AWOL incidents - support both old format (awol_incident) and new format (awol_incidents array)
+    if (report.awol_incidents && Array.isArray(report.awol_incidents) && report.awol_incidents.length > 0) {
+      report.awol_incidents.forEach(awol => {
+        if (awol.status) {
+          acc.awol[awol.status] = (acc.awol[awol.status] || 0) + 1;
+        }
+      });
+    } else if (report.awol_incident) {
+      // Legacy format support
+      acc.awol[report.awol_status] = (acc.awol[report.awol_status] || 0) + 1;
+    }
+    
+    // Injuries - support both old format (injury_occurred) and new format (injuries array)
+    if (report.injuries && Array.isArray(report.injuries) && report.injuries.length > 0) {
+      report.injuries.forEach(injury => {
+        if (injury.type) {
+          acc.injury[injury.type] = (acc.injury[injury.type] || 0) + 1;
+        }
+      });
+    } else if (report.injury_occurred) {
+      // Legacy format support
+      acc.injury[report.injury_type] = (acc.injury[report.injury_type] || 0) + 1;
+    }
+    
+    return acc;
+  }, { bir: {}, awol: {}, injury: {} });
+
+  pieChartData.incidents = {
+    bir: Object.entries(incidentData.bir).map(([type, count]) => ({
+      name: type,
+      value: count,
+      color: getRandomColor()
+    })),
+    awol: Object.entries(incidentData.awol).map(([type, count]) => ({
+      name: type,
+      value: count,
+      color: getRandomColor()
+    })),
+    injury: Object.entries(incidentData.injury).map(([type, count]) => ({
+      name: type,
+      value: count,
+      color: getRandomColor()
+    }))
+  };
+
+  // Generate bar chart data for BIR incidents
+  pieChartData.birBarChart = Object.entries(incidentData.bir)
+    .map(([type, count]) => ({
+      name: type,
+      count: count
+    }))
+    .sort((a, b) => b.count - a.count); // Sort by count descending
+
+  return pieChartData;
+};
+
+/**
+ * Generate trend data for line graphs
+ * @param {Array} reports - Array of daily reports
+ * @param {Array} sectionScores - Array of section scores for each report
+ * @returns {Array} Trend data for line graphs
+ */
+export const generateTrendData = (reports, sectionScores) => {
+  return reports.map((report, index) => ({
+    date: report.report_date,
+    day: index + 1,
+    health: sectionScores[index]?.health || 0,
+    routine: sectionScores[index]?.routine || 0,
+    wellbeing: sectionScores[index]?.wellbeing || 0,
+    behaviour: sectionScores[index]?.behaviour || 0
+  }));
+};
+
+/**
+ * Generate summary tables for appointments, BIRs, AWOLs, and injuries
+ * @param {Array} reports - Array of daily reports
+ * @returns {Object} Summary tables data
+ */
+export const generateSummaryTables = (reports) => {
+  const summaryTables = {
+    healthAppointments: [],
+    socialAppointments: [],
+    birs: [],
+    awols: [],
+    injuries: []
+  };
+
+  reports.forEach(report => {
+    // Health appointments
+    if (report.appointments && Array.isArray(report.appointments)) {
+      const healthAppointments = report.appointments.filter(apt => apt.type === 'health');
+      healthAppointments.forEach(apt => {
+        summaryTables.healthAppointments.push({
+          date: report.report_date,
+          type: apt.type || 'N/A',
+          nature: apt.nature || 'N/A',
+          compliance: apt.compliance || 'N/A',
+          remarks: apt.remarks || 'N/A'
+        });
+      });
+
+      const socialAppointments = report.appointments.filter(apt => apt.type === 'social');
+      socialAppointments.forEach(apt => {
+        summaryTables.socialAppointments.push({
+          date: report.report_date,
+          type: apt.type || 'N/A',
+          compliance: apt.compliance || 'N/A',
+          remarks: apt.remarks || 'N/A'
+        });
+      });
+    }
+
+    // BIR incidents
+    if (report.bir_incidents && report.bir_incidents.hasBIR && report.bir_incidents.incidents) {
+      report.bir_incidents.incidents.forEach(incident => {
+        summaryTables.birs.push({
+          date: report.report_date,
+          type: incident,
+          remarks: report.bir_incidents.remarks || 'N/A'
+        });
+      });
+    }
+
+    // AWOL incidents - support both old format (awol_incident) and new format (awol_incidents array)
+    if (report.awol_incidents && Array.isArray(report.awol_incidents) && report.awol_incidents.length > 0) {
+      report.awol_incidents.forEach(awol => {
+        summaryTables.awols.push({
+          date: report.report_date,
+          type: awol.status || 'N/A'
+        });
+      });
+    } else if (report.awol_incident) {
+      // Legacy format support
+      summaryTables.awols.push({
+        date: report.report_date,
+        type: report.awol_status || 'N/A'
+      });
+    }
+
+    // Injuries - support both old format (injury_occurred) and new format (injuries array)
+    if (report.injuries && Array.isArray(report.injuries) && report.injuries.length > 0) {
+      report.injuries.forEach(injury => {
+        summaryTables.injuries.push({
+          date: report.report_date,
+          type: injury.type || 'N/A',
+          perpetrator: injury.perpetrator || 'N/A',
+          remarks: injury.remarks || 'N/A'
+        });
+      });
+    } else if (report.injury_occurred) {
+      // Legacy format support
+      summaryTables.injuries.push({
+        date: report.report_date,
+        type: report.injury_type || 'N/A',
+        perpetrator: report.injury_perpetrator || 'N/A',
+        remarks: report.injury_remarks || 'N/A'
+      });
+    }
+  });
+
+  return summaryTables;
+};
+
+/**
+ * Calculate pie chart data for a specific field
+ * @param {Array} reports - Array of daily reports
+ * @param {string} field - Field name to analyze
+ * @returns {Array} Pie chart data
+ */
+export const calculatePieChartData = (reports, field) => {
+  const data = {};
+  
+  reports.forEach(report => {
+    const value = report[field];
+    if (value !== undefined && value !== null) {
+      data[value] = (data[value] || 0) + 1;
+    }
+  });
+
+  return Object.entries(data).map(([name, value]) => ({
+    name,
+    value,
+    color: getRandomColor()
+  }));
+};
+
+/**
+ * Generate random color for pie chart segments
+ * @returns {string} Random color hex code
+ */
+const getRandomColor = () => {
+  const colors = ['#4caf50', '#2196f3', '#ff9800', '#f44336', '#9c27b0', '#00bcd4', '#795548', '#607d8b'];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+// Import scoring functions
+import {
+  calculateHealthScore,
+  calculateRoutineScore,
+  calculateWellBeingScore,
+  calculateBehaviourScore,
+  getIndicatorValue
+} from './reportScoring';
