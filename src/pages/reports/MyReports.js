@@ -173,11 +173,21 @@ function MyReports() {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    if (!dateString) return 'N/A';
+    try {
+      // Parse date string (YYYY-MM-DD) without timezone conversion
+      const [year, month, day] = dateString.split('T')[0].split('-');
+      if (!year || !month || !day) return dateString; // Fallback if format is unexpected
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', dateString, error);
+      return dateString; // Fallback to original string
+    }
   };
 
   const formatDateTime = (dateString) => {

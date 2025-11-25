@@ -564,23 +564,59 @@ function DailyReportForm() {
   };
 
   // Helper function to check if shift is available based on current time
-  // For draft reports, all shifts are available (they're being edited)
+  // Shift availability logic:
+  // - Morning: Always available
+  // - Afternoon: Available from 2 PM, and when available, morning is also available
+  // - Evening: Available from 10 PM, and when available, all shifts are available
   const isShiftAvailable = (shift) => {
-    // If it's a draft report, allow editing all shifts
-    if (existingReport?.status === 'draft') {
-      return true;
-    }
+    if (isAdmin) return true; // Admins can always edit
     
-    // For new reports, check if shift has started
     const now = new Date();
     const currentHour = now.getHours();
     
-    if (shift === 'afternoon') {
+    if (shift === 'morning') {
+      return true; // Morning shift always available
+    } else if (shift === 'afternoon') {
       return currentHour >= 14; // 2 PM
     } else if (shift === 'evening') {
       return currentHour >= 22; // 10 PM
     }
-    return true; // Morning shift always available
+    return false;
+  };
+  
+  // Helper to check if a field's shift is available (with cascading logic)
+  const isFieldShiftAvailable = (field) => {
+    if (isAdmin) return true;
+    
+    // Determine which shift this field belongs to
+    const isMorningField = !field.startsWith('afternoon_') && !field.startsWith('evening_') && 
+                          field !== 'appointments' && field !== 'bir_incidents' && 
+                          field !== 'awol_incidents' && field !== 'injuries';
+    const isAfternoonField = field.startsWith('afternoon_');
+    const isEveningField = field.startsWith('evening_') || 
+                          field === 'appointments' || field === 'bir_incidents' || 
+                          field === 'awol_incidents' || field === 'injuries';
+    
+    const now = new Date();
+    const currentHour = now.getHours();
+    
+    if (isMorningField) {
+      // Morning fields are always available
+      return true;
+    } else if (isAfternoonField) {
+      // Afternoon fields available from 2 PM
+      return currentHour >= 14;
+    } else if (isEveningField) {
+      // Evening fields available from 10 PM
+      // Note: Appointments, BIR, AWOL, Injuries are always editable (handled separately)
+      if (field === 'appointments' || field === 'bir_incidents' || 
+          field === 'awol_incidents' || field === 'injuries') {
+        return true; // These are always editable
+      }
+      return currentHour >= 22;
+    }
+    
+    return false;
   };
 
   // Helper function to check if evening shift has started (for submit button)
@@ -594,26 +630,33 @@ function DailyReportForm() {
   // Helper function to check if field can be edited considering shift availability
   const canEditFieldWithShift = (field, shift) => {
     if (isAdmin) return canEditField(field);
-    if (!isShiftAvailable(shift)) return false;
+    if (!isFieldShiftAvailable(field)) return false;
     return canEditField(field);
   };
 
   const canEditField = (field) => {
+    // Admins can always edit
+    if (isAdmin) return true;
+    
     // Check if report is locked (for employees only)
     // Only lock if a report already exists (and it's not a null_report) AND the date is locked
     // Draft reports should NOT be locked - only submitted reports
     const hasExistingReport = (existingReport !== null && existingReport?.status !== 'null_report') || (reportId !== null && existingReport?.status !== 'null_report');
     const isDraftReport = existingReport?.status === 'draft';
-    if (!isAdmin && hasExistingReport && !isDraftReport && effectiveReportDate && isReportLocked(effectiveReportDate)) {
+    if (hasExistingReport && !isDraftReport && effectiveReportDate && isReportLocked(effectiveReportDate)) {
       return false;
     }
-    
-    if (isAdmin) return true;
     
     // Appointments, BIR, AWOL, and Injuries are always editable by any employee (unless locked)
     if (field === 'appointments' || field === 'bir_incidents' || 
         field === 'awol_incidents' || field === 'injuries') {
       return true;
+    }
+    
+    // Check shift availability (for non-admin employees)
+    // This ensures fields are only editable during their respective shift times
+    if (!isFieldShiftAvailable(field)) {
+      return false;
     }
     
     const trackingField = getTrackingFieldName(field);
@@ -1351,7 +1394,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Medication (2pm – 10pm)
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditField('afternoon_medication_required') || (!isShiftAvailable('afternoon') && !isAdmin)}>
+                    <FormControl component="fieldset" disabled={!canEditField('afternoon_medication_required')}>
                       <FormLabel component="legend">Needs to take meds in shift?</FormLabel>
                       <RadioGroup
                         value={formData.afternoon_medication_required}
@@ -1566,8 +1609,8 @@ function DailyReportForm() {
                             value={formData.afternoon_behaviour_observation}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_observation', e.target.value)}
                           >
-                            <FormControlLabel value="negative" control={<Radio />} label="Negative (0pt)" />
                             <FormControlLabel value="positive" control={<Radio />} label="Positive (1pt)" />
+                            <FormControlLabel value="negative" control={<Radio />} label="Negative (0pt)" />
                           </RadioGroup>
                         </FormControl>
                       </Grid>
@@ -1579,8 +1622,8 @@ function DailyReportForm() {
                             value={formData.afternoon_behaviour_followed_rules}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_followed_rules', e.target.value === 'true')}
                           >
-                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                             <FormControlLabel value={true} control={<Radio />} label="Yes (1pt)" />
+                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                           </RadioGroup>
                         </FormControl>
                       </Grid>
@@ -1592,8 +1635,8 @@ function DailyReportForm() {
                             value={formData.afternoon_behaviour_listened}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_listened', e.target.value === 'true')}
                           >
-                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                             <FormControlLabel value={true} control={<Radio />} label="Yes (1pt)" />
+                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                           </RadioGroup>
                         </FormControl>
                       </Grid>
@@ -1605,8 +1648,8 @@ function DailyReportForm() {
                             value={formData.afternoon_behaviour_control}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_control', e.target.value === 'true')}
                           >
-                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                             <FormControlLabel value={true} control={<Radio />} label="Yes (1pt)" />
+                            <FormControlLabel value={false} control={<Radio />} label="No (0pt)" />
                           </RadioGroup>
                         </FormControl>
                       </Grid>
