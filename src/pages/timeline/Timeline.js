@@ -78,7 +78,7 @@ export default function TimelineComp() {
                     </Box>
                     {/*<Box height={200} width={"100%"} mx={"-24px"} mt={2}>*/}
                     {/*  <BasicMap*/}
-                    {/*    googleMapURL="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=geometry,drawing,places&key=AIzaSyB7OXmzfQYua_1LEhRdqsoYzyJOPh9hGLg"*/}
+                    {/*    googleMapURL="https://maps.googleapis.com/maps/api/js?v=3.exp&libraries=geometry,drawing,places&key=YOUR_API_KEY_HERE"*/}
                     {/*    loadingElement={*/}
                     {/*      <div*/}
                     {/*        style={{ height: "inherit", width: "inherit" }}*/}

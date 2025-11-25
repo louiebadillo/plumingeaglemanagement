@@ -4,7 +4,7 @@
 
 Your `.env` file should contain:
 ```env
-REACT_APP_GOOGLE_MAPS_API_KEY=AIzaSyDSvlrCzbsqwR3GvgiuNAXlSVJrfJCrHqA
+REACT_APP_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 ```
 
 **Important**: Make sure there are no spaces around the `=` sign and no quotes around the key.

@@ -20,3 +20,6 @@ docs/
 # OS generated files
 Thumbs.db
 .vercel
+
+# Testing/documentation files that may contain sensitive info
+TESTING_GEOFENCING_MAP.md
