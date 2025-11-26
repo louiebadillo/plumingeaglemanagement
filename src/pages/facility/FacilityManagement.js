@@ -511,8 +511,10 @@ function FacilityManagement() {
         }} 
         maxWidth="md" 
         fullWidth
+        disableEnforceFocus
+        aria-labelledby="facility-dialog-title"
       >
-        <DialogTitle>
+        <DialogTitle id="facility-dialog-title">
           {isNewFacility ? 'Add New Facility' : 'Edit Facility'}
         </DialogTitle>
         <DialogContent>

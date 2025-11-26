@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import { GoogleMap, Marker, Circle, useJsApiLoader } from '@react-google-maps/api';
 import { Box, Typography, Alert, CircularProgress } from '@mui/material';
 
@@ -8,6 +8,23 @@ const mapContainerStyle = {
 };
 
 function GeofencingMap({ latitude, longitude, radius = 100, onLocationChange }) {
+  // Suppress Google Maps Marker deprecation warning
+  // This is a known issue with @react-google-maps/api library
+  // The library hasn't been updated to use AdvancedMarkerElement yet
+  useEffect(() => {
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('google.maps.Marker is deprecated')) {
+        // Suppress this specific deprecation warning
+        return;
+      }
+      originalWarn.apply(console, args);
+    };
+    
+    return () => {
+      console.warn = originalWarn;
+    };
+  }, []);
   const center = useMemo(() => ({
     lat: latitude || 0,
     lng: longitude || 0

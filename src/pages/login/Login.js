@@ -42,8 +42,8 @@ function Login(props) {
   // local
   let [isLoading, setIsLoading] = useState(false);
   let [error, setError] = useState(null);
-  let [loginValue, setLoginValue] = useState(getConfig('AUTH.DEFAULT_EMAIL') || 'admin@plumingeagle.com');
-  let [passwordValue, setPasswordValue] = useState(getConfig('AUTH.DEFAULT_PASSWORD') || 'admin123');
+  let [loginValue, setLoginValue] = useState('');
+  let [passwordValue, setPasswordValue] = useState('');
   let [isForgot, setIsForgot] = useState(false);
 
   let isLoginFormValid = () => {
@@ -157,9 +157,10 @@ function Login(props) {
                     value={loginValue}
                     onChange={(e) => setLoginValue(e.target.value)}
                     margin='normal'
-                    placeholder='Email Adress'
+                    placeholder='Email Address'
                     type='email'
                     fullWidth
+                    disabled={isLoading}
                     onKeyDown={(e) => loginOnEnterKey(e)}
                   />
                   <Input
@@ -176,14 +177,21 @@ function Login(props) {
                     placeholder='Password'
                     type='password'
                     fullWidth
+                    disabled={isLoading}
                     onKeyDown={(e) => loginOnEnterKey(e)}
                   />
                   <div className={classes.formButtons}>
                     {isLoading ? (
-                      <CircularProgress
-                        size={26}
-                        className={classes.loginLoader}
-                      />
+                      <Button
+                        disabled
+                        variant='contained'
+                        color='primary'
+                        size='large'
+                        fullWidth
+                        startIcon={<CircularProgress size={20} color="inherit" />}
+                      >
+                        Logging in...
+                      </Button>
                     ) : (
                       <Button
                         disabled={!isLoginFormValid()}
@@ -191,6 +199,7 @@ function Login(props) {
                         variant='contained'
                         color='primary'
                         size='large'
+                        fullWidth
                       >
                         Login
                       </Button>
@@ -200,6 +209,7 @@ function Login(props) {
                       size='large'
                       onClick={() => setIsForgot(!isForgot)}
                       className={classes.forgetButton}
+                      disabled={isLoading}
                     >
                       Forgot Password?
                     </Button>

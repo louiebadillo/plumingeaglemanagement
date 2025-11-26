@@ -1,6 +1,7 @@
 import React from 'react';
 import { Router, Route, Switch, Redirect } from 'react-router-dom';
 import { ConnectedRouter } from 'connected-react-router';
+import { Box, CircularProgress, Typography } from '@mui/material';
 import { SnackbarProvider } from './Snackbar';
 
 // components
@@ -22,7 +23,23 @@ function AppContent() {
   const isAuth = !!user;
 
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          gap: 2
+        }}
+      >
+        <CircularProgress size={48} thickness={4} />
+        <Typography variant="h6" color="textSecondary">
+          Loading...
+        </Typography>
+      </Box>
+    );
   }
 
   return (

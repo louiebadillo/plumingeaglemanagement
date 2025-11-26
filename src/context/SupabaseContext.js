@@ -16,6 +16,7 @@ export const SupabaseProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const loadingTimeoutRef = useRef(null);
+  const isLoggingOutRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -31,9 +32,23 @@ export const SupabaseProvider = ({ children }) => {
     // Get initial session with timeout
     const initAuth = async () => {
       try {
+        // Don't restore session if we're in the process of logging out
+        if (isLoggingOutRef.current) {
+          console.log('⚠️ Skipping session restore - logout in progress');
+          setLoading(false);
+          return;
+        }
+        
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!mounted) return;
+        
+        // Don't restore session if logout is in progress
+        if (isLoggingOutRef.current) {
+          console.log('⚠️ Ignoring session - logout in progress');
+          setLoading(false);
+          return;
+        }
         
         if (error) {
           console.error('Error getting session:', error);
@@ -66,11 +81,36 @@ export const SupabaseProvider = ({ children }) => {
       
       console.log('🔄 Auth state change:', event, session?.user?.id || 'no user');
       
+      // If logout is in progress, ignore all auth state changes except SIGNED_OUT
+      if (isLoggingOutRef.current && event !== 'SIGNED_OUT') {
+        console.log('⚠️ Ignoring auth state change during logout:', event);
+        return;
+      }
+      
+      // If we're on the logout page, ignore SIGNED_IN events
+      if (event === 'SIGNED_IN' && (window.location.pathname === '/logout' || isLoggingOutRef.current)) {
+        console.log('⚠️ Ignoring SIGNED_IN event - logout in progress');
+        return;
+      }
+      
+      // Handle SIGNED_OUT event explicitly
+      if (event === 'SIGNED_OUT' || !session) {
+        console.log('🔄 User logged out, clearing profile and stopping loading');
+        isLoggingOutRef.current = false; // Reset logout flag
+        setUser(null);
+        setUserProfile(null);
+        setLoading(false);
+        // Clear any remaining storage
+        localStorage.removeItem('devUser');
+        localStorage.removeItem('devUserProfile');
+        return;
+      }
+      
       setUser(session?.user ?? null);
       if (session?.user) {
         await fetchUserProfile(session.user.id, session.user.email);
       } else {
-        console.log('🔄 User logged out, clearing profile and stopping loading');
+        console.log('🔄 No session, clearing profile');
         setUserProfile(null);
         setLoading(false);
       }
@@ -180,35 +220,88 @@ export const SupabaseProvider = ({ children }) => {
   const signOut = async () => {
     try {
       console.log('🔄 Starting logout process...');
+      
+      // Set logout flag to prevent session restoration
+      isLoggingOutRef.current = true;
+      
       // Clear user state immediately
       setUser(null);
       setUserProfile(null);
       setLoading(false);
       
-      // Clear development user data
+      // Clear development user data first
       localStorage.removeItem('devUser');
       localStorage.removeItem('devUserProfile');
       
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
+      // Clear all Supabase session storage
+      try {
+        // Get the project ref from the Supabase URL to find the exact storage key
+        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://brkbypctkcczerntfpsa.supabase.co';
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || 'brkbypctkcczerntfpsa';
+        const authTokenKey = `sb-${projectRef}-auth-token`;
+        
+        console.log('🗑️ Clearing Supabase storage keys...');
+        console.log('🗑️ Looking for key:', authTokenKey);
+        
+        // Clear the specific auth token key
+        localStorage.removeItem(authTokenKey);
+        sessionStorage.removeItem(authTokenKey);
+        
+        // Also clear any keys that start with sb- (Supabase's pattern)
+        const allLocalKeys = Object.keys(localStorage);
+        const allSessionKeys = Object.keys(sessionStorage);
+        
+        allLocalKeys.forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase') || key.includes('auth')) {
+            console.log('🗑️ Removing localStorage key:', key);
+            localStorage.removeItem(key);
+          }
+        });
+        
+        allSessionKeys.forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase') || key.includes('auth')) {
+            console.log('🗑️ Removing sessionStorage key:', key);
+            sessionStorage.removeItem(key);
+          }
+        });
+        
+        console.log('✅ Storage cleared');
+      } catch (storageError) {
+        console.warn('Error clearing storage:', storageError);
+      }
+      
+      // Sign out from Supabase - this should trigger SIGNED_OUT event
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
         console.error('Supabase signOut error:', error);
       } else {
         console.log('✅ Supabase signOut successful');
       }
       
-      // Force redirect to login page
+      // Wait a moment to ensure auth state change is processed
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Force redirect to login page with cache busting
       console.log('🔄 Redirecting to login page...');
-      window.location.replace('/login');
+      // Use replace to prevent back button issues
+      window.location.replace('/login?' + Date.now());
     } catch (error) {
       console.error('Sign out error:', error);
-      // Even if there's an error, clear the user state and redirect
+      // Even if there's an error, clear everything and redirect
+      isLoggingOutRef.current = false; // Reset flag on error
       setUser(null);
       setUserProfile(null);
       setLoading(false);
       localStorage.removeItem('devUser');
       localStorage.removeItem('devUserProfile');
-      window.location.replace('/login');
+      
+      // Clear all Supabase storage
+      try {
+        Object.keys(localStorage).filter(key => key.startsWith('sb-') || key.includes('auth-token')).forEach(key => localStorage.removeItem(key));
+        Object.keys(sessionStorage).filter(key => key.startsWith('sb-') || key.includes('auth-token')).forEach(key => sessionStorage.removeItem(key));
+      } catch (e) {}
+      
+      window.location.replace('/login?' + Date.now());
     }
   };
 
