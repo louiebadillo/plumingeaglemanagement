@@ -60,17 +60,34 @@ function Login(props) {
     setIsLoading(true);
     setError('');
     
+    // Trim email and password to avoid whitespace issues
+    const email = loginValue.trim();
+    const password = passwordValue.trim();
+    
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      const { error } = await signIn(loginValue, passwordValue);
+      const { error } = await signIn(email, password);
       
       if (error) {
-        setError(error.message);
+        // Provide more helpful error messages
+        if (error.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else if (error.message.includes('Email not confirmed')) {
+          setError('Please confirm your email address before logging in.');
+        } else {
+          setError(error.message);
+        }
       } else {
         // Login successful, redirect to dashboard
         props.history.push('/app/dashboard');
       }
     } catch (error) {
-      setError('An unexpected error occurred');
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }

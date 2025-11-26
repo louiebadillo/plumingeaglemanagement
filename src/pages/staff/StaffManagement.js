@@ -36,9 +36,11 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Visibility as ViewIcon,
-  VisibilityOff as HideIcon
+  VisibilityOff as HideIcon,
+  LockReset as LockResetIcon
 } from '@mui/icons-material';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabaseAdmin } from '../../lib/supabaseAdmin';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 
@@ -69,6 +71,11 @@ function StaffManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [staffToResetPassword, setStaffToResetPassword] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
   
   // Debug: Log loading state changes
   useEffect(() => {
@@ -215,6 +222,60 @@ function StaffManagement() {
     setDeleteDialogOpen(true);
   };
 
+  const handleResetPassword = (staffMember) => {
+    setStaffToResetPassword(staffMember);
+    setNewPassword('');
+    setConfirmPassword('');
+    setResetPasswordDialogOpen(true);
+  };
+
+  const handleConfirmResetPassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      alert('Password must be at least 6 characters long');
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      alert('Passwords do not match');
+      return;
+    }
+
+    if (!staffToResetPassword) {
+      alert('No staff member selected');
+      return;
+    }
+
+    try {
+      setResettingPassword(true);
+      console.log('🔄 Resetting password for user:', staffToResetPassword.id);
+      
+      // Update user password using Admin API
+      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+        staffToResetPassword.id,
+        { password: newPassword }
+      );
+
+      if (error) {
+        console.error('❌ Password reset failed:', error);
+        alert('Error resetting password: ' + error.message);
+        return;
+      }
+
+      console.log('✅ Password reset successfully');
+      setSuccessMessage(`Password reset successfully for ${staffToResetPassword.firstName} ${staffToResetPassword.lastName}`);
+      setSuccessModalOpen(true);
+      setResetPasswordDialogOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setStaffToResetPassword(null);
+    } catch (error) {
+      console.error('💥 Password reset error:', error);
+      alert('An error occurred while resetting the password: ' + error.message);
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!staffToDelete) return;
 
@@ -222,9 +283,8 @@ function StaffManagement() {
       setDeleting(true);
       console.log('🗑️ Deleting staff member:', staffToDelete.id);
       
-      // Import Supabase Admin for deletion
-      const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
-      console.log('📦 SupabaseAdmin imported for deletion');
+      // Using Supabase Admin (already imported at top)
+      console.log('📦 Using SupabaseAdmin for deletion');
       
       // Delete from auth.users (this will cascade to public.users due to foreign key)
       console.log('👤 Deleting user from auth.users:', staffToDelete.id);
@@ -314,6 +374,31 @@ function StaffManagement() {
     if (submitting) {
       console.log('⚠️ Already submitting, ignoring duplicate request');
       return;
+    }
+    
+    // Validate required fields for new staff
+    if (!editingStaff) {
+      if (!formData.firstName.trim()) {
+        alert('Please enter a first name');
+        return;
+      }
+      if (!formData.lastName.trim()) {
+        alert('Please enter a last name');
+        return;
+      }
+      if (!formData.email.trim()) {
+        alert('Please enter an email address');
+        return;
+      }
+      if (!formData.password || !formData.password.trim()) {
+        alert('Please enter a password for the new staff member');
+        return;
+      }
+      // Validate password length (Supabase requires at least 6 characters)
+      if (formData.password.length < 6) {
+        alert('Password must be at least 6 characters long');
+        return;
+      }
     }
     
     try {
@@ -439,16 +524,22 @@ function StaffManagement() {
       } else {
         // Add new staff using Supabase
         console.log('🚀 Creating staff member with data:', formData);
-        
-        // Import Supabase Admin
-        const { supabaseAdmin } = await import('../../lib/supabaseAdmin');
-        console.log('📦 SupabaseAdmin imported successfully');
+        console.log('📦 Using SupabaseAdmin (already imported)');
         
         // Try to create user with Supabase Admin API
         console.log('👤 Creating auth user with email:', formData.email);
+        
+        // Ensure password is provided and valid (validation should have caught this, but double-check)
+        const password = formData.password?.trim();
+        if (!password || password.length < 6) {
+          alert('Password is required and must be at least 6 characters long');
+          setSubmitting(false);
+          return;
+        }
+        
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: formData.email,
-          password: formData.password || 'defaultpassword123',
+          email: formData.email.trim(),
+          password: password,
           email_confirm: true,
           user_metadata: {
             first_name: formData.firstName || '',
@@ -791,6 +882,15 @@ function StaffManagement() {
                               <EditIcon />
                             </IconButton>
                           </Tooltip>
+                          <Tooltip title="Reset Password">
+                            <IconButton 
+                              size="small" 
+                              onClick={() => handleResetPassword(member)}
+                              color="warning"
+                            >
+                              <LockResetIcon />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Delete Staff">
                             <IconButton 
                               size="small" 
@@ -987,6 +1087,103 @@ function StaffManagement() {
           warningMessage="This action cannot be undone. The staff member will be permanently removed from the system."
           loading={deleting}
         />
+
+        {/* Reset Password Dialog */}
+        <Dialog 
+          open={resetPasswordDialogOpen} 
+          onClose={() => {
+            if (!resettingPassword) {
+              setResetPasswordDialogOpen(false);
+              setNewPassword('');
+              setConfirmPassword('');
+              setStaffToResetPassword(null);
+            }
+          }}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>
+            Reset Password for {staffToResetPassword?.firstName} {staffToResetPassword?.lastName}
+          </DialogTitle>
+          <DialogContent>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Enter a new password for this user. The password must be at least 6 characters long.
+            </Alert>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="New Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  disabled={resettingPassword}
+                  helperText="Must be at least 6 characters"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <HideIcon /> : <ViewIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Confirm Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  disabled={resettingPassword}
+                  error={confirmPassword && newPassword !== confirmPassword}
+                  helperText={confirmPassword && newPassword !== confirmPassword ? 'Passwords do not match' : ''}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <HideIcon /> : <ViewIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => {
+                setResetPasswordDialogOpen(false);
+                setNewPassword('');
+                setConfirmPassword('');
+                setStaffToResetPassword(null);
+              }} 
+              disabled={resettingPassword}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleConfirmResetPassword} 
+              variant="contained" 
+              color="primary"
+              disabled={resettingPassword || !newPassword || !confirmPassword || newPassword.length < 6 || newPassword !== confirmPassword}
+              startIcon={resettingPassword ? <CircularProgress size={20} /> : <LockResetIcon />}
+            >
+              {resettingPassword ? 'Resetting...' : 'Reset Password'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     );
   }
