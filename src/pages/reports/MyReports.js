@@ -253,13 +253,13 @@ function MyReports() {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        {isAdmin ? 'All In-Progress Reports' : 'In-Progress Reports'}
+        {isAdmin ? 'All In-Progress Reports' : 'In-Progress Reports for Today'}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
         {isAdmin 
           ? 'View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.'
           : currentFacilityId
-            ? 'Continue editing in-progress reports for clients in your current facility. Submit them when complete.'
+            ? 'Continue editing in-progress reports for clients in your current facility. If you are an evening shift staff, complete and submit these reports.'
             : 'Loading facility information...'}
       </Typography>
       

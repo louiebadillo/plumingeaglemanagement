@@ -605,7 +605,7 @@ function Dashboard() {
         <Card>
           <CardContent>
             <Typography variant="h5" gutterBottom>
-              In-Progress Reports
+              Daily Reports 
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
               View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.

@@ -23,3 +23,8 @@ Thumbs.db
 
 # Testing/documentation files that may contain sensitive info
 TESTING_GEOFENCING_MAP.md
+
+# Documentation and SQL migration files (keep locally, don't track in git)
+*.md
+!README.md
+*.sql

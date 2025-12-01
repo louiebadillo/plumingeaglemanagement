@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -47,6 +47,23 @@ function HealthReport({
     sleepPattern: fillableData?.sleepPattern || '',
     dietFood: fillableData?.dietFood || ''
   });
+
+  // Sync state with prop changes (when restoring from localStorage)
+  useEffect(() => {
+    if (fillableData?.medication) {
+      setMedicationRows(fillableData.medication);
+    }
+  }, [fillableData?.medication]);
+
+  useEffect(() => {
+    if (fillableData?.remarks) {
+      setRemarks({
+        hygiene: fillableData.remarks.hygiene || '',
+        sleepPattern: fillableData.remarks.sleepPattern || '',
+        dietFood: fillableData.remarks.dietFood || ''
+      });
+    }
+  }, [fillableData?.remarks]);
 
   const handleMedicationChange = (index, field, value) => {
     const newRows = [...medicationRows];

@@ -116,7 +116,29 @@ window.addEventListener('unhandledrejection', (event) => {
 function ProgressReport() {
   const history = useHistory();
   const location = useLocation();
-  const { userProfile } = useSupabase();
+  const { userProfile, loading: authLoading } = useSupabase();
+  
+  // Redirect employees away from this page
+  useEffect(() => {
+    if (!authLoading && userProfile && userProfile.role !== 'admin') {
+      console.log('⚠️ Non-admin user attempted to access Progress Report, redirecting...');
+      history.replace('/app/dashboard');
+    }
+  }, [userProfile, authLoading, history]);
+  
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+  
+  // Don't render if not admin
+  if (!userProfile || userProfile.role !== 'admin') {
+    return null;
+  }
   
   // State management
   const [loading, setLoading] = useState(false);
@@ -166,6 +188,52 @@ function ProgressReport() {
     }
   }, [location.search]);
 
+  // Restore saved report from localStorage on mount and when tab becomes visible
+  useEffect(() => {
+    const restoreReport = () => {
+      const savedReport = localStorage.getItem('progressReportData');
+      if (savedReport) {
+        try {
+          const parsed = JSON.parse(savedReport);
+          // Only restore if it's recent (less than 1 hour old)
+          const reportAge = Date.now() - (parsed._savedAt || 0);
+          if (reportAge < 60 * 60 * 1000) { // 1 hour
+            console.log('✅ Restoring saved progress report');
+            if (parsed.client) setClient(parsed.client);
+            if (parsed.aggregatedData) setAggregatedData(parsed.aggregatedData);
+            if (parsed.fillableData) setFillableData(parsed.fillableData);
+            if (parsed.dateRange) setDateRange(parsed.dateRange);
+            if (parsed.selectedClientId) setSelectedClientId(parsed.selectedClientId);
+            if (parsed.reportType) setReportType(parsed.reportType);
+            if (parsed.customDateRange) setCustomDateRange(parsed.customDateRange);
+          } else {
+            // Clear old report
+            localStorage.removeItem('progressReportData');
+          }
+        } catch (error) {
+          console.error('Error restoring saved report:', error);
+          localStorage.removeItem('progressReportData');
+        }
+      }
+    };
+
+    // Restore on mount
+    restoreReport();
+
+    // Also restore when tab becomes visible (user switches back to tab)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        restoreReport();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
 
   // Fetch clients list
   useEffect(() => {
@@ -188,7 +256,15 @@ function ProgressReport() {
           .order('first_name');
 
         if (error) throw error;
-        setClients(data || []);
+        const clientsData = data || [];
+        setClients(clientsData);
+        
+        // Validate selectedClientId exists in the loaded clients
+        // If it doesn't exist, reset it to empty string to avoid MUI warning
+        if (selectedClientId && !clientsData.find(c => c.id === selectedClientId)) {
+          console.warn('Selected client ID not found in clients list, resetting selection');
+          setSelectedClientId('');
+        }
       } catch (error) {
         console.error('Error fetching clients:', error);
         setError('Failed to load clients');
@@ -196,7 +272,7 @@ function ProgressReport() {
     };
 
     fetchClients();
-  }, []);
+  }, [selectedClientId]);
 
 
   // Calculate date range based on report type
@@ -274,6 +350,20 @@ function ProgressReport() {
       // Initialize fillable data
       setFillableData({});
 
+      // Save report data to localStorage for persistence
+      const reportDataToSave = {
+        client: selectedClient,
+        aggregatedData: aggregated,
+        fillableData: {},
+        dateRange: calculatedDateRange,
+        selectedClientId,
+        reportType,
+        customDateRange,
+        _savedAt: Date.now()
+      };
+      localStorage.setItem('progressReportData', JSON.stringify(reportDataToSave));
+      console.log('✅ Progress report saved to localStorage');
+
     } catch (error) {
       console.error('Error generating report:', error);
       setError(error.message || 'Failed to generate report');
@@ -315,75 +405,6 @@ function ProgressReport() {
           display: none !important;
         }
 
-        /* Stronger hints to prevent mid-element page breaks */
-        .recharts-wrapper,
-        .MuiTableContainer-root,
-        .MuiTable-root,
-        .MuiGrid-container,
-        .MuiCard-root {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Section wrappers to keep blocks together */
-        .pdf-section {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* html2pdf explicit breaker */
-        .html2pdf__page-break {
-          break-before: page !important;
-          page-break-before: always !important;
-        }
-
-        /* Avoid breaking inside health table rows */
-        #health-assessment-table,
-        #health-assessment-table table,
-        #health-assessment-table thead,
-        #health-assessment-table tbody,
-        #health-assessment-table tr,
-        #health-assessment-table th,
-        #health-assessment-table td {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Avoid breaking inside activities assessment table and title */
-        #activities-assessment-title,
-        #activities-assessment-table,
-        #activities-assessment-table table,
-        #activities-assessment-table thead,
-        #activities-assessment-table tbody,
-        #activities-assessment-table tr,
-        #activities-assessment-table th,
-        #activities-assessment-table td {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        /* Keep title with table */
-        #activities-assessment-title + #activities-assessment-table {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
-
-        /* Avoid breaking inside behaviour assessment table and title */
-        #behaviour-assessment-title,
-        #behaviour-assessment-table,
-        #behaviour-assessment-table table,
-        #behaviour-assessment-table thead,
-        #behaviour-assessment-table tbody,
-        #behaviour-assessment-table tr,
-        #behaviour-assessment-table th,
-        #behaviour-assessment-table td {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        /* Keep title with table */
-        #behaviour-assessment-title + #behaviour-assessment-table {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
 
         /* Compact the health assessment table to fit on one page */
         #health-assessment-table th,
@@ -428,80 +449,10 @@ function ProgressReport() {
           overflow: visible !important;
         }
 
-        /* Strong avoid inside wrappers and their children */
-        .pdf-avoid-break,
-        .pdf-avoid-break * {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Prevent page breaks inside charts and their legends */
-        .recharts-legend-wrapper,
-        .recharts-legend-item,
-        .recharts-wrapper,
-        .recharts-surface {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Keep charts with their legends */
-        .recharts-wrapper + .recharts-legend-wrapper,
-        .recharts-surface + .recharts-legend-wrapper {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
-
-        /* Keep behaviour assessment title with table */
-        #behaviour-assessment-title {
-          break-after: avoid;
-          page-break-after: avoid;
-        }
-        #behaviour-assessment-title + #behaviour-assessment-table {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
-        
         /* Remove extra space before behaviour assessment table */
         #behaviour-assessment-table {
           margin-top: 0 !important;
           padding-top: 0 !important;
-        }
-        
-        /* Prevent page breaks inside behaviour assessment table */
-        #behaviour-assessment-table,
-        #behaviour-assessment-table table,
-        #behaviour-assessment-table thead,
-        #behaviour-assessment-table tbody,
-        #behaviour-assessment-table tr,
-        #behaviour-assessment-table th,
-        #behaviour-assessment-table td {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Keep Section 3 title with score and indicator together */
-        #section3 .MuiTypography-h5 {
-          break-after: avoid;
-          page-break-after: avoid;
-        }
-        #wellbeing-score-indicator {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        /* Keep Section 3 title with score */
-        #section3 .MuiTypography-h5 + * {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
-
-        /* Keep activities assessment title with table */
-        #activities-assessment-title {
-          break-after: avoid;
-          page-break-after: avoid;
-        }
-        #activities-assessment-title + #activities-assessment-table {
-          break-before: avoid;
-          page-break-before: avoid;
         }
         
         /* Remove extra space before activities assessment table */
@@ -509,68 +460,199 @@ function ProgressReport() {
           margin-top: 0 !important;
           padding-top: 0 !important;
         }
-        
-        /* Prevent page breaks inside activities assessment table */
-        #activities-assessment-table,
-        #activities-assessment-table table,
-        #activities-assessment-table thead,
-        #activities-assessment-table tbody,
-        #activities-assessment-table tr,
-        #activities-assessment-table th,
-        #activities-assessment-table td {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
 
-        /* Keep Section 2 title with score and indicator together */
+        /* ============================================
+           COMPREHENSIVE PAGE BREAK AVOIDANCE
+           ============================================ */
+        
+        /* Avoid page breaks for ALL elements by default */
+        * {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep sections together - entire section cards */
+        .pdf-section,
+        #section1, #section2, #section3, #section4, #section5,
+        #section1 *, #section2 *, #section3 *, #section4 *, #section5 * {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep all cards together */
+        .MuiCard-root,
+        .MuiCardContent-root {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep all charts and their containers together */
+        .recharts-wrapper,
+        .recharts-surface,
+        .recharts-legend-wrapper,
+        .recharts-legend-item,
+        .recharts-cartesian-axis,
+        .recharts-cartesian-grid,
+        .recharts-tooltip-wrapper,
+        .recharts-responsive-container,
+        [class*="recharts"] {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Section 5 - Keep entire graph containers together */
+        #section5-card,
+        #section5-graphs,
+        #section5-graphs *,
+        #section5-graphs .MuiGrid-item,
+        #section5-graphs .MuiGrid-item *,
+        #section5-graphs .recharts-wrapper,
+        #section5-graphs .recharts-surface,
+        #section5-graphs .recharts-legend-wrapper {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep each individual chart with its title */
+        #section5-graphs .MuiGrid-item {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+        }
+        
+        /* Keep chart title with chart */
+        #section5-graphs .MuiTypography-h6 {
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+        }
+        #section5-graphs .MuiTypography-h6 + * {
+          page-break-before: avoid !important;
+          break-before: avoid !important;
+        }
+        
+        /* Section 2 - Keep chores table together */
+        #section2,
+        #section2 *,
+        #section2 .MuiTableContainer-root,
+        #section2 .MuiTable-root,
+        #section2 .MuiTableHead,
+        #section2 .MuiTableBody,
+        #section2 .MuiTableRow,
+        #section2 .MuiTableCell,
+        #section2 table,
+        #section2 thead,
+        #section2 tbody,
+        #section2 tr,
+        #section2 th,
+        #section2 td,
+        #chores-performance-table,
+        #chores-performance-table * {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep Section 2 title with score indicator */
         #section2-title {
-          break-after: avoid;
-          page-break-after: avoid;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
         #routine-score-indicator {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        /* Keep Section 2 title with score */
-        #section2-title + #routine-score-indicator {
-          break-before: avoid;
-          page-break-before: avoid;
-        }
-
-        /* Keep Section 5 content together (but allow page break before it) */
-        #section5 * {
-          break-inside: avoid;
-          page-break-inside: avoid;
+          page-break-before: avoid !important;
+          break-before: avoid !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
         
-        /* Ensure Section 5 starts on new page */
-        #section5 {
-          break-before: page !important;
-          page-break-before: always !important;
+        /* Keep chores table title with table */
+        #section2 .MuiTypography-h6 {
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
-
-        /* Prevent page breaks inside Section 5 graphs and legends */
-        #section5-graphs,
-        #section5-graphs .recharts-wrapper,
-        #section5-graphs .recharts-legend-wrapper,
-        #section5-graphs .recharts-legend-item,
-        #section5-graphs .recharts-surface,
-        #section5-graphs .recharts-cartesian-axis,
-        #section5-card {
-          break-inside: avoid;
-          page-break-inside: avoid;
+        #section2 .MuiTableContainer-root,
+        #chores-performance-table {
+          page-break-before: avoid !important;
+          break-before: avoid !important;
         }
         
-        /* Keep Section 5 title with graphs */
-        #section5-title {
-          break-after: avoid;
-          page-break-after: avoid;
+        /* Keep all tables together */
+        .MuiTableContainer-root,
+        .MuiTable-root,
+        .MuiTableHead,
+        .MuiTableBody,
+        .MuiTableRow,
+        .MuiTableCell,
+        table,
+        thead,
+        tbody,
+        tr,
+        th,
+        td {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
         }
-        #section5-title + * {
-          break-before: avoid;
-          page-break-before: avoid;
+        
+        /* Keep table rows together */
+        .MuiTableRow,
+        tr {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep input fields together */
+        .MuiTextField-root,
+        .MuiInputBase-root,
+        .MuiInputBase-input,
+        textarea,
+        input {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep text elements together */
+        .MuiTypography-root,
+        p, span, div, h1, h2, h3, h4, h5, h6 {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep Grid items together */
+        .MuiGrid-item,
+        .MuiGrid-container {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep Box containers together */
+        .MuiBox-root {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep Chip components together */
+        .MuiChip-root {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        
+        /* Keep Rating components together */
+        .MuiRating-root {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
         }
 
+        /* Hide legends in Section 5 line graphs for PDF */
+        #section5-graphs .recharts-legend-wrapper {
+          display: none !important;
+        }
+
+        /* Stack Section 5 graphs vertically (full width) for PDF */
+        #section5-graphs .MuiGrid-item {
+          width: 100% !important;
+          max-width: 100% !important;
+          flex-basis: 100% !important;
+        }
+        
         /* Ensure Chip text is visible in PDF */
         .MuiChip-label {
           color: inherit !important;
@@ -701,45 +783,111 @@ function ProgressReport() {
             pdfHideElements.forEach(el => {
               el.style.display = 'none';
             });
+
+            // Hide legends in Section 5 line graphs
+            const section5Graphs = clonedDoc.getElementById('section5-graphs');
+            if (section5Graphs) {
+              const legends = section5Graphs.querySelectorAll('.recharts-legend-wrapper');
+              legends.forEach(legend => {
+                legend.style.display = 'none';
+              });
+            }
+
+            // Stack Section 5 graphs vertically (force full width)
+            const section5GridItems = clonedDoc.querySelectorAll('#section5-graphs .MuiGrid-item');
+            section5GridItems.forEach(item => {
+              // Force full width for PDF (remove md={6} behavior)
+              item.style.width = '100%';
+              item.style.maxWidth = '100%';
+              item.style.flexBasis = '100%';
+            });
           }
         },
         jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
         pagebreak: {
-          before: [
-            '#section1', '#section2', '#section3', '#section5',
-            '#health-assessment-table'
-          ],
+          mode: 'avoid-all', // Avoid all page breaks by default
           avoid: [
-            'img', 
-            '.pdf-avoid-break', 
-            '.recharts-wrapper',
-            '.recharts-legend-wrapper',
-            '.recharts-legend-item',
-            '#health-charts',
-            '#health-charts *',
-            '#health-assessment-table', 
-            '#health-assessment-table tr', 
-            '#health-assessment-table thead',
-            '#health-assessment-table tbody',
+            // Sections
+            '#section1', '#section1 *',
+            '#section2', '#section2 *',
+            '#section3', '#section3 *',
+            '#section4', '#section4 *',
+            '#section5', '#section5 *',
+            
+            // Section 5 specific
+            '#section5-card', '#section5-card *',
+            '#section5-graphs', '#section5-graphs *',
+            '#section5-title',
+            
+            // Charts - all Recharts elements
+            '.recharts-wrapper', '.recharts-wrapper *',
+            '.recharts-surface', '.recharts-surface *',
+            '.recharts-legend-wrapper', '.recharts-legend-wrapper *',
+            '.recharts-legend-item', '.recharts-legend-item *',
+            '.recharts-cartesian-axis', '.recharts-cartesian-axis *',
+            '.recharts-cartesian-grid', '.recharts-cartesian-grid *',
+            '.recharts-tooltip-wrapper', '.recharts-tooltip-wrapper *',
+            '.recharts-responsive-container', '.recharts-responsive-container *',
+            '[class*="recharts"]', '[class*="recharts"] *',
+            
+            // Tables - all table elements
+            '.MuiTableContainer-root', '.MuiTableContainer-root *',
+            '.MuiTable-root', '.MuiTable-root *',
+            '.MuiTableHead', '.MuiTableHead *',
+            '.MuiTableBody', '.MuiTableBody *',
+            '.MuiTableRow', '.MuiTableRow *',
+            '.MuiTableCell', '.MuiTableCell *',
+            'table', 'table *',
+            'thead', 'thead *',
+            'tbody', 'tbody *',
+            'tr', 'tr *',
+            'th', 'th *',
+            'td', 'td *',
+            
+            // Section 2 specific
+            '#section2 .MuiTableContainer-root', '#section2 .MuiTableContainer-root *',
+            '#section2 .MuiTable-root', '#section2 .MuiTable-root *',
+            '#section2-title', '#routine-score-indicator',
+            '#chores-performance-table', '#chores-performance-table *',
+            
+            // Input fields
+            '.MuiTextField-root', '.MuiTextField-root *',
+            '.MuiInputBase-root', '.MuiInputBase-root *',
+            '.MuiInputBase-input', '.MuiInputBase-input *',
+            'textarea', 'textarea *',
+            'input', 'input *',
+            
+            // Text elements
+            '.MuiTypography-root', '.MuiTypography-root *',
+            'p', 'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            
+            // Layout components
+            '.MuiCard-root', '.MuiCard-root *',
+            '.MuiCardContent-root', '.MuiCardContent-root *',
+            '.MuiGrid-container', '.MuiGrid-container *',
+            '.MuiGrid-item', '.MuiGrid-item *',
+            '.MuiBox-root', '.MuiBox-root *',
+            '.MuiPaper-root', '.MuiPaper-root *',
+            
+            // Other components
+            '.MuiChip-root', '.MuiChip-root *',
+            '.MuiRating-root', '.MuiRating-root *',
+            '.pdf-avoid-break', '.pdf-avoid-break *',
+            '.pdf-section', '.pdf-section *',
+            
+            // Images
+            'img', 'img *',
+            
+            // Activities assessment table (working well)
+            '#activities-assessment-table', '#activities-assessment-table *',
             '#activities-assessment-title',
-            '#activities-assessment-table',
-            '#activities-assessment-table tr',
-            '#activities-assessment-table thead',
-            '#activities-assessment-table tbody',
-            '#activities-assessment-table table',
-            '#wellbeing-score-indicator',
-            '#behaviour-charts',
-            '#behaviour-charts *',
-            '#behaviour-assessment-title',
-            '#behaviour-assessment-table',
-            '#behaviour-assessment-table tr',
-            '#behaviour-assessment-table thead',
-            '#behaviour-assessment-table tbody',
-            '#behaviour-assessment-table table',
-            '#section5-graphs',
-            '#section5-graphs *',
-            '#section5-card',
-            '#section5-title'
+            
+            // Health assessment table
+            '#health-assessment-table', '#health-assessment-table *',
+            
+            // Behaviour assessment table
+            '#behaviour-assessment-table', '#behaviour-assessment-table *',
+            '#behaviour-assessment-title'
           ]
         }
       };
@@ -884,29 +1032,6 @@ function ProgressReport() {
           display: block !important;
         }
 
-        /* Stronger hints to prevent mid-element page breaks */
-        .recharts-wrapper,
-        .MuiTableContainer-root,
-        .MuiTable-root,
-        .MuiGrid-container,
-        .MuiCard-root {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Section wrappers to keep blocks together */
-        .pdf-section {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Remove html2pdf explicit breaker for BIR/AWOL/Injuries report - avoid all page breaks */
-        .html2pdf__page-break {
-          break-before: avoid !important;
-          page-break-before: avoid !important;
-          break-after: avoid !important;
-          page-break-after: avoid !important;
-        }
 
         /* Ensure fillable text shows full content in PDF (no clipping) */
         textarea.MuiInputBase-input {
@@ -931,8 +1056,6 @@ function ProgressReport() {
         /* Strong avoid inside wrappers and their children */
         .pdf-avoid-break,
         .pdf-avoid-break * {
-          break-inside: avoid;
-          page-break-inside: avoid;
         }
 
         /* Ensure all table cells align to top */
@@ -1098,49 +1221,7 @@ function ProgressReport() {
             });
           }
         },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
-        pagebreak: {
-          mode: 'avoid-all',
-          avoid: [
-            'img',
-            '.pdf-avoid-break',
-            '#bir-charts',
-            '#bir-charts *',
-            '#bir-summary',
-            '#bir-summary *',
-            '#awol-summary',
-            '#awol-summary *',
-            '#injury-summary',
-            '#injury-summary *',
-            '#awol-chart',
-            '#awol-chart *',
-            '#injury-chart',
-            '#injury-chart *',
-            '#incident-charts',
-            '#incident-charts *',
-            '#bir-summary-title',
-            '#awol-summary-title',
-            '#injury-summary-title',
-            '#incident-summaries',
-            '#incident-summaries *',
-            '.recharts-wrapper',
-            '.recharts-legend-wrapper',
-            '.recharts-legend-item',
-            '.recharts-surface',
-            '.MuiTableContainer-root',
-            '.MuiTable-root',
-            '.MuiTableHead',
-            '.MuiTableBody',
-            '.MuiTableRow',
-            '.MuiTableCell',
-            '.MuiCard-root',
-            '.MuiCardContent-root',
-            '.MuiBox-root',
-            '.MuiTypography-root',
-            '.MuiGrid-container',
-            '.MuiGrid-item'
-          ]
-        }
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
       };
 
       try {
@@ -1221,10 +1302,40 @@ function ProgressReport() {
 
   // Handle fillable data changes
   const handleFillableDataChange = (section, data) => {
-    setFillableData(prev => ({
-      ...prev,
-      [section]: data
-    }));
+    setFillableData(prev => {
+      const updated = {
+        ...prev,
+        [section]: data
+      };
+      // Save updated fillable data to localStorage immediately if report exists
+      if (aggregatedData && client) {
+        try {
+          const savedReport = localStorage.getItem('progressReportData');
+          if (savedReport) {
+            const parsed = JSON.parse(savedReport);
+            parsed.fillableData = updated;
+            parsed._savedAt = Date.now();
+            localStorage.setItem('progressReportData', JSON.stringify(parsed));
+          } else {
+            // If no saved report exists, create one with current state
+            const reportDataToSave = {
+              client,
+              aggregatedData,
+              fillableData: updated,
+              dateRange,
+              selectedClientId,
+              reportType,
+              customDateRange,
+              _savedAt: Date.now()
+            };
+            localStorage.setItem('progressReportData', JSON.stringify(reportDataToSave));
+          }
+        } catch (error) {
+          console.error('Error saving fillable data:', error);
+        }
+      }
+      return updated;
+    });
   };
 
   if (loading) {
@@ -1261,7 +1372,7 @@ function ProgressReport() {
               <FormControl fullWidth>
                 <InputLabel>Client</InputLabel>
                 <Select
-                  value={selectedClientId}
+                  value={selectedClientId || ''}
                   onChange={(e) => setSelectedClientId(e.target.value)}
                   label="Client"
                   MenuProps={{
@@ -1273,11 +1384,15 @@ function ProgressReport() {
                     },
                   }}
                 >
-                  {clients.map((client) => (
-                    <MenuItem key={client.id} value={client.id}>
-                      {client.first_name} {client.last_name}
-                    </MenuItem>
-                  ))}
+                  {clients.length === 0 ? (
+                    <MenuItem value="" disabled>Loading clients...</MenuItem>
+                  ) : (
+                    clients.map((client) => (
+                      <MenuItem key={client.id} value={client.id}>
+                        {client.first_name} {client.last_name}
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
               </FormControl>
             </Grid>

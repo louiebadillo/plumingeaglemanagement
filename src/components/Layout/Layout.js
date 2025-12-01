@@ -143,7 +143,14 @@ function Layout(props) {
           <Route path="/app/reports/daily-report" component={DailyReportForm} />
           <Route path="/app/reports/my-reports" component={MyReports} />
           <Route path="/app/reports/admin-reports" component={AdminReports} />
-          <Route path="/app/reports/progress" component={ProgressReport} />
+          <Route path="/app/reports/progress" render={() => {
+            // Only allow admins to access progress reports
+            if (userRole === 'admin') {
+              return <ProgressReport />;
+            } else {
+              return <RouterRedirect to="/app/dashboard" />;
+            }
+          }} />
 
           {/* Staff Management Routes */}
           <Route path="/app/staff/management" component={StaffManagement} />

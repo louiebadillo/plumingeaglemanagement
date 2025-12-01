@@ -2,6 +2,9 @@ import React from 'react';
 import { mockUser } from './mock';
 import config from '../../src/config';
 import { showSnackbar } from '../components/Snackbar';
+// Static imports to prevent multiple Supabase client instances
+import { supabase } from '../lib/supabase';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
 
 
 let ManagementStateContext = React.createContext();
@@ -218,8 +221,7 @@ const actions = {
           type: 'USERS_FORM_FIND_STARTED',
         });
 
-        // Use Supabase to find user
-        const { supabase } = await import('../lib/supabase');
+        // Use Supabase to find user (using static import to prevent multiple instances)
         const { data: user, error } = await supabase
           .from('users')
           .select('*')
@@ -251,9 +253,8 @@ const actions = {
         type: 'USERS_FORM_CREATE_STARTED',
       });
       
-      // Use Supabase Admin API to create user
-      const { supabaseAdmin } = await import('../lib/supabaseAdmin');
-      console.log('📦 SupabaseAdmin imported successfully');
+      // Use Supabase Admin API to create user (using static import to prevent multiple instances)
+      console.log('📦 Using SupabaseAdmin (static import)');
       
       // Create user with Supabase Admin API
       console.log('👤 Creating auth user with email:', values.email);
@@ -372,8 +373,7 @@ const actions = {
             payload: { filter, keepPagination },
           });
 
-          // Get users from Supabase only
-          const { supabase } = await import('../lib/supabase');
+          // Get users from Supabase only (using static import to prevent multiple instances)
           const { data: supabaseUsers, error: supabaseError } = await supabase
             .from('users')
             .select('*')

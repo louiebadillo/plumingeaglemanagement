@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -25,6 +25,13 @@ function RoutineReport({
   const [overallRemarks, setOverallRemarks] = useState(
     fillableData?.routineRemarks?.overallRemarks || ''
   );
+
+  // Sync state with prop changes (when restoring from localStorage)
+  useEffect(() => {
+    if (fillableData?.routineRemarks?.overallRemarks !== undefined) {
+      setOverallRemarks(fillableData.routineRemarks.overallRemarks);
+    }
+  }, [fillableData?.routineRemarks?.overallRemarks]);
 
   const handleOverallRemarksChange = (value) => {
     setOverallRemarks(value);
@@ -76,7 +83,7 @@ function RoutineReport({
         <Typography variant="h6" gutterBottom>
           Chores Performance Assessment
         </Typography>
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} id="chores-performance-table">
           <Table>
             <TableHead>
               <TableRow>

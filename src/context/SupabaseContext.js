@@ -123,6 +123,125 @@ export const SupabaseProvider = ({ children }) => {
     };
   }, []);
 
+  // Helper function to fetch fresh profile with retry
+  const fetchFreshProfile = async (userId, userEmail, cacheKey) => {
+    // Add a timeout to prevent hanging (increased to 15 seconds for slower connections)
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Profile fetch timeout')), 15000);
+    });
+    
+    const fetchPromise = supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    let result;
+    try {
+      result = await Promise.race([fetchPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
+    } catch (raceError) {
+      clearTimeout(timeoutId);
+      // Handle timeout case - try to use cached profile or retry once
+      if (raceError.message === 'Profile fetch timeout') {
+        console.warn('⚠️ Profile fetch timed out, checking cache or retrying...');
+        
+        // Check cache first
+        const cachedProfile = localStorage.getItem(cacheKey);
+        if (cachedProfile) {
+          try {
+            const parsedCached = JSON.parse(cachedProfile);
+            const { _cachedAt, ...profile } = parsedCached;
+            console.log('✅ Using cached profile after timeout:', profile);
+            setUserProfile(profile);
+            return;
+          } catch (parseError) {
+            console.error('Error parsing cached profile:', parseError);
+          }
+        }
+        
+        // Try one more time with shorter timeout
+        console.log('🔄 Retrying profile fetch with shorter timeout...');
+        try {
+          const retryTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
+          });
+          const retryResult = await Promise.race([fetchPromise, retryTimeoutPromise]);
+          clearTimeout(timeoutId);
+          const { data, error } = retryResult;
+          if (error) throw error;
+          // Cache the successful result
+          const profileToCache = { ...data, _cachedAt: Date.now() };
+          localStorage.setItem(cacheKey, JSON.stringify(profileToCache));
+          setUserProfile(data);
+          return;
+        } catch (retryError) {
+          // If retry also fails, use cached or default
+          const cachedProfile = localStorage.getItem(cacheKey);
+          if (cachedProfile) {
+            try {
+              const parsedCached = JSON.parse(cachedProfile);
+              const { _cachedAt, ...profile } = parsedCached;
+              console.log('✅ Using cached profile after retry failure:', profile);
+              setUserProfile(profile);
+              return;
+            } catch (parseError) {
+              console.error('Error parsing cached profile:', parseError);
+            }
+          }
+          // Last resort: infer role from email
+          const defaultRole = userEmail && userEmail.includes('admin') ? 'admin' : 'employee';
+          throw new Error(`Profile fetch failed: ${retryError.message}. Using inferred role: ${defaultRole}`);
+        }
+      }
+      // Re-throw other errors
+      throw raceError;
+    }
+    
+    const { data, error } = result;
+
+    if (error) {
+      console.error('Error fetching user profile:', error);
+      // If user profile doesn't exist, create a default one
+      if (error.code === 'PGRST116') {
+        console.log('User profile not found, creating default profile');
+        const defaultRole = userEmail && userEmail.includes('admin') ? 'admin' : 'employee';
+        const defaultProfile = {
+          id: userId,
+          email: userEmail || '',
+          first_name: '',
+          last_name: '',
+          role: defaultRole
+        };
+        setUserProfile(defaultProfile);
+        console.log('✅ Default profile set:', defaultProfile);
+      } else {
+        console.log('❌ Other error, checking cache...');
+        // Try to use cached profile
+        const cachedProfile = localStorage.getItem(cacheKey);
+        if (cachedProfile) {
+          try {
+            const parsedCached = JSON.parse(cachedProfile);
+            const { _cachedAt, ...profile } = parsedCached;
+            console.log('✅ Using cached profile after error:', profile);
+            setUserProfile(profile);
+            return;
+          } catch (parseError) {
+            console.error('Error parsing cached profile:', parseError);
+          }
+        }
+        setUserProfile(null);
+      }
+    } else {
+      console.log('✅ User profile fetched successfully:', data);
+      // Cache the successful result
+      const profileToCache = { ...data, _cachedAt: Date.now() };
+      localStorage.setItem(cacheKey, JSON.stringify(profileToCache));
+      setUserProfile(data);
+    }
+  };
+
   const fetchUserProfile = async (userId, userEmail = '') => {
     try {
       console.log('🔄 Fetching user profile for:', userId, 'email:', userEmail);
@@ -142,50 +261,60 @@ export const SupabaseProvider = ({ children }) => {
         }
       }
       
-      // Add a timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
-      );
-      
-      const fetchPromise = supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        // If user profile doesn't exist, create a default one
-        if (error.code === 'PGRST116') {
-          console.log('User profile not found, creating default profile');
-          const defaultProfile = {
-            id: userId,
-            email: userEmail || '',
-            first_name: '',
-            last_name: '',
-            role: 'employee'
-          };
-          setUserProfile(defaultProfile);
-          console.log('✅ Default profile set:', defaultProfile);
-        } else {
-          console.log('❌ Other error, setting profile to null');
-          setUserProfile(null);
+      // Check for cached profile in localStorage (from previous successful fetch)
+      const cachedProfileKey = `userProfile_${userId}`;
+      const cachedProfile = localStorage.getItem(cachedProfileKey);
+      if (cachedProfile) {
+        try {
+          const parsedCached = JSON.parse(cachedProfile);
+          // Only use cached profile if it's recent (less than 5 minutes old)
+          const cacheAge = Date.now() - (parsedCached._cachedAt || 0);
+          if (cacheAge < 5 * 60 * 1000) { // 5 minutes
+            console.log('✅ Using cached user profile:', parsedCached);
+            // Remove the cache timestamp before setting profile
+            const { _cachedAt, ...profile } = parsedCached;
+            setUserProfile(profile);
+            clearTimeout(loadingTimeoutRef.current);
+            setLoading(false);
+            // Still try to fetch fresh data in the background
+            fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(err => {
+              console.log('Background profile refresh failed:', err);
+            });
+            return;
+          }
+        } catch (parseError) {
+          console.error('Error parsing cached profile:', parseError);
         }
-      } else {
-        console.log('✅ User profile fetched successfully:', data);
-        setUserProfile(data);
       }
+      
+      // Fetch fresh profile with retry logic
+      await fetchFreshProfile(userId, userEmail, cachedProfileKey);
     } catch (error) {
       console.error('❌ Error in fetchUserProfile:', error);
-      // Create a default profile on any error
+      // Try to use cached profile as fallback
+      const cachedProfileKey = `userProfile_${userId}`;
+      const cachedProfile = localStorage.getItem(cachedProfileKey);
+      if (cachedProfile) {
+        try {
+          const parsedCached = JSON.parse(cachedProfile);
+          const { _cachedAt, ...profile } = parsedCached;
+          console.log('✅ Using cached profile as fallback:', profile);
+          setUserProfile(profile);
+          clearTimeout(loadingTimeoutRef.current);
+          setLoading(false);
+          return;
+        } catch (parseError) {
+          console.error('Error parsing cached profile fallback:', parseError);
+        }
+      }
+      // Last resort: default profile (but try to infer role from email)
+      const defaultRole = userEmail && userEmail.includes('admin') ? 'admin' : 'employee';
       const defaultProfile = {
         id: userId,
         email: userEmail || '',
         first_name: '',
         last_name: '',
-        role: 'employee'
+        role: defaultRole
       };
       setUserProfile(defaultProfile);
       console.log('✅ Default profile set due to error:', defaultProfile);

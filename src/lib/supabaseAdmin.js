@@ -9,9 +9,23 @@ if (!supabaseServiceKey) {
   console.error('Please set REACT_APP_SUPABASE_SERVICE_KEY in your .env file');
 }
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+// Singleton pattern: Ensure only one admin client instance is created
+let supabaseAdminInstance = null;
+
+// Get project ref for unique storage key
+const projectRef = supabaseUrl?.split('//')[1]?.split('.')[0] || 'default';
+
+// Create Supabase admin client (singleton, no session persistence)
+// Admin client doesn't persist sessions, so no storage conflicts
+export const supabaseAdmin = (() => {
+  if (!supabaseAdminInstance) {
+    supabaseAdminInstance = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+    console.log('✅ Supabase admin client initialized (singleton)');
   }
-})
+  return supabaseAdminInstance;
+})();

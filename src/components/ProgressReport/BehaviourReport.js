@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -44,6 +44,17 @@ function BehaviourReport({
       miscellaneous: ''
     }
   );
+
+  // Sync state with prop changes (when restoring from localStorage)
+  useEffect(() => {
+    if (fillableData?.behaviourRemarks) {
+      setBehaviourRemarks({
+        mood: fillableData.behaviourRemarks.mood || '',
+        attitude: fillableData.behaviourRemarks.attitude || '',
+        miscellaneous: fillableData.behaviourRemarks.miscellaneous || ''
+      });
+    }
+  }, [fillableData?.behaviourRemarks]);
 
   const handleBehaviourRemarksChange = (field, value) => {
     const newRemarks = { ...behaviourRemarks, [field]: value };

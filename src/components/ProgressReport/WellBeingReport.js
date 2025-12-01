@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -38,6 +38,16 @@ function WellBeingReport({
       outsideGH: ''
     }
   );
+
+  // Sync state with prop changes (when restoring from localStorage)
+  useEffect(() => {
+    if (fillableData?.activities) {
+      setActivities({
+        insideGH: fillableData.activities.insideGH || '',
+        outsideGH: fillableData.activities.outsideGH || ''
+      });
+    }
+  }, [fillableData?.activities]);
 
   const handleActivitiesChange = (field, value) => {
     const newActivities = { ...activities, [field]: value };
