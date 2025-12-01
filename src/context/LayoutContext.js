@@ -6,7 +6,8 @@ let LayoutDispatchContext = React.createContext();
 function layoutReducer(state, action) {
   switch (action.type) {
     case 'TOGGLE_SIDEBAR':
-      return { ...state, isSidebarOpened: !state.isSidebarOpened };
+      // Always keep sidebar open - ignore toggle requests
+      return { ...state, isSidebarOpened: true };
     default: {
       throw new Error(`Unhandled action type: ${action.type}`);
     }
@@ -14,9 +15,11 @@ function layoutReducer(state, action) {
 }
 
 function LayoutProvider({ children }) {
+  // Sidebar is always open (uncompressed)
   let [state, dispatch] = React.useReducer(layoutReducer, {
     isSidebarOpened: true,
   });
+  
   return (
     <LayoutStateContext.Provider value={state}>
       <LayoutDispatchContext.Provider value={dispatch}>

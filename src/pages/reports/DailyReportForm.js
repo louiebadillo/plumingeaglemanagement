@@ -630,6 +630,14 @@ function DailyReportForm() {
   // Helper function to check if field can be edited considering shift availability
   const canEditFieldWithShift = (field, shift) => {
     if (isAdmin) return canEditField(field);
+    
+    // For draft reports, allow editing regardless of shift time
+    const isDraftReport = existingReport?.status === 'draft';
+    if (isDraftReport) {
+      return canEditField(field);
+    }
+    
+    // For new reports, check shift availability
     if (!isFieldShiftAvailable(field)) return false;
     return canEditField(field);
   };
@@ -653,10 +661,13 @@ function DailyReportForm() {
       return true;
     }
     
-    // Check shift availability (for non-admin employees)
-    // This ensures fields are only editable during their respective shift times
-    if (!isFieldShiftAvailable(field)) {
-      return false;
+    // For draft reports, skip shift availability check - allow editing all fields
+    if (!isDraftReport) {
+      // Check shift availability (for non-admin employees) - only for new reports
+      // This ensures fields are only editable during their respective shift times
+      if (!isFieldShiftAvailable(field)) {
+        return false;
+      }
     }
     
     const trackingField = getTrackingFieldName(field);
@@ -1180,8 +1191,11 @@ function DailyReportForm() {
                     Medication
                   </Typography>
                   <FormControl component="fieldset" disabled={!canEditField('medication_required')}>
-                    <FormLabel component="legend">Needs to take meds in shift?</FormLabel>
+                    <FormLabel component="legend" id="medication-required-label">Needs to take meds in shift?</FormLabel>
                     <RadioGroup
+                      id="medication-required"
+                      name="medication_required"
+                      aria-labelledby="medication-required-label"
                       value={formData.medication_required}
                       onChange={(e) => handleFieldChange('medication_required', e.target.value === 'true')}
                     >
@@ -1192,8 +1206,11 @@ function DailyReportForm() {
                   
                   {formData.medication_required && (
                     <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditField('medication_status')}>
-                      <FormLabel>Medication Status</FormLabel>
+                      <FormLabel id="medication-status-label" htmlFor="medication-status">Medication Status</FormLabel>
                       <Select
+                        id="medication-status"
+                        name="medication_status"
+                        labelId="medication-status-label"
                         value={formData.medication_status}
                         onChange={(e) => handleFieldChange('medication_status', e.target.value)}
                       >
@@ -1218,8 +1235,11 @@ function DailyReportForm() {
                     Sleep
                   </Typography>
                   <FormControl component="fieldset" disabled={!canEditField('sleep_woke_on_time')}>
-                    <FormLabel component="legend">Woke up in time?</FormLabel>
+                    <FormLabel component="legend" id="sleep-woke-on-time-label">Woke up in time?</FormLabel>
                     <RadioGroup
+                      id="sleep-woke-on-time"
+                      name="sleep_woke_on_time"
+                      aria-labelledby="sleep-woke-on-time-label"
                       value={formData.sleep_woke_on_time}
                       onChange={(e) => handleFieldChange('sleep_woke_on_time', e.target.value === 'true')}
                     >
@@ -1239,8 +1259,11 @@ function DailyReportForm() {
                     Diet and Food
                   </Typography>
                   <FormControl component="fieldset" disabled={!canEditField('diet_ate_well')}>
-                    <FormLabel component="legend">How was the client's diet/appetite?</FormLabel>
+                    <FormLabel component="legend" id="diet-ate-well-label">How was the client's diet/appetite?</FormLabel>
                     <RadioGroup
+                      id="diet-ate-well"
+                      name="diet_ate_well"
+                      aria-labelledby="diet-ate-well-label"
                       value={formData.diet_ate_well}
                       onChange={(e) => handleFieldChange('diet_ate_well', e.target.value === 'true')}
                     >
@@ -1260,8 +1283,11 @@ function DailyReportForm() {
                     Dental Hygiene
                   </Typography>
                   <FormControl component="fieldset" disabled={!canEditField('dental_hygiene_done')}>
-                    <FormLabel component="legend">Morning Dental Hygiene done?</FormLabel>
+                    <FormLabel component="legend" id="dental-hygiene-done-label">Morning Dental Hygiene done?</FormLabel>
                     <RadioGroup
+                      id="dental-hygiene-done"
+                      name="dental_hygiene_done"
+                      aria-labelledby="dental-hygiene-done-label"
                       value={formData.dental_hygiene_done}
                       onChange={(e) => handleFieldChange('dental_hygiene_done', e.target.value === 'true')}
                     >
@@ -1289,8 +1315,11 @@ function DailyReportForm() {
                     ].map(({ key, label }) => (
                       <Grid item xs={12} sm={6} key={key}>
                         <FormControl fullWidth disabled={!canEditField(key)}>
-                          <FormLabel>{label}</FormLabel>
+                          <FormLabel id={`${key}-label`} htmlFor={key}>{label}</FormLabel>
                           <Select
+                            id={key}
+                            name={key}
+                            labelId={`${key}-label`}
                             value={formData[key] || ''}
                             onChange={(e) => handleFieldChange(key, parseInt(e.target.value))}
                           >
@@ -1318,8 +1347,11 @@ function DailyReportForm() {
                   <Grid container spacing={2}>
                     <Grid item xs={12} sm={6}>
                       <FormControl component="fieldset" disabled={!canEditField('behaviour_observation')}>
-                        <FormLabel component="legend">Observation</FormLabel>
+                        <FormLabel component="legend" id="behaviour-observation-label">Observation</FormLabel>
                         <RadioGroup
+                          id="behaviour-observation"
+                          name="behaviour_observation"
+                          aria-labelledby="behaviour-observation-label"
                           value={formData.behaviour_observation}
                           onChange={(e) => handleFieldChange('behaviour_observation', e.target.value)}
                         >
@@ -1331,8 +1363,11 @@ function DailyReportForm() {
                     
                     <Grid item xs={12} sm={6}>
                       <FormControl component="fieldset" disabled={!canEditField('behaviour_followed_rules')}>
-                        <FormLabel component="legend">Followed Rules</FormLabel>
+                        <FormLabel component="legend" id="behaviour-followed-rules-label">Followed Rules</FormLabel>
                         <RadioGroup
+                          id="behaviour-followed-rules"
+                          name="behaviour_followed_rules"
+                          aria-labelledby="behaviour-followed-rules-label"
                           value={formData.behaviour_followed_rules}
                           onChange={(e) => handleFieldChange('behaviour_followed_rules', e.target.value === 'true')}
                         >
@@ -1344,8 +1379,11 @@ function DailyReportForm() {
                     
                     <Grid item xs={12} sm={6}>
                       <FormControl component="fieldset" disabled={!canEditField('behaviour_listened')}>
-                        <FormLabel component="legend">Listened to Instructions</FormLabel>
+                        <FormLabel component="legend" id="behaviour-listened-label">Listened to Instructions</FormLabel>
                         <RadioGroup
+                          id="behaviour-listened"
+                          name="behaviour_listened"
+                          aria-labelledby="behaviour-listened-label"
                           value={formData.behaviour_listened}
                           onChange={(e) => handleFieldChange('behaviour_listened', e.target.value === 'true')}
                         >
@@ -1357,8 +1395,11 @@ function DailyReportForm() {
                     
                     <Grid item xs={12} sm={6}>
                       <FormControl component="fieldset" disabled={!canEditField('behaviour_control')}>
-                        <FormLabel component="legend">Able to Control Behaviour</FormLabel>
+                        <FormLabel component="legend" id="behaviour-control-label">Able to Control Behaviour</FormLabel>
                         <RadioGroup
+                          id="behaviour-control"
+                          name="behaviour_control"
+                          aria-labelledby="behaviour-control-label"
                           value={formData.behaviour_control}
                           onChange={(e) => handleFieldChange('behaviour_control', e.target.value === 'true')}
                         >
@@ -1395,8 +1436,11 @@ function DailyReportForm() {
                       Medication (2pm – 10pm)
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditField('afternoon_medication_required')}>
-                      <FormLabel component="legend">Needs to take meds in shift?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-medication-required-label">Needs to take meds in shift?</FormLabel>
                       <RadioGroup
+                        id="afternoon-medication-required"
+                        name="afternoon_medication_required"
+                        aria-labelledby="afternoon-medication-required-label"
                         value={formData.afternoon_medication_required}
                         onChange={(e) => handleFieldChange('afternoon_medication_required', e.target.value === 'true')}
                       >
@@ -1407,8 +1451,11 @@ function DailyReportForm() {
                     
                     {formData.afternoon_medication_required && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_medication_status', 'afternoon')}>
-                        <FormLabel>Medication Status</FormLabel>
+                        <FormLabel id="afternoon-medication-status-label" htmlFor="afternoon-medication-status">Medication Status</FormLabel>
                         <Select
+                          id="afternoon-medication-status"
+                          name="afternoon_medication_status"
+                          labelId="afternoon-medication-status-label"
                           value={formData.afternoon_medication_status}
                           onChange={(e) => handleFieldChange('afternoon_medication_status', e.target.value)}
                         >
@@ -1433,8 +1480,11 @@ function DailyReportForm() {
                       Sleep
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_slept_on_time', 'afternoon')}>
-                      <FormLabel component="legend">Slept on time?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-slept-on-time-label">Slept on time?</FormLabel>
                       <RadioGroup
+                        id="afternoon-slept-on-time"
+                        name="afternoon_slept_on_time"
+                        aria-labelledby="afternoon-slept-on-time-label"
                         value={formData.afternoon_slept_on_time}
                         onChange={(e) => handleFieldChange('afternoon_slept_on_time', e.target.value === 'true')}
                       >
@@ -1454,8 +1504,11 @@ function DailyReportForm() {
                       Diet and Food
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_diet_ate_well', 'afternoon')}>
-                      <FormLabel component="legend">How was the client's diet/appetite?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-diet-ate-well-label">How was the client's diet/appetite?</FormLabel>
                       <RadioGroup
+                        id="afternoon-diet-ate-well"
+                        name="afternoon_diet_ate_well"
+                        aria-labelledby="afternoon-diet-ate-well-label"
                         value={formData.afternoon_diet_ate_well}
                         onChange={(e) => handleFieldChange('afternoon_diet_ate_well', e.target.value === 'true')}
                       >
@@ -1475,8 +1528,11 @@ function DailyReportForm() {
                       Dental Hygiene
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_dental_hygiene_done', 'afternoon')}>
-                      <FormLabel component="legend">Evening dental hygiene done?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-dental-hygiene-done-label">Evening dental hygiene done?</FormLabel>
                       <RadioGroup
+                        id="afternoon-dental-hygiene-done"
+                        name="afternoon_dental_hygiene_done"
+                        aria-labelledby="afternoon-dental-hygiene-done-label"
                         value={formData.afternoon_dental_hygiene_done}
                         onChange={(e) => handleFieldChange('afternoon_dental_hygiene_done', e.target.value === 'true')}
                       >
@@ -1496,8 +1552,11 @@ function DailyReportForm() {
                       Shower
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_shower_taken', 'afternoon')}>
-                      <FormLabel component="legend">Took a shower today?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-shower-taken-label">Took a shower today?</FormLabel>
                       <RadioGroup
+                        id="afternoon-shower-taken"
+                        name="afternoon_shower_taken"
+                        aria-labelledby="afternoon-shower-taken-label"
                         value={formData.afternoon_shower_taken}
                         onChange={(e) => handleFieldChange('afternoon_shower_taken', e.target.value === 'true')}
                       >
@@ -1525,8 +1584,11 @@ function DailyReportForm() {
                       ].map(({ key, label }) => (
                         <Grid item xs={12} sm={6} key={key}>
                           <FormControl fullWidth disabled={!canEditFieldWithShift(key, 'afternoon')}>
-                            <FormLabel>{label}</FormLabel>
+                            <FormLabel id={`${key}-label`} htmlFor={key}>{label}</FormLabel>
                             <Select
+                              id={key}
+                              name={key}
+                              labelId={`${key}-label`}
                               value={formData[key] || ''}
                               onChange={(e) => handleFieldChange(key, parseInt(e.target.value))}
                             >
@@ -1552,8 +1614,11 @@ function DailyReportForm() {
                       School
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_school_supposed_to_go', 'afternoon')}>
-                      <FormLabel component="legend">Supposed to go to school today?</FormLabel>
+                      <FormLabel component="legend" id="afternoon-school-supposed-to-go-label">Supposed to go to school today?</FormLabel>
                       <RadioGroup
+                        id="afternoon-school-supposed-to-go"
+                        name="afternoon_school_supposed_to_go"
+                        aria-labelledby="afternoon-school-supposed-to-go-label"
                         value={formData.afternoon_school_supposed_to_go}
                         onChange={(e) => handleFieldChange('afternoon_school_supposed_to_go', e.target.value === 'true')}
                       >
@@ -1564,8 +1629,11 @@ function DailyReportForm() {
                     
                     {formData.afternoon_school_supposed_to_go === false && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
-                        <FormLabel>Reason</FormLabel>
+                        <FormLabel id="afternoon-school-status-reason-label" htmlFor="afternoon-school-status-reason">Reason</FormLabel>
                         <Select
+                          id="afternoon-school-status-reason"
+                          name="afternoon_school_status_reason"
+                          labelId="afternoon-school-status-reason-label"
                           value={formData.afternoon_school_status}
                           onChange={(e) => handleFieldChange('afternoon_school_status', e.target.value)}
                         >
@@ -1578,8 +1646,11 @@ function DailyReportForm() {
                     
                     {formData.afternoon_school_supposed_to_go === true && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
-                        <FormLabel>School Status</FormLabel>
+                        <FormLabel id="afternoon-school-status-label" htmlFor="afternoon-school-status">School Status</FormLabel>
                         <Select
+                          id="afternoon-school-status"
+                          name="afternoon_school_status"
+                          labelId="afternoon-school-status-label"
                           value={formData.afternoon_school_status}
                           onChange={(e) => handleFieldChange('afternoon_school_status', e.target.value)}
                         >
@@ -1604,8 +1675,11 @@ function DailyReportForm() {
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6}>
                         <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_observation', 'afternoon')}>
-                          <FormLabel component="legend">Observation</FormLabel>
+                          <FormLabel component="legend" id="afternoon-behaviour-observation-label">Observation</FormLabel>
                           <RadioGroup
+                            id="afternoon-behaviour-observation"
+                            name="afternoon_behaviour_observation"
+                            aria-labelledby="afternoon-behaviour-observation-label"
                             value={formData.afternoon_behaviour_observation}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_observation', e.target.value)}
                           >
@@ -1617,8 +1691,11 @@ function DailyReportForm() {
                       
                       <Grid item xs={12} sm={6}>
                         <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_followed_rules', 'afternoon')}>
-                          <FormLabel component="legend">Followed Rules</FormLabel>
+                          <FormLabel component="legend" id="afternoon-behaviour-followed-rules-label">Followed Rules</FormLabel>
                           <RadioGroup
+                            id="afternoon-behaviour-followed-rules"
+                            name="afternoon_behaviour_followed_rules"
+                            aria-labelledby="afternoon-behaviour-followed-rules-label"
                             value={formData.afternoon_behaviour_followed_rules}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_followed_rules', e.target.value === 'true')}
                           >
@@ -1630,8 +1707,11 @@ function DailyReportForm() {
                       
                       <Grid item xs={12} sm={6}>
                         <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_listened', 'afternoon')}>
-                          <FormLabel component="legend">Listened to Instructions</FormLabel>
+                          <FormLabel component="legend" id="afternoon-behaviour-listened-label">Listened to Instructions</FormLabel>
                           <RadioGroup
+                            id="afternoon-behaviour-listened"
+                            name="afternoon_behaviour_listened"
+                            aria-labelledby="afternoon-behaviour-listened-label"
                             value={formData.afternoon_behaviour_listened}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_listened', e.target.value === 'true')}
                           >
@@ -1643,8 +1723,11 @@ function DailyReportForm() {
                       
                       <Grid item xs={12} sm={6}>
                         <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_control', 'afternoon')}>
-                          <FormLabel component="legend">Able to Control Behaviour</FormLabel>
+                          <FormLabel component="legend" id="afternoon-behaviour-control-label">Able to Control Behaviour</FormLabel>
                           <RadioGroup
+                            id="afternoon-behaviour-control"
+                            name="afternoon_behaviour_control"
+                            aria-labelledby="afternoon-behaviour-control-label"
                             value={formData.afternoon_behaviour_control}
                             onChange={(e) => handleFieldChange('afternoon_behaviour_control', e.target.value === 'true')}
                           >
@@ -1681,8 +1764,11 @@ function DailyReportForm() {
                       Medication (10pm – 6am)
                     </Typography>
                     <FormControl component="fieldset" disabled={!canEditFieldWithShift('evening_medication_required', 'evening')}>
-                      <FormLabel component="legend">Needs to take meds in shift?</FormLabel>
+                      <FormLabel component="legend" id="evening-medication-required-label">Needs to take meds in shift?</FormLabel>
                       <RadioGroup
+                        id="evening-medication-required"
+                        name="evening_medication_required"
+                        aria-labelledby="evening-medication-required-label"
                         value={formData.evening_medication_required}
                         onChange={(e) => handleFieldChange('evening_medication_required', e.target.value === 'true')}
                       >
@@ -1693,8 +1779,11 @@ function DailyReportForm() {
                     
                     {formData.evening_medication_required && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('evening_medication_status', 'evening')}>
-                        <FormLabel>Medication Status</FormLabel>
+                        <FormLabel id="evening-medication-status-label" htmlFor="evening-medication-status">Medication Status</FormLabel>
                         <Select
+                          id="evening-medication-status"
+                          name="evening_medication_status"
+                          labelId="evening-medication-status-label"
                           value={formData.evening_medication_status}
                           onChange={(e) => handleFieldChange('evening_medication_status', e.target.value)}
                         >

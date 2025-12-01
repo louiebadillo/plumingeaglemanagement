@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { Drawer, IconButton, List, Box, Typography } from '@mui/material';
+import { Drawer, List, Box } from '@mui/material';
 import { useTheme } from '@mui/material';
 import { withRouter } from 'react-router-dom';
 import classNames from 'classnames';
@@ -17,8 +16,6 @@ const logo = '/pellogofinal.png';
 // context
 import {
   useLayoutState,
-  useLayoutDispatch,
-  toggleSidebar,
 } from '../../context/LayoutContext';
 
 function Sidebar({ location, structure }) {
@@ -32,20 +29,19 @@ function Sidebar({ location, structure }) {
     ) {
       return;
     }
-
-    if (value && !isPermanent) toggleSidebar(layoutDispatch);
+    // Sidebar is always open, so no action needed
   };
 
   // global
   let { isSidebarOpened } = useLayoutState();
-  let layoutDispatch = useLayoutDispatch();
 
   // local
   let [isPermanent, setPermanent] = useState(true);
 
+  // Sidebar is always opened (uncompressed)
   const isSidebarOpenedWrapper = useMemo(
-    () => (!isPermanent ? !isSidebarOpened : isSidebarOpened),
-    [isPermanent, isSidebarOpened],
+    () => true, // Always return true to keep sidebar open
+    [],
   );
 
   useEffect(function () {
@@ -95,15 +91,6 @@ function Sidebar({ location, structure }) {
         />
       </Box>
       
-      <div className={classes.mobileBackButton}>
-        <IconButton onClick={() => toggleSidebar(layoutDispatch)} color="default">
-          <ArrowBackIcon
-            classes={{
-              root: classNames(classes.headerIcon, classes.headerIconCollapse),
-            }}
-          />
-        </IconButton>
-      </div>
       <List
         className={classes.sidebarList}
         classes={{ padding: classes.padding }}

@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useHistory } from 'react-router-dom';
 import { AppBar, Toolbar, IconButton, Menu, MenuItem } from '@mui/material';
-import { useTheme } from '@mui/material';
 import {
-  Menu as MenuIcon,
   Person as AccountIcon,
   ArrowBack as ArrowBackIcon,
 } from '@mui/icons-material';
@@ -19,26 +17,18 @@ import useStyles from './styles';
 import { Typography, Avatar } from '../Wrappers/Wrappers';
 
 // context
-import {
-  useLayoutState,
-  useLayoutDispatch,
-  toggleSidebar,
-} from '../../context/LayoutContext';
 import { useSupabase } from '../../context/SupabaseContext';
 
 export default function Header(props) {
   let classes = useStyles();
-  let theme = useTheme();
+  const history = useHistory();
 
   // global
-  let layoutState = useLayoutState();
-  let layoutDispatch = useLayoutDispatch();
   const { userProfile, signOut } = useSupabase();
 
   // local
   const [profileMenu, setProfileMenu] = useState(null);
   const [currentUser, setCurrentUser] = useState();
-  const [isSmall, setSmall] = useState(false);
 
 
   useEffect(() => {
@@ -65,52 +55,35 @@ export default function Header(props) {
     }
   }, [userProfile]);
 
-  useEffect(function () {
-    window.addEventListener('resize', handleWindowWidthChange);
-    handleWindowWidthChange();
-    return function cleanup() {
-      window.removeEventListener('resize', handleWindowWidthChange);
-    };
-  });
-
-  function handleWindowWidthChange() {
-    let windowWidth = window.innerWidth;
-    let breakpointWidth = theme.breakpoints.values.md;
-    let isSmallScreen = windowWidth < breakpointWidth;
-    setSmall(isSmallScreen);
-  }
+  const handleGoBack = () => {
+    if (history.length > 1) {
+      history.goBack();
+    } else {
+      // If no history, go to dashboard
+      history.push('/app/dashboard');
+    }
+  };
 
   return (
     <AppBar position='fixed' className={classes.appBar}>
       <Toolbar className={classes.toolbar}>
         <IconButton
           color='default'
-          onClick={() => toggleSidebar(layoutDispatch)}
+          onClick={handleGoBack}
           className={classNames(
             classes.headerMenuButton,
             classes.headerMenuButtonCollapse,
           )}
+          title="Go back"
         >
-          {(!layoutState.isSidebarOpened && isSmall) ||
-          (layoutState.isSidebarOpened && !isSmall) ? (
-            <ArrowBackIcon
-              classes={{
-                root: classNames(
-                  classes.headerIcon,
-                  classes.headerIconCollapse,
-                ),
-              }}
-            />
-          ) : (
-            <MenuIcon
-              classes={{
-                root: classNames(
-                  classes.headerIcon,
-                  classes.headerIconCollapse,
-                ),
-              }}
-            />
-          )}
+          <ArrowBackIcon
+            classes={{
+              root: classNames(
+                classes.headerIcon,
+                classes.headerIconCollapse,
+              ),
+            }}
+          />
         </IconButton>
         <Typography variant='h6' weight='medium' className={classes.logotype}>
           {getConfig('COMPANY.NAME') || 'Pluming Eagle Lodge'}
