@@ -66,6 +66,7 @@ function StaffManagement() {
   const [formData, setFormData] = useState(initialFormData);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -101,35 +102,41 @@ function StaffManagement() {
       try {
         setLoading(true);
         console.log('🔄 Loading users from Supabase...');
-        console.log('📦 Using direct fetch instead of Supabase client...');
         
-        console.log('🔍 Making direct fetch request to Supabase API...');
+        // Use proper Supabase config utilities
+        const { supabaseUrl, supabaseServiceKey } = getSupabaseConfig();
         
-        // Use direct fetch since Supabase client is hanging
-        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+        if (!supabaseUrl || !supabaseServiceKey) {
+          console.error('❌ Missing Supabase configuration!');
+          console.error('Supabase URL:', supabaseUrl);
+          console.error('Service Key present:', !!supabaseServiceKey);
+          setError('Missing Supabase configuration. Please check environment variables.');
+          setLoading(false);
+          return;
+        }
+        
+        const headers = getSupabaseHeaders();
+        
+        console.log('🔍 Making fetch request to Supabase API...');
+        console.log('📍 Supabase URL:', supabaseUrl);
+        console.log('🔑 Service Key present:', !!supabaseServiceKey);
+        
+        const response = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
           method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
+          headers: headers
         });
         
+        console.log('📡 Response status:', response.status, response.statusText);
+        
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorText = await response.text();
+          console.error('❌ HTTP error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
         
         const users = await response.json();
-        const error = null;
         
         console.log('✅ Query completed, checking results...');
-
-        if (error) {
-          console.error('❌ Error loading users:', error);
-          return;
-        }
-
         console.log('📋 Raw users data from Supabase:', users);
         console.log('📊 Raw users count:', users ? users.length : 0);
 
@@ -156,9 +163,12 @@ function StaffManagement() {
         console.log('📊 Number of users loaded:', transformedUsers.length);
         console.log('🔄 Setting staff state...');
         setStaff(transformedUsers);
+        setError(null); // Clear any previous errors
         console.log('✅ Staff state set successfully');
       } catch (error) {
         console.error('💥 Error in loadUsers:', error);
+        setError(`Failed to load staff members: ${error.message}`);
+        setStaff([]);
       } finally {
         setLoading(false);
       }
@@ -329,13 +339,11 @@ function StaffManagement() {
       
       // Reload users from Supabase to confirm deletion
       console.log('🔄 Reloading users after deletion...');
-      const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+      const { supabaseUrl } = getSupabaseConfig();
+      const headers = getSupabaseHeaders();
+      const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
         method: 'GET',
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-          'Content-Type': 'application/json'
-        }
+        headers: headers
       });
       
       if (reloadResponse.ok) {
@@ -405,6 +413,10 @@ function StaffManagement() {
       setSubmitting(true);
       console.log('🚀 Starting staff save operation...');
       
+      // Get Supabase config once for the entire function
+      const { supabaseUrl } = getSupabaseConfig();
+      const headers = getSupabaseHeaders();
+      
       if (editingStaff) {
         // Update existing staff in Supabase
         console.log('🔄 Updating staff member in Supabase:', editingStaff.id);
@@ -419,8 +431,7 @@ function StaffManagement() {
         // Update user profile in Supabase using direct fetch with service role
         console.log('🔄 Updating user profile in public.users table...');
         console.log('📦 Using direct fetch with service role key...');
-        
-        const updateUrl = `https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?id=eq.${editingStaff.id}`;
+        const updateUrl = `${supabaseUrl}/rest/v1/users?id=eq.${editingStaff.id}`;
         console.log('🌐 Update URL:', updateUrl);
         
         const requestBody = {
@@ -492,13 +503,9 @@ function StaffManagement() {
         console.log('⏰ Waiting 2 seconds for database to process update...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+        const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
           method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Content-Type': 'application/json'
-          }
+          headers: headers
         });
         
         if (reloadResponse.ok) {
@@ -588,7 +595,7 @@ function StaffManagement() {
 
         // Create the user profile manually (in case trigger failed)
         console.log('🔄 Creating user profile in public.users table...');
-        const profileUrl = 'https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users';
+        const profileUrl = `${supabaseUrl}/rest/v1/users`;
         const profileBody = {
           id: userId,
           email: formData.email || '',
@@ -629,14 +636,9 @@ function StaffManagement() {
         
         // Reload users from Supabase to get the latest data
         console.log('🔄 Reloading users after creation...');
-        const reloadResponse = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*&order=created_at.desc', {
+        const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*&order=created_at.desc`, {
           method: 'GET',
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
+          headers: headers
         });
 
         if (reloadResponse.ok) {
@@ -768,6 +770,11 @@ function StaffManagement() {
       {/* Staff Table */}
       <Card>
         <CardContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
           <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
             <Typography variant="h6">
               Staff Members ({filteredStaff.length})
@@ -778,14 +785,11 @@ function StaffManagement() {
                 console.log('🔄 Manual refresh triggered');
                 setLoading(true);
                 try {
-                  const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/users?select=*', {
+                  const { supabaseUrl } = getSupabaseConfig();
+                  const headers = getSupabaseHeaders();
+                  const response = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
                     method: 'GET',
-                    headers: {
-                      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-                      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJya2J5cGN0a2NjemVybnRmcHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTk0ODEsImV4cCI6MjA3Mzc5NTQ4MX0.SPaPOjLKgOb68CrkaFp4B7LBAZX2eW-unoxSe0OeklE',
-                      'Content-Type': 'application/json',
-                      'Cache-Control': 'no-cache'
-                    }
+                    headers: headers
                   });
                   
                   if (response.ok) {

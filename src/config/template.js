@@ -18,9 +18,10 @@ export const TEMPLATE_CONFIG = {
   },
 
   // Authentication
+  // NOTE: These are development-only defaults. Use environment variables in production.
   AUTH: {
-    DEFAULT_EMAIL: 'admin@plumingeagle.com',
-    DEFAULT_PASSWORD: 'admin123',
+    DEFAULT_EMAIL: process.env.REACT_APP_DEFAULT_ADMIN_EMAIL || 'admin@plumingeagle.com',
+    DEFAULT_PASSWORD: process.env.REACT_APP_DEFAULT_ADMIN_PASSWORD || 'admin123',
     SESSION_TIMEOUT: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
   },
 

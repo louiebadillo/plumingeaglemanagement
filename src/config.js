@@ -10,9 +10,10 @@ export default {
   redirectUrl,
   remote: "https://sing-generator-node.herokuapp.com",
   isBackend: true, // Use Supabase backend
+  // NOTE: These are development-only defaults. Remove or use environment variables in production.
   auth: {
-    email: 'admin@plumingeagle.com',
-    password: 'admin123',
+    email: process.env.REACT_APP_DEFAULT_ADMIN_EMAIL || 'admin@plumingeagle.com',
+    password: process.env.REACT_APP_DEFAULT_ADMIN_PASSWORD || 'admin123',
   },
   app: {
     colors: {

@@ -365,8 +365,8 @@ export const SupabaseProvider = ({ children }) => {
       // Clear all Supabase session storage
       try {
         // Get the project ref from the Supabase URL to find the exact storage key
-        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://brkbypctkcczerntfpsa.supabase.co';
-        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || 'brkbypctkcczerntfpsa';
+        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+        const projectRef = supabaseUrl ? supabaseUrl.split('//')[1]?.split('.')[0] : '';
         const authTokenKey = `sb-${projectRef}-auth-token`;
         
         console.log('🗑️ Clearing Supabase storage keys...');

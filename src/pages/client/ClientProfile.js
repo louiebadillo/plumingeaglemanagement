@@ -545,7 +545,8 @@ function ClientProfile() {
         
         console.log('🆕 Creating new client with data:', clientData);
         
-        const response = await fetch('https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients', {
+        const { supabaseUrl } = getSupabaseConfig();
+        const response = await fetch(`${supabaseUrl}/rest/v1/clients`, {
           method: 'POST',
           headers: {
             ...getSupabaseHeaders(),
@@ -621,7 +622,8 @@ function ClientProfile() {
         
         console.log('🔄 Updating client with data:', clientData);
         
-        const response = await fetch(`https://brkbypctkcczerntfpsa.supabase.co/rest/v1/clients?id=eq.${client.id}`, {
+        const { supabaseUrl } = getSupabaseConfig();
+        const response = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${client.id}`, {
           method: 'PATCH',
           headers: {
             ...getSupabaseHeaders(),
