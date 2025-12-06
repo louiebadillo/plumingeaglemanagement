@@ -261,7 +261,7 @@ function ClientProfile() {
           email: ''
         },
         facility: facilityParam || null, // Use facility from URL or null
-        status: 'Active',
+        status: 'active',
         assignedStaff: [],
         lastUpdated: new Date().toISOString()
       };
@@ -433,7 +433,7 @@ function ClientProfile() {
                 email: supabaseClient.secondary_emergency_contact_email
               },
               facility: supabaseClient.facility_id,
-              status: 'Active',
+              status: supabaseClient.status || 'active',
               assignedStaff: [],
               lastUpdated: supabaseClient.updated_at
             };
@@ -511,6 +511,7 @@ function ClientProfile() {
           band_no: editingClient.band_no,
           admission_date: cleanDateField(editingClient.admissionDate),
           room: editingClient.room,
+          status: editingClient.status || 'active',
           pronouns: editingClient.pronouns,
           social_media_links: editingClient.socialMediaLinks || [],
           case_worker_name: editingClient.caseWorker?.name,
@@ -589,6 +590,7 @@ function ClientProfile() {
           band_no: editingClient.band_no,
           admission_date: cleanDateField(editingClient.admissionDate),
           room: editingClient.room,
+          status: editingClient.status || 'active',
           pronouns: editingClient.pronouns,
           social_media_links: editingClient.socialMediaLinks || [],
           case_worker_name: editingClient.caseWorker?.name,
@@ -840,6 +842,11 @@ function ClientProfile() {
               <Typography variant="body2" color="textSecondary">
                 Room {client?.room || 'Not assigned'} • {facility?.name || 'Facility not found'}
               </Typography>
+              <Chip
+                label={client?.status === 'active' ? 'Active' : client?.status === 'discharged' ? 'Discharged' : 'Active'}
+                color={client?.status === 'active' ? 'success' : client?.status === 'discharged' ? 'warning' : 'success'}
+                size="small"
+              />
             </Box>
           </Box>
         </Box>
@@ -1381,6 +1388,19 @@ function ClientProfile() {
                 onChange={(e) => handleInputChange('band_no', e.target.value)}
                 placeholder="Enter band number"
               />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={editingClient.status || 'active'}
+                  onChange={(e) => handleInputChange('status', e.target.value)}
+                  label="Status"
+                >
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="discharged">Discharged</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
             {/* Social Media Links */}
             <Grid item xs={12}>

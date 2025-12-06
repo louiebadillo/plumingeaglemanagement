@@ -844,23 +844,30 @@ function Dashboard() {
                         </Box>
 
                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-                          <Chip
-                            label={
-                              status === 'completed'
-                                ? 'Submitted'
-                                : status === 'in_progress'
-                                ? 'In Progress'
-                                : 'Not Started'
-                            }
-                            color={
-                              status === 'completed'
-                                ? 'success'
-                                : status === 'in_progress'
-                                ? 'warning'
-                                : 'default'
-                            }
-                            size="small"
-                          />
+                          <Box display="flex" gap={1}>
+                            <Chip
+                              label={client.status === 'active' ? 'Active' : client.status === 'discharged' ? 'Discharged' : 'Active'}
+                              color={client.status === 'active' ? 'success' : client.status === 'discharged' ? 'warning' : 'success'}
+                              size="small"
+                            />
+                            <Chip
+                              label={
+                                status === 'completed'
+                                  ? 'Submitted'
+                                  : status === 'in_progress'
+                                  ? 'In Progress'
+                                  : 'Not Started'
+                              }
+                              color={
+                                status === 'completed'
+                                  ? 'success'
+                                  : status === 'in_progress'
+                                  ? 'warning'
+                                  : 'default'
+                              }
+                              size="small"
+                            />
+                          </Box>
                           <Box>
                             {status === 'not_started' && (
                               <Button

@@ -104,7 +104,21 @@ function ClientMasterlist() {
         .order('first_name');
 
       if (error) throw error;
-      setClients(data || []);
+      
+      // Sort clients: active first, then discharged
+      const sortedClients = (data || []).sort((a, b) => {
+        const statusA = (a.status || 'active').toLowerCase();
+        const statusB = (b.status || 'active').toLowerCase();
+        
+        // Active clients come first
+        if (statusA === 'active' && statusB !== 'active') return -1;
+        if (statusA !== 'active' && statusB === 'active') return 1;
+        
+        // Within same status, sort by first name
+        return (a.first_name || '').localeCompare(b.first_name || '');
+      });
+      
+      setClients(sortedClients);
     } catch (err) {
       console.error('Error fetching clients:', err);
       setError(err.message);
@@ -274,11 +288,10 @@ function ClientMasterlist() {
 
 
   const getStatusColor = (status) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
       case 'active': return 'success';
-      case 'inactive': return 'error';
       case 'discharged': return 'warning';
-      default: return 'default';
+      default: return 'success'; // Default to active
     }
   };
 
@@ -374,7 +387,7 @@ function ClientMasterlist() {
                     <TableCell>{client.room || 'N/A'}</TableCell>
                     <TableCell>
                       <Chip
-                        label={client.status || 'active'}
+                        label={client.status === 'active' ? 'Active' : client.status === 'discharged' ? 'Discharged' : 'Active'}
                         color={getStatusColor(client.status || 'active')}
                         size="small"
                       />
@@ -540,7 +553,6 @@ function ClientMasterlist() {
                     onChange={(e) => setClientForm(prev => ({ ...prev, status: e.target.value }))}
                   >
                     <MenuItem value="active">Active</MenuItem>
-                    <MenuItem value="inactive">Inactive</MenuItem>
                     <MenuItem value="discharged">Discharged</MenuItem>
                   </Select>
                 </FormControl>
