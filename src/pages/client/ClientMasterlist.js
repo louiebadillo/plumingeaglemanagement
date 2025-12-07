@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -38,6 +38,7 @@ import {
   SwapHoriz as TransferIcon,
   Assessment as AssessmentIcon
 } from '@mui/icons-material';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { useSupabase } from '../../context/SupabaseContext';
 import { useHistory } from 'react-router-dom';
@@ -47,9 +48,7 @@ import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 function ClientMasterlist() {
   const { userProfile } = useSupabase();
   const history = useHistory();
-  const [clients, setClients] = useState([]);
-  const [facilities, setFacilities] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [error, setError] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [openTransferDialog, setOpenTransferDialog] = useState(false);
@@ -83,14 +82,11 @@ function ClientMasterlist() {
     emergency_contact_email: ''
   });
 
-  useEffect(() => {
-    fetchClients();
-    fetchFacilities();
-  }, []);
-
-  const fetchClients = async () => {
-    try {
-      setLoading(true);
+  // ✅ FIX #4: Cached clients query - only fetches if data is stale (>5 minutes old)
+  // ✅ FIX #5: Sort in database by status then first_name (instead of client-side sorting)
+  const { data: clientsData, isLoading: clientsLoading, error: clientsError } = useQuery({
+    queryKey: ['clients'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('clients')
         .select(`
@@ -101,45 +97,52 @@ function ClientMasterlist() {
             address
           )
         `)
-        .order('first_name');
+        .order('status', { ascending: true }) // 'active' comes before 'discharged' alphabetically
+        .order('first_name', { ascending: true }) // Then sort by first name
+        .limit(100); // ✅ FIX #2: Limit to 100 records for performance
 
       if (error) throw error;
-      
-      // Sort clients: active first, then discharged
-      const sortedClients = (data || []).sort((a, b) => {
-        const statusA = (a.status || 'active').toLowerCase();
-        const statusB = (b.status || 'active').toLowerCase();
-        
-        // Active clients come first
-        if (statusA === 'active' && statusB !== 'active') return -1;
-        if (statusA !== 'active' && statusB === 'active') return 1;
-        
-        // Within same status, sort by first name
-        return (a.first_name || '').localeCompare(b.first_name || '');
-      });
-      
-      setClients(sortedClients);
-    } catch (err) {
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    onError: (err) => {
       console.error('Error fetching clients:', err);
       setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  const fetchFacilities = async () => {
-    try {
+  // ✅ FIX #4: Cached facilities query - 30 minute cache (rarely changes)
+  const { data: facilitiesData, isLoading: facilitiesLoading } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('facilities')
         .select('id, name')
         .order('name');
 
       if (error) throw error;
-      setFacilities(data || []);
-    } catch (err) {
-      console.error('Error fetching facilities:', err);
-    }
-  };
+      return data || [];
+    },
+    staleTime: 30 * 60 * 1000, // Cache for 30 minutes (facilities rarely change)
+  });
+
+  // ✅ FIX #5: Data is already sorted by database (status, then first_name)
+  // Since 'active' < 'discharged' alphabetically, database sort works correctly
+  // Minimal JavaScript processing only for null/undefined status handling
+  const clients = useMemo(() => {
+    if (!clientsData) return [];
+    
+    // Database sorts by: status (ascending) then first_name (ascending)
+    // This naturally puts 'active' before 'discharged', then sorts by name within each status
+    // Only need to handle null/undefined status values
+    return clientsData.map(client => ({
+      ...client,
+      status: client.status || 'active' // Normalize null status to 'active' for display
+    }));
+  }, [clientsData]);
+
+  const facilities = facilitiesData || [];
+  const loading = clientsLoading || facilitiesLoading;
 
   const calculateAge = (dateOfBirth) => {
     if (!dateOfBirth) return 'N/A';
@@ -206,7 +209,10 @@ function ClientMasterlist() {
       }
 
       setOpenDialog(false);
-      fetchClients();
+      // ✅ FIX #4: Invalidate cache to refetch fresh data
+      queryClient.invalidateQueries(['clients']);
+      setSuccessMessage(`Client has been ${editingClient ? 'updated' : 'created'} successfully.`);
+      setSuccessModalOpen(true);
     } catch (err) {
       console.error('Error saving client:', err);
       setError(err.message);
@@ -238,8 +244,8 @@ function ClientMasterlist() {
       setSuccessMessage(`Client "${clientName}" has been deleted successfully.`);
       setSuccessModalOpen(true);
       
-      // Refresh the clients list
-      fetchClients();
+      // ✅ FIX #4: Invalidate cache to refetch fresh data
+      queryClient.invalidateQueries(['clients']);
     } catch (err) {
       console.error('Error deleting client:', err);
       setError(err.message);

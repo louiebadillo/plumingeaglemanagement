@@ -35,7 +35,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import AppointmentsManager from '../../components/DailyReport/AppointmentsManager';
 import BIRManager from '../../components/DailyReport/BIRManager';
 import AWOLManager from '../../components/DailyReport/AWOLManager';
@@ -199,6 +199,11 @@ function DailyReportForm() {
 
   // Auto-save every 30 seconds
   useEffect(() => {
+    // Don't auto-save if client or facility_id is not loaded yet
+    if (!client || !actualFacilityId) {
+      return;
+    }
+    
     const interval = setInterval(() => {
       if (formData && Object.values(formData).some(value => value !== null && value !== '')) {
         handleSave('draft', true); // Silent save
@@ -206,77 +211,147 @@ function DailyReportForm() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [formData]);
+  }, [formData, client, actualFacilityId]);
+
+  // If facility is null but client has facility_id, try to load it one more time
+  // NOTE: This hook MUST be before any early returns to follow Rules of Hooks
+  useEffect(() => {
+    if (!facility && client?.facility_id) {
+      const loadFacilityFromClient = async () => {
+        const { data: facilityData, error: facilityError } = await supabase
+          .from('facilities')
+          .select('*')
+          .eq('id', client.facility_id)
+          .maybeSingle();
+        
+        if (!facilityError && facilityData) {
+          setFacility(facilityData);
+        } else {
+          // Create minimal facility object to allow form to proceed
+          setFacility({ id: client.facility_id, name: 'Unknown Facility' });
+        }
+      };
+      
+      loadFacilityFromClient();
+    }
+  }, [client?.facility_id, facility]);
 
   const loadClientAndFacility = async () => {
     try {
       setLoading(true);
-      const { supabaseUrl } = getSupabaseConfig();
-      
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
       // Load client with facility information
-      const clientResponse = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${clientId}&select=*,facilities(*)`, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('*, facilities(*)')
+        .eq('id', clientId)
+        .maybeSingle();
       
-      if (clientResponse.ok) {
-        const clientData = await clientResponse.json();
-        if (clientData && clientData.length > 0) {
-          const client = clientData[0];
-          setClient(client);
+      if (clientError) {
+        console.error('Error loading client:', clientError);
+        // Check if it's an RLS error
+        if (clientError.code === '42501' || clientError.message?.includes('row-level security')) {
+          setError('Access denied. You may not have permission to view this client. Please contact an administrator.');
+        } else {
+          setError(`Failed to load client: ${clientError.message}`);
+        }
+        return;
+      }
+      
+      if (!clientData) {
+        // Only log as warning, not error, to avoid cluttering console
+        console.warn('Client not found:', clientId);
+        setError('Client not found. The client may have been deleted or you may not have access to it. Please go back and try again.');
+        return;
+      }
+      
+      const client = clientData;
+      setClient(client);
+      
+      // Determine the actual facility ID to use
+      let finalFacilityId = null;
+      if (facilityId && facilityId !== 'null' && facilityId !== 'undefined') {
+        // Use facilityId from URL if it's valid
+        finalFacilityId = facilityId;
+      } else if (client.facility_id) {
+        // Fall back to client's facility_id
+        finalFacilityId = client.facility_id;
+      }
+      
+      // CRITICAL: Always ensure facility_id is set from client if not in URL
+      // RLS policies require facility_id to be set for employees
+      if (!finalFacilityId && client.facility_id) {
+        finalFacilityId = client.facility_id;
+        console.log('🔧 CRITICAL: Setting facility_id from client:', finalFacilityId);
+      }
+      
+      setActualFacilityId(finalFacilityId);
+      
+      // If facilityId is null or missing, try to get it from the client's facility
+      if (!facilityId || facilityId === 'null' || facilityId === 'undefined') {
+        if (client.facility_id) {
+          console.log('🔍 Using client facility_id:', client.facility_id);
+          // Load facility details using client's facility_id
+          const { data: facilityData, error: facilityError } = await supabase
+            .from('facilities')
+            .select('*')
+            .eq('id', client.facility_id)
+            .maybeSingle();
           
-          // Determine the actual facility ID to use
-          let finalFacilityId = null;
-          if (facilityId && facilityId !== 'null' && facilityId !== 'undefined') {
-            // Use facilityId from URL if it's valid
-            finalFacilityId = facilityId;
-          } else if (client.facility_id) {
-            // Fall back to client's facility_id
-            finalFacilityId = client.facility_id;
+          if (!facilityError && facilityData) {
+            setFacility(facilityData);
+          } else if (client.facilities) {
+            // Fallback to facility data from the join
+            setFacility(client.facilities);
+          } else {
+            // Last resort: create a minimal facility object
+            setFacility({ id: client.facility_id, name: 'Unknown Facility' });
           }
           
-          setActualFacilityId(finalFacilityId);
-          
-          // If facilityId is null or missing, try to get it from the client's facility
-          if (!facilityId || facilityId === 'null' || facilityId === 'undefined') {
-            if (client.facility_id) {
-              console.log('🔍 Using client facility_id:', client.facility_id);
-              setFacility({ id: client.facility_id, name: client.facilities?.name || 'Unknown Facility' });
-              
-              // Fix the corrupted report data by updating the facility_id
-              if (reportId) {
-                console.log('🔧 Fixing corrupted report data - updating facility_id');
-                try {
-                  const { supabaseUrl } = getSupabaseConfig();
-                  await fetch(`${supabaseUrl}/rest/v1/daily_reports_v2?id=eq.${reportId}`, {
-                    method: 'PATCH',
-                    headers: {
-                      ...getSupabaseHeaders(),
-                      'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ facility_id: client.facility_id })
-                  });
-                  console.log('✅ Report facility_id updated successfully');
-                } catch (error) {
-                  console.error('❌ Failed to update report facility_id:', error);
-                }
-              }
-            } else {
-              console.warn('⚠️ No facility_id available from URL or client');
-              setFacility(null);
+          // Fix the corrupted report data by updating the facility_id
+          if (reportId) {
+            console.log('🔧 Fixing corrupted report data - updating facility_id');
+            try {
+              // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+              await supabase
+                .from('daily_reports_v2')
+                .update({ facility_id: client.facility_id })
+                .eq('id', reportId);
+              console.log('✅ Report facility_id updated successfully');
+            } catch (error) {
+              console.error('❌ Failed to update report facility_id:', error);
             }
-          } else {
-            // Load facility separately using the valid facilityId
-            const facilityResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityId}`, {
-              method: 'GET',
-              headers: getSupabaseHeaders()
-            });
+          }
+        } else {
+          console.error('❌ CRITICAL: No facility_id available from URL or client. RLS will block insert!');
+          setError('Unable to determine facility. Please contact an administrator.');
+          setFacility(null);
+        }
+      } else {
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        // Load facility separately using the valid facilityId
+        const { data: facilityData, error: facilityError } = await supabase
+          .from('facilities')
+          .select('*')
+          .eq('id', facilityId)
+          .maybeSingle();
+        
+        if (!facilityError && facilityData) {
+          setFacility(facilityData);
+        } else {
+          // If facility from URL not found, try client's facility_id as fallback
+          if (client.facility_id) {
+            console.log('🔍 Facility from URL not found, using client facility_id:', client.facility_id);
+            const { data: fallbackFacilityData, error: fallbackError } = await supabase
+              .from('facilities')
+              .select('*')
+              .eq('id', client.facility_id)
+              .maybeSingle();
             
-            if (facilityResponse.ok) {
-              const facilityData = await facilityResponse.json();
-              if (facilityData && facilityData.length > 0) {
-                setFacility(facilityData[0]);
-              }
+            if (!fallbackError && fallbackFacilityData) {
+              setFacility(fallbackFacilityData);
+            } else if (client.facilities) {
+              setFacility(client.facilities);
             }
           }
         }
@@ -304,25 +379,22 @@ function DailyReportForm() {
         return;
       }
       
-      const { supabaseUrl } = getSupabaseConfig();
-      const queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?client_id=eq.${clientId}&report_date=eq.${dateToUse}`;
-      console.log('🔍 Query URL:', queryUrl);
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      console.log('🔍 Loading existing report for:', { clientId, dateToUse });
       
-      const response = await fetch(queryUrl, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+      const { data: reports, error: reportsError } = await supabase
+        .from('daily_reports_v2')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('report_date', dateToUse);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Error fetching existing report:', response.status, errorText);
+      if (reportsError) {
+        console.error('❌ Error fetching existing report:', reportsError);
         setExistingReport(null);
         setFormData(initialFormData);
         setFieldTracking(initialFieldTracking);
         return;
       }
-      
-      const reports = await response.json();
       console.log('🔍 Existing reports found for date', dateToUse, ':', reports);
       console.log('🔍 All report dates found:', reports.map(r => ({ date: r.report_date, status: r.status })));
       
@@ -681,18 +753,16 @@ function DailyReportForm() {
     if (!userId) return '';
     
     try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/users?id=eq.${userId}&select=first_name,last_name`, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('first_name, last_name')
+        .eq('id', userId)
+        .maybeSingle();
       
-      if (response.ok) {
-        const users = await response.json();
-        if (users && users.length > 0) {
-          const user = users[0];
-          return `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase();
-        }
+      if (!error && userData) {
+        const user = userData;
+        return `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase();
       }
     } catch (error) {
       console.error('Error loading user initials:', error);
@@ -855,11 +925,29 @@ function DailyReportForm() {
 
       // Ensure facility_id is a valid UUID or null (not the string "null")
       // Use actualFacilityId state which is set when client is loaded
-      let finalFacilityId = actualFacilityId || client?.facility_id || null;
+      // CRITICAL: facility_id must be set for RLS policies to work
+      let finalFacilityId = actualFacilityId || client?.facility_id || facility?.id || null;
       
       // Double-check: if it's still the string "null", set to null
       if (finalFacilityId === 'null' || finalFacilityId === 'undefined') {
         finalFacilityId = null;
+      }
+      
+      // If facility_id is still null but we have a client, try to get it from the client
+      if (!finalFacilityId && client?.facility_id) {
+        finalFacilityId = client.facility_id;
+        console.log('🔧 Using client.facility_id as fallback:', finalFacilityId);
+      }
+      
+      // CRITICAL: RLS policies require facility_id to be set for employees
+      // If facility_id is still null, we cannot save the report
+      if (!finalFacilityId) {
+        const errorMsg = 'Unable to save report: Facility information is missing. The client must be assigned to a facility. Please contact an administrator.';
+        console.error('❌ CRITICAL ERROR:', errorMsg);
+        console.error('Client data:', { id: client?.id, facility_id: client?.facility_id, facility: facility?.id });
+        setError(errorMsg);
+        setSaving(false);
+        return;
       }
 
       const reportData = {
@@ -890,59 +978,94 @@ function DailyReportForm() {
       console.log('🔍 Operational date would be:', getOperationalDate());
       
       
-      const { supabaseUrl } = getSupabaseConfig();
-      
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
       if (existingReport) {
         // Update existing report
-        const response = await fetch(`${supabaseUrl}/rest/v1/daily_reports_v2?id=eq.${existingReport.id}`, {
-          method: 'PATCH',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(reportData)
-        });
+        const { data, error } = await supabase
+          .from('daily_reports_v2')
+          .update(reportData)
+          .eq('id', existingReport.id)
+          .select()
+          .single();
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Supabase error response:', errorText);
+        if (error) {
+          console.error('Supabase error response:', error);
           console.error('Request data that failed:', reportData);
           
           // Check for specific database schema errors
-          if (errorText.includes('Could not find the') && errorText.includes('column')) {
+          if (error.message && error.message.includes('Could not find the') && error.message.includes('column')) {
             throw new Error(`Database schema error: Missing columns detected. Please run the database migration 'add-file-updated-by-columns.sql' in Supabase.`);
           }
           
-          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+          throw new Error(`Failed to update report: ${error.message}`);
         }
       } else {
         // Create new report
-        const response = await fetch(`${supabaseUrl}/rest/v1/daily_reports_v2`, {
-          method: 'POST',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(reportData)
-        });
+        let savedReport = null;
+        const { data, error } = await supabase
+          .from('daily_reports_v2')
+          .insert([reportData])
+          .select()
+          .single();
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Supabase error response:', errorText);
+        if (error) {
+          console.error('Supabase error response:', error);
           console.error('Request data that failed:', reportData);
           
+          // Check for RLS policy violations
+          if (error.code === '42501' || error.message?.includes('row-level security policy')) {
+            if (!reportData.facility_id) {
+              throw new Error('Unable to save report: Facility information is missing. Please ensure the client has a facility assigned and try again.');
+            } else {
+              throw new Error('Unable to save report: Access denied. You may not have permission to create reports for this facility. Please contact an administrator.');
+            }
+          }
+          
           // Check for specific database schema errors
-          if (errorText.includes('Could not find the') && errorText.includes('column')) {
+          if (error.message && error.message.includes('Could not find the') && error.message.includes('column')) {
             throw new Error(`Database schema error: Missing columns detected. Please run the database migration 'add-file-updated-by-columns.sql' in Supabase.`);
           }
           
-          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+          // Handle 409 Conflict (duplicate report) - try to update instead
+          if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique constraint') || error.status === 409) {
+            console.log('⚠️ Report already exists, attempting to update instead...');
+            // Try to find and update the existing report
+            const { data: existingData, error: findError } = await supabase
+              .from('daily_reports_v2')
+              .select('id')
+              .eq('client_id', reportData.client_id)
+              .eq('report_date', reportData.report_date)
+              .maybeSingle();
+            
+            if (!findError && existingData) {
+              // Update the existing report
+              const { data: updatedData, error: updateError } = await supabase
+                .from('daily_reports_v2')
+                .update(reportData)
+                .eq('id', existingData.id)
+                .select()
+                .single();
+              
+              if (updateError) {
+                throw new Error(`Failed to update existing report: ${updateError.message}`);
+              }
+              
+              if (updatedData) {
+                savedReport = updatedData;
+                setExistingReport(updatedData);
+                console.log('✅ Updated existing report successfully');
+              }
+            } else {
+              throw new Error(`Report already exists for this client and date. Please reload the page.`);
+            }
+          } else {
+            throw new Error(`Failed to create report: ${error.message}`);
+          }
+        } else if (data) {
+          savedReport = data;
         }
         
-        const newReport = await response.json();
-        if (newReport && newReport.length > 0) {
-          const savedReport = newReport[0];
+        if (savedReport) {
           console.log('✅ Report saved successfully:', {
             id: savedReport.id,
             report_date: savedReport.report_date,
@@ -997,17 +1120,14 @@ function DailyReportForm() {
 
     try {
       setDeleting(true);
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(
-        `${supabaseUrl}/rest/v1/daily_reports_v2?id=eq.${existingReport.id}`,
-        {
-          method: 'DELETE',
-          headers: getSupabaseHeaders()
-        }
-      );
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { error } = await supabase
+        .from('daily_reports_v2')
+        .delete()
+        .eq('id', existingReport.id);
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error) {
+        throw new Error(`Failed to delete report: ${error.message}`);
       }
 
       // Show success message and redirect to dashboard
@@ -1049,11 +1169,11 @@ function DailyReportForm() {
     );
   }
 
-  if (!client || !facility) {
+  if (!client) {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error">
-          Client or facility not found. Please go back and try again.
+          Client not found. Please go back and try again.
         </Alert>
         <Button onClick={handleBack} startIcon={<BackIcon />} sx={{ mt: 2 }}>
           Go Back
@@ -1061,6 +1181,9 @@ function DailyReportForm() {
       </Box>
     );
   }
+  
+  // Allow form to proceed even if facility is null (facility_id can be null in database)
+  // The form will use client.facility_id if available
 
   // Check if report is locked (for employees only)
   // Only lock if a report already exists AND the date is locked
@@ -1146,7 +1269,7 @@ function DailyReportForm() {
                     Facility
                   </Typography>
                   <Typography variant="h6" sx={{ fontWeight: 'medium' }}>
-                    {facility.name}
+                    {facility?.name || client?.facility_id || 'Unknown Facility'}
                   </Typography>
                 </Box>
               </Grid>
@@ -1206,7 +1329,7 @@ function DailyReportForm() {
                   
                   {formData.medication_required && (
                     <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditField('medication_status')}>
-                      <FormLabel id="medication-status-label" htmlFor="medication-status">Medication Status</FormLabel>
+                      <FormLabel id="medication-status-label">Medication Status</FormLabel>
                       <Select
                         id="medication-status"
                         name="medication_status"
@@ -1315,7 +1438,7 @@ function DailyReportForm() {
                     ].map(({ key, label }) => (
                       <Grid item xs={12} sm={6} key={key}>
                         <FormControl fullWidth disabled={!canEditField(key)}>
-                          <FormLabel id={`${key}-label`} htmlFor={key}>{label}</FormLabel>
+                          <FormLabel id={`${key}-label`}>{label}</FormLabel>
                           <Select
                             id={key}
                             name={key}
@@ -1451,7 +1574,7 @@ function DailyReportForm() {
                     
                     {formData.afternoon_medication_required && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_medication_status', 'afternoon')}>
-                        <FormLabel id="afternoon-medication-status-label" htmlFor="afternoon-medication-status">Medication Status</FormLabel>
+                        <FormLabel id="afternoon-medication-status-label">Medication Status</FormLabel>
                         <Select
                           id="afternoon-medication-status"
                           name="afternoon_medication_status"
@@ -1584,7 +1707,7 @@ function DailyReportForm() {
                       ].map(({ key, label }) => (
                         <Grid item xs={12} sm={6} key={key}>
                           <FormControl fullWidth disabled={!canEditFieldWithShift(key, 'afternoon')}>
-                            <FormLabel id={`${key}-label`} htmlFor={key}>{label}</FormLabel>
+                            <FormLabel id={`${key}-label`}>{label}</FormLabel>
                             <Select
                               id={key}
                               name={key}
@@ -1629,7 +1752,7 @@ function DailyReportForm() {
                     
                     {formData.afternoon_school_supposed_to_go === false && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
-                        <FormLabel id="afternoon-school-status-reason-label" htmlFor="afternoon-school-status-reason">Reason</FormLabel>
+                        <FormLabel id="afternoon-school-status-reason-label">Reason</FormLabel>
                         <Select
                           id="afternoon-school-status-reason"
                           name="afternoon_school_status_reason"
@@ -1646,7 +1769,7 @@ function DailyReportForm() {
                     
                     {formData.afternoon_school_supposed_to_go === true && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
-                        <FormLabel id="afternoon-school-status-label" htmlFor="afternoon-school-status">School Status</FormLabel>
+                        <FormLabel id="afternoon-school-status-label">School Status</FormLabel>
                         <Select
                           id="afternoon-school-status"
                           name="afternoon_school_status"
@@ -1779,7 +1902,7 @@ function DailyReportForm() {
                     
                     {formData.evening_medication_required && (
                       <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('evening_medication_status', 'evening')}>
-                        <FormLabel id="evening-medication-status-label" htmlFor="evening-medication-status">Medication Status</FormLabel>
+                        <FormLabel id="evening-medication-status-label">Medication Status</FormLabel>
                         <Select
                           id="evening-medication-status"
                           name="evening_medication_status"

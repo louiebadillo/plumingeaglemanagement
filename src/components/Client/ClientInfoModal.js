@@ -33,7 +33,7 @@ import {
   Room as RoomIcon,
   Link as LinkIcon
 } from '@mui/icons-material';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import { calculateAge } from '../../utils/dateHelpers';
 import { formatDate } from '../../context/clientMock';
 
@@ -54,37 +54,31 @@ function ClientInfoModal({ open, onClose, clientId }) {
   const loadClientData = async () => {
     try {
       setLoading(true);
-      const { supabaseUrl } = getSupabaseConfig();
       
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
       // Load client
-      const clientResponse = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${clientId}&select=*`, {
-        method: 'GET',
-        headers: {
-          ...getSupabaseHeaders(),
-          'Content-Type': 'application/json'
-        }
-      });
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', clientId)
+        .maybeSingle();
 
-      if (!clientResponse.ok) {
-        throw new Error(`HTTP error! status: ${clientResponse.status}`);
+      if (clientError) {
+        throw new Error(`Failed to fetch client: ${clientError.message}`);
       }
 
-      const clientData = await clientResponse.json();
-      if (clientData && clientData.length > 0) {
-        const supabaseClient = clientData[0];
+      if (clientData) {
+        const supabaseClient = clientData;
         
         // Load facility
         if (supabaseClient.facility_id) {
-          const facilityResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${supabaseClient.facility_id}`, {
-            method: 'GET',
-            headers: {
-              ...getSupabaseHeaders(),
-              'Content-Type': 'application/json'
-            }
-          });
+          const { data: facilityData, error: facilityError } = await supabase
+            .from('facilities')
+            .select('*')
+            .eq('id', supabaseClient.facility_id)
+            .maybeSingle();
 
-          if (facilityResponse.ok) {
-            const facilityData = await facilityResponse.json();
+          if (!facilityError && facilityData) {
             if (facilityData && facilityData.length > 0) {
               setFacility(facilityData[0]);
             }

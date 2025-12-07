@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '../context/SupabaseContext';
 import { getOperationalDate, isReportLocked } from '../utils/dateHelpers';
 import { getCurrentFacilityFromGeofencing } from '../utils/geofencing';
-import { getSupabaseConfig, getSupabaseHeaders } from '../utils/supabaseConfig';
+import { supabase } from '../lib/supabase';
 
 export const useDraftReportsCount = () => {
   const { supabase, userProfile } = useSupabase();
@@ -50,31 +50,32 @@ export const useDraftReportsCount = () => {
       }
 
       try {
-        const { supabaseUrl } = getSupabaseConfig();
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         const operationalDate = getOperationalDate();
         
-        let queryUrl;
+        let query = supabase
+          .from('daily_reports_v2')
+          .select('id, report_date, status');
         
         if (isAdmin) {
           // Admin: Count unsubmitted (draft) reports that are locked from employees
           // These are reports past 6:30 AM cutoff (from previous operational dates)
           // Fetch all draft reports and filter by lock status
-          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&select=id,report_date,status`;
+          query = query.eq('status', 'draft');
         } else {
           // Employee: Count draft reports for operational date in their geofenced facility
-          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&facility_id=eq.${currentFacilityId}&report_date=eq.${operationalDate}&select=id,report_date,status,clients(facility_id)`;
+          query = query
+            .eq('status', 'draft')
+            .eq('facility_id', currentFacilityId)
+            .eq('report_date', operationalDate)
+            .select('id, report_date, status, clients(facility_id)');
         }
 
-        const response = await fetch(queryUrl, {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        });
+        const { data, error } = await query;
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (error) {
+          throw new Error(`Failed to fetch draft reports: ${error.message}`);
         }
-
-        const data = await response.json();
         
         let count = 0;
         

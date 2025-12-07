@@ -38,7 +38,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import { geocodeAddress } from '../../utils/geocoding';
 import { Divider, Chip } from '@mui/material';
 import GeofencingMap from '../../components/Facility/GeofencingMap';
@@ -86,18 +86,14 @@ function FacilityManagement() {
         setLoading(true);
         console.log('🔄 Loading facilities from Supabase...');
         
-        // Use direct fetch since Supabase client might hang
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        const { data: facilitiesData, error } = await supabase
+          .from('facilities')
+          .select('*');
         
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (error) {
+          throw new Error(`Failed to fetch facilities: ${error.message}`);
         }
-        
-        const facilitiesData = await response.json();
         console.log('✅ Loaded facilities from Supabase:', facilitiesData);
         setFacilities(facilitiesData || []);
       } catch (error) {
@@ -153,16 +149,14 @@ function FacilityManagement() {
     try {
       setDeleting(true);
       console.log('🗑️ Deleting facility:', facilityToDelete.id);
-      const { supabaseUrl } = getSupabaseConfig();
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { error } = await supabase
+        .from('facilities')
+        .delete()
+        .eq('id', facilityToDelete.id);
       
-      // Use direct fetch with service role key for deletion
-      const response = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityToDelete.id}`, {
-        method: 'DELETE',
-        headers: getSupabaseHeaders()
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error) {
+        throw new Error(`Failed to delete facility: ${error.message}`);
       }
       
       // Update local state
@@ -197,47 +191,33 @@ function FacilityManagement() {
       const { supabaseUrl } = getSupabaseConfig();
 
       if (isNewFacility) {
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Create new facility
         console.log('🆕 Creating new facility...');
-        const response = await fetch(`${supabaseUrl}/rest/v1/facilities`, {
-          method: 'POST',
-          headers: getSupabaseHeaders(),
-          body: JSON.stringify(formData)
-        });
+        const { data: newFacility, error } = await supabase
+          .from('facilities')
+          .insert([formData])
+          .select()
+          .single();
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Supabase error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-
-        const responseText = await response.text();
-        console.log('📝 Raw response:', responseText);
-        
-        let newFacility;
-        try {
-          newFacility = responseText ? JSON.parse(responseText) : [];
-        } catch (parseError) {
-          console.error('❌ JSON parse error:', parseError);
-          throw new Error(`Failed to parse response: ${parseError.message}`);
+        if (error) {
+          console.error('❌ Supabase error response:', error);
+          throw new Error(`Failed to create facility: ${error.message}`);
         }
         console.log('✅ Facility created successfully:', newFacility);
         
-        // If Supabase returns empty array, reload facilities from database
-        if (newFacility && newFacility.length > 0) {
-          setFacilities([...facilities, newFacility[0]]);
+        // Add new facility to the list
+        if (newFacility) {
+          setFacilities([...facilities, newFacility]);
         } else {
+          // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
           // Reload all facilities from database to get the latest data
           console.log('🔄 Reloading facilities from database...');
-          const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*`, {
-            method: 'GET',
-            headers: {
-            ...getSupabaseHeaders()
-            }
-          });
+          const { data: reloadedFacilities, error: reloadError } = await supabase
+            .from('facilities')
+            .select('*');
           
-          if (reloadResponse.ok) {
-            const reloadedFacilities = await reloadResponse.json();
+          if (!reloadError && reloadedFacilities) {
             console.log('✅ Reloaded facilities:', reloadedFacilities);
             setFacilities(reloadedFacilities || []);
           }
@@ -256,18 +236,19 @@ function FacilityManagement() {
         setSuccessMessage(`Facility "${formData.name}" has been created successfully.`);
         setSuccessModalOpen(true);
       } else {
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Update existing facility
         console.log('🔄 Updating existing facility:', editingFacility.id);
-        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${editingFacility.id}`, {
-          method: 'PATCH',
-          headers: getSupabaseHeaders(),
-          body: JSON.stringify(formData)
-        });
+        const { data: updatedFacility, error } = await supabase
+          .from('facilities')
+          .update(formData)
+          .eq('id', editingFacility.id)
+          .select()
+          .single();
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Supabase error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        if (error) {
+          console.error('❌ Supabase error response:', error);
+          throw new Error(`Failed to update facility: ${error.message}`);
         }
 
         // Update local state

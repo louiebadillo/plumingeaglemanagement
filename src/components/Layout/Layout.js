@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Route, Switch, withRouter, Redirect as RouterRedirect } from 'react-router-dom';
 import classnames from 'classnames';
-
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { IconButton } from '@mui/material';
 import { connect } from 'react-redux';
@@ -12,7 +12,7 @@ import useStyles from './styles';
 import Header from '../Header';
 import Sidebar from '../Sidebar';
 import { Link } from '../Wrappers';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 
 import EditUser from '../../pages/user/EditUser';
 import ClientProfile from '../../pages/client/ClientProfile';
@@ -52,51 +52,37 @@ function Layout(props) {
   // global
   let layoutState = useLayoutState();
   const { userProfile } = useSupabase();
-  const [facilities, setFacilities] = useState([]);
+  const queryClient = useQueryClient();
   const { draftCount } = useDraftReportsCount();
   
-  // Load facilities from Supabase
-  // Reload when navigating to/from facility management (to refresh after deletions)
-  // Also listen for custom events when facilities are modified
-  useEffect(() => {
-    const loadFacilities = async () => {
-      try {
-        console.log('🔄 Loading facilities for sidebar...');
-        
-        const { supabaseUrl } = getSupabaseConfig();
-        // Only fetch active facilities (exclude any that might have a status field indicating deletion)
-        // Since facilities are hard-deleted, this should only return existing facilities
-        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&order=name.asc`, {
-          method: 'GET',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const facilitiesData = await response.json();
-        // Filter out any null or undefined facilities (safety check)
-        const validFacilities = (facilitiesData || []).filter(f => f && f.id && f.name);
-        console.log('✅ Loaded facilities for sidebar:', validFacilities);
-        setFacilities(validFacilities);
-      } catch (error) {
-        console.error('💥 Error loading facilities for sidebar:', error);
-        setFacilities([]);
+  // ✅ FIX #4: Cached facilities query - 30 minute cache (facilities rarely change)
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+  const { data: facilities } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('facilities')
+        .select('*')
+        .order('name', { ascending: true });
+      
+      if (error) {
+        throw new Error(`Failed to fetch facilities: ${error.message}`);
       }
-    };
+      
+      // Filter out any null or undefined facilities (safety check)
+      return (data || []).filter(f => f && f.id && f.name);
+    },
+    staleTime: 30 * 60 * 1000, // Cache for 30 minutes (facilities rarely change)
+    onError: (error) => {
+      console.error('💥 Error loading facilities for sidebar:', error);
+    },
+  });
 
-    loadFacilities();
-
-    // Listen for facility changes (when facilities are added/deleted/updated)
+  // Listen for facility changes (when facilities are added/deleted/updated)
+  useEffect(() => {
     const handleFacilitiesChanged = () => {
-      console.log('🔄 Facilities changed event detected, reloading...');
-      loadFacilities();
+      console.log('🔄 Facilities changed event detected, invalidating cache...');
+      queryClient.invalidateQueries(['facilities']);
     };
 
     window.addEventListener('facilitiesChanged', handleFacilitiesChanged);
@@ -104,13 +90,11 @@ function Layout(props) {
     return () => {
       window.removeEventListener('facilitiesChanged', handleFacilitiesChanged);
     };
-  }, [props.location?.pathname]); // Reload when route changes (especially after facility management actions)
+  }, [queryClient]);
   
   // Get sidebar structure based on user role from Supabase
   const userRole = userProfile?.role || 'employee'; // Default to employee if no role
   const sidebarStructure = getSidebarStructure(userRole, facilities, draftCount);
-  
-  console.log('🔍 Layout - User role:', userRole, 'Profile:', userProfile, 'Facilities:', facilities, 'Draft count:', draftCount);
 
   return (
     <div className={classes.root}>

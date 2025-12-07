@@ -66,7 +66,6 @@ export const getCurrentFacilityFromGeofencing = async () => {
         );
 
         if (isWithinGeofence) {
-          console.log(`📍 Employee is at facility: ${facility.id}`);
           return facility.id;
         }
       }

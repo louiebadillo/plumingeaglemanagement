@@ -36,7 +36,9 @@ export const supabase = (() => {
         flowType: 'pkce'
       }
     });
-    console.log('✅ Supabase client initialized (singleton) - project: ' + projectRef);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Supabase client initialized - project: ' + projectRef);
+    }
   }
   return supabaseInstance;
 })();

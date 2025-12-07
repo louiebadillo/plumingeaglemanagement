@@ -253,7 +253,8 @@ function ProgressReport() {
             room,
             facilities(id, name, address)
           `)
-          .order('first_name');
+          .order('first_name')
+          .limit(100); // ✅ FIX #2: Limit to 100 records for performance
 
         if (error) throw error;
         const clientsData = data || [];
@@ -262,8 +263,12 @@ function ProgressReport() {
         // Validate selectedClientId exists in the loaded clients
         // If it doesn't exist, reset it to empty string to avoid MUI warning
         if (selectedClientId && !clientsData.find(c => c.id === selectedClientId)) {
-          console.warn('Selected client ID not found in clients list, resetting selection');
+          console.warn('Selected client ID not found in clients list, resetting selection:', selectedClientId);
           setSelectedClientId('');
+          // Also clear the client state if it was set
+          setClient(null);
+          // Clear any saved report data for this invalid client
+          localStorage.removeItem('progressReportData');
         }
       } catch (error) {
         console.error('Error fetching clients:', error);

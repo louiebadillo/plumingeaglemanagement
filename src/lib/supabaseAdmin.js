@@ -25,7 +25,9 @@ export const supabaseAdmin = (() => {
         persistSession: false
       }
     });
-    console.log('✅ Supabase admin client initialized (singleton)');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Supabase admin client initialized');
+    }
   }
   return supabaseAdminInstance;
 })();

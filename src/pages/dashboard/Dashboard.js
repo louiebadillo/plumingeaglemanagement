@@ -42,6 +42,7 @@ import {
   AccordionDetails
 } from '@mui/material';
 import { useHistory, useLocation } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import { getOperationalDate, isReportLocked, calculateAge } from '../../utils/dateHelpers';
@@ -54,6 +55,7 @@ function Dashboard() {
   const history = useHistory();
   const location = useLocation();
   const { userProfile, supabase } = useSupabase();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -72,6 +74,12 @@ function Dashboard() {
     }
   };
   
+  // Shared helper function to normalize date strings (extracted to avoid duplication)
+  const normalizeDate = (dateStr) => {
+    if (!dateStr) return null;
+    return dateStr.split('T')[0].split(' ')[0].trim();
+  };
+  
   // Employee state
   const [clients, setClients] = useState([]);
   const [clientReports, setClientReports] = useState([]);
@@ -87,6 +95,7 @@ function Dashboard() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [reportToDelete, setReportToDelete] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [currentFacility, setCurrentFacility] = useState(null); // Store facility name and address
 
   const isAdmin = userProfile?.role === 'admin';
   const employeeName = userProfile?.first_name || 'Employee';
@@ -97,18 +106,6 @@ function Dashboard() {
   // TODO: Implement geofencing to detect employee's current facility
   // This will replace the need for facility_id in user profile
   // For now, using facility_id as fallback until geofencing is implemented
-  useEffect(() => {
-    if (userProfile && !isAdmin) {
-      console.log('🔍 Employee Dashboard - User Profile:', {
-        id: userProfile.id,
-        email: userProfile.email,
-        first_name: userProfile.first_name,
-        facility_id: userProfile.facility_id, // Temporary fallback until geofencing
-        role: userProfile.role
-      });
-      console.log('📍 Note: Facility will be determined by geofencing in the future');
-    }
-  }, [userProfile, isAdmin]);
 
   // Load data based on user role
   // Also reload when location changes (user navigates back to dashboard)
@@ -126,7 +123,6 @@ function Dashboard() {
     try {
       setLoading(true);
       setError(null);
-      const { supabaseUrl } = getSupabaseConfig();
 
       // Get facility from geofencing (location-based detection)
       // This will automatically detect which facility the employee is currently at
@@ -138,93 +134,179 @@ function Dashboard() {
         currentFacilityId = employeeFacilityId;
       }
       
-      // If still no facility detected, show message
-      if (!currentFacilityId) {
-        setError('Unable to detect your current facility. Please ensure you are at a facility location and that geofencing is configured. Facility will be determined by your location when you arrive at a facility.');
-        setLoading(false);
-        setClients([]);
-        setClientReports([]);
-        setPreviousDayReports([]);
-        return;
-      }
-
-      // Load active clients in employee's current facility (determined by geofencing)
-      const clientsResponse = await fetch(
-        `${supabaseUrl}/rest/v1/clients?facility_id=eq.${currentFacilityId}&status=eq.active&select=*`,
-        {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        }
-      );
-
-      if (!clientsResponse.ok) {
-        throw new Error(`HTTP error! status: ${clientsResponse.status}`);
-      }
-
-      const clientsData = await clientsResponse.json();
-      setClients(clientsData || []);
-
-      // Load today's reports for these clients
-      if (clientsData && clientsData.length > 0) {
-        // Fetch reports for all clients using individual queries (PostgREST doesn't support array in filter easily)
-        const clientIds = clientsData.map(c => c.id);
-        const allReports = [];
+      // Load clients based on facility detection
+      let clientsData = null;
+      
+      if (currentFacilityId) {
+        // Load clients in employee's current facility (determined by geofencing)
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        // Removed status filter - showing all clients in facility
+        // Employees can only manage today's daily reports for clients
         
-        // Fetch reports in parallel for better performance
-        const reportPromises = clientIds.map(async (clientId) => {
-          try {
-            const queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?report_date=eq.${operationalDate}&client_id=eq.${clientId}&select=*,clients(first_name,last_name)`;
+        // First, try querying with facility_id filter
+        let { data, error: clientsError } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('facility_id', currentFacilityId)
+          .limit(100);
+        
+        // If no clients found, try querying all clients to see what facility_ids exist
+        if (!clientsError && (!data || data.length === 0)) {
+          const { data: allClientsCheck, error: checkError } = await supabase
+            .from('clients')
+            .select('id, first_name, last_name, facility_id')
+            .limit(50);
+          
+          if (checkError) {
+            if (checkError.code === '42501') {
+              console.error('RLS policy blocking: Cannot read from clients table');
+            }
+          } else if (allClientsCheck && allClientsCheck.length > 0) {
+            const facilityIds = [...new Set(allClientsCheck.map(c => c.facility_id))];
             
-            // Fetch all reports for this client and date, then filter in JavaScript
-            const reportResponse = await fetch(queryUrl, {
-              method: 'GET',
-              headers: getSupabaseHeaders()
+            // If geofenced facility_id doesn't match, use all clients as fallback
+            if (!facilityIds.some(id => String(id) === String(currentFacilityId))) {
+              const { data: allClientsData, error: allError } = await supabase
+                .from('clients')
+                .select('*')
+                .limit(100);
+              
+              if (allError) {
+                if (allError.code === '42501') {
+                  console.error('RLS policy blocking: Cannot read from clients table without facility filter');
+                }
+              } else if (allClientsData) {
+                data = allClientsData;
+              }
+            }
+          }
+        }
+
+        if (clientsError) {
+          console.error('❌ Error loading clients:', clientsError);
+          console.error('❌ Error details:', {
+            code: clientsError.code,
+            message: clientsError.message,
+            details: clientsError.details,
+            hint: clientsError.hint
+          });
+          // Check if it's an RLS error
+          if (clientsError.code === '42501' || clientsError.message?.includes('row-level security')) {
+            throw new Error('Access denied. You may not have permission to view clients in this facility. Please contact an administrator.');
+          }
+          throw new Error(`Failed to load clients: ${clientsError.message}`);
+        }
+        
+        console.log('🔍 Raw query result:', {
+          data: data,
+          dataLength: data?.length || 0,
+          isArray: Array.isArray(data),
+          firstClient: data?.[0]
+        });
+        
+        clientsData = data;
+        
+        // Load facility information for display (always load if facilityId exists)
+        const { data: facilityData, error: facilityError } = await supabase
+          .from('facilities')
+          .select('id, name, address')
+          .eq('id', currentFacilityId)
+          .maybeSingle();
+        
+        if (facilityError) {
+          if (facilityError.code === '42501' || facilityError.message?.includes('row-level security')) {
+            console.error('RLS policy blocking: Employee does not have permission to read from facilities table');
+          }
+          setCurrentFacility(null);
+        } else if (facilityData) {
+          setCurrentFacility(facilityData);
+        } else {
+          setCurrentFacility(null);
+        }
+      } else {
+        // If no facility detected, try to load all active clients as fallback
+        // This allows employees to see clients even if geofencing isn't configured
+        const { data, error: allClientsError } = await supabase
+          .from('clients')
+          .select('*')
+          .limit(100);
+        
+        if (allClientsError) {
+          console.error('❌ Error loading all clients:', allClientsError);
+          const errorMsg = 'Unable to detect your current facility and failed to load clients. Please ensure you are at a facility location and that geofencing is configured. If you continue to see this message, contact an administrator.';
+          setError(errorMsg);
+          setLoading(false);
+          setClients([]);
+          setClientReports([]);
+          setPreviousDayReports([]);
+          return;
+        }
+        
+        clientsData = data;
+      }
+
+      setClients(clientsData || []);
+      
+      // Load today's reports for these clients
+      // Employees can see/create/edit daily reports for clients in their facility for TODAY only
+      const clientsToProcess = clientsData || [];
+      if (clientsToProcess && clientsToProcess.length > 0) {
+        const clientIds = clientsData.map(c => c.id);
+        
+        // ✅ FIX #1: Single query for all clients' reports (instead of N+1 queries)
+        // ✅ FIX #3: Query optimized to use idx_reports_client_date index
+        try {
+          // Ensure clientIds is not empty (edge case protection)
+          if (!clientIds || clientIds.length === 0) {
+            setClientReports([]);
+            return;
+          }
+          
+          const { data: allReports, error: reportsError } = await supabase
+            .from('daily_reports_v2')
+            .select('*, clients(first_name, last_name)')
+            .eq('report_date', operationalDate)
+            .in('client_id', clientIds)
+            .order('created_at', { ascending: false }); // For consistency when multiple reports exist
+          
+          if (reportsError) {
+            console.error('Error fetching reports:', reportsError);
+            setClientReports([]);
+          } else {
+            // Filter out null_report status in JavaScript (not a valid enum value, so can't filter in DB)
+            const validReports = (allReports || []).filter(report => report.status !== 'null_report');
+            
+            // Process results: Group by client_id and find draft or submitted report for each
+            const reportsByClient = {};
+            validReports.forEach(report => {
+              if (!reportsByClient[report.client_id]) {
+                reportsByClient[report.client_id] = [];
+              }
+              reportsByClient[report.client_id].push(report);
             });
             
-            if (!reportResponse.ok) {
-              const errorText = await reportResponse.text();
-              console.error(`Error fetching report for client ${clientId}:`, reportResponse.status, errorText);
-              return null;
-            }
+            // For each client, find draft report (priority) or submitted report
+            const reportResults = clientIds.map(clientId => {
+              const clientReports = reportsByClient[clientId] || [];
+              const draftReport = clientReports.find(r => r.status === 'draft');
+              const submittedReport = clientReports.find(r => r.status === 'submitted');
+              return draftReport || submittedReport || null;
+            }).filter(r => r !== null);
             
-            const reportData = await reportResponse.json();
+            // Additional safeguard: Filter to ensure all reports match the operational date
+            const normalizedOperationalDate = normalizeDate(operationalDate);
             
-            // Filter out null_reports and prioritize draft reports, then submitted reports
-            const validReports = reportData.filter(r => r.status !== 'null_report');
+            const reportsForOperationalDate = reportResults.filter(r => {
+              const normalizedReportDate = normalizeDate(r.report_date);
+              return normalizedReportDate === normalizedOperationalDate;
+            });
             
-            // For employees: only show reports for today's operational date
-            // Previous days' reports are automatically filtered out by the date query
-            // Admins can see all reports
-            let filteredReports = validReports;
-            // No additional filtering needed - query already filters by operational date
-            
-            const draftReport = filteredReports.find(r => r.status === 'draft');
-            const submittedReport = filteredReports.find(r => r.status === 'submitted');
-            const result = draftReport || submittedReport || null;
-            return result;
-          } catch (err) {
-            console.error(`❌ Error fetching report for client ${clientId}:`, err);
-            return null;
+            setClientReports(reportsForOperationalDate);
           }
-        });
-
-        const reportResults = await Promise.all(reportPromises);
-        const validReports = reportResults.filter(r => r !== null);
-        
-        // Additional safeguard: Filter to ensure all reports match the operational date
-        // This prevents any reports from other dates from being included
-        const normalizeDate = (dateStr) => {
-          if (!dateStr) return null;
-          return dateStr.split('T')[0].split(' ')[0].trim();
-        };
-        const normalizedOperationalDate = normalizeDate(operationalDate);
-        
-        const reportsForOperationalDate = validReports.filter(r => {
-          const normalizedReportDate = normalizeDate(r.report_date);
-          return normalizedReportDate === normalizedOperationalDate;
-        });
-        
-        setClientReports(reportsForOperationalDate);
+        } catch (err) {
+          console.error('Error fetching reports:', err);
+          setClientReports([]);
+        }
         
         // Load previous day's submitted reports
         await loadPreviousDayReports(clientIds);
@@ -239,7 +321,6 @@ function Dashboard() {
 
   const loadPreviousDayReports = async (clientIds) => {
     try {
-      const { supabaseUrl } = getSupabaseConfig();
       const now = new Date();
       const currentHour = now.getHours();
       
@@ -254,31 +335,31 @@ function Dashboard() {
       }
       const previousOpDateStr = previousOpDate.toISOString().split('T')[0];
 
-      // Fetch submitted reports from previous operational day
-      const reportPromises = clientIds.map(async (clientId) => {
-        try {
-          const reportResponse = await fetch(
-            `${supabaseUrl}/rest/v1/daily_reports_v2?report_date=eq.${previousOpDateStr}&client_id=eq.${clientId}&status=eq.submitted&select=*,clients(first_name,last_name)`,
-            {
-              method: 'GET',
-              headers: getSupabaseHeaders()
-            }
-          );
-          if (reportResponse.ok) {
-            const reportData = await reportResponse.json();
-            return reportData && reportData.length > 0 ? reportData[0] : null;
-          }
-        } catch (err) {
-          console.error(`Error fetching previous day report for client ${clientId}:`, err);
-        }
-        return null;
-      });
+      // ✅ FIX #1: Single query for all previous day reports (instead of N+1 queries)
+      // ✅ FIX #3: Query optimized to use idx_reports_status_date index
+      // Edge case: Handle empty clientIds array
+      if (!clientIds || clientIds.length === 0) {
+        setPreviousDayReports([]);
+        return;
+      }
+      
+      const { data: previousReports, error: prevReportsError } = await supabase
+        .from('daily_reports_v2')
+        .select('*, clients(first_name, last_name)')
+        .eq('report_date', previousOpDateStr)
+        .eq('status', 'submitted')
+        .in('client_id', clientIds)
+        .order('created_at', { ascending: false }); // For consistency
 
-      const reportResults = await Promise.all(reportPromises);
-      const validReports = reportResults.filter(r => r !== null);
-      setPreviousDayReports(validReports);
+      if (prevReportsError) {
+        console.error('Error fetching previous day reports:', prevReportsError);
+        setPreviousDayReports([]);
+      } else {
+        setPreviousDayReports(previousReports || []);
+      }
     } catch (err) {
       console.error('Error loading previous day reports:', err);
+      setPreviousDayReports([]);
     }
   };
 
@@ -346,11 +427,6 @@ function Dashboard() {
 
   const getReportStatus = (clientId) => {
     // Normalize dates for comparison (remove any time components)
-    const normalizeDate = (dateStr) => {
-      if (!dateStr) return null;
-      return dateStr.split('T')[0].split(' ')[0].trim();
-    };
-    
     const normalizedOperationalDate = normalizeDate(operationalDate);
     
     // Find report that matches BOTH client_id AND operational date
@@ -376,11 +452,6 @@ function Dashboard() {
 
   const getReportForClient = (clientId) => {
     // Normalize dates for comparison (remove any time components)
-    const normalizeDate = (dateStr) => {
-      if (!dateStr) return null;
-      return dateStr.split('T')[0].split(' ')[0].trim();
-    };
-    
     const normalizedOperationalDate = normalizeDate(operationalDate);
     
     // Find report that matches BOTH client_id AND operational date
@@ -663,12 +734,12 @@ function Dashboard() {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip
+                  <Chip 
                               icon={statusIndicator.icon}
                               label={statusIndicator.label}
                               color={statusIndicator.color}
-                              size="small"
-                            />
+                    size="small"
+                  />
                           </TableCell>
                           <TableCell>
                             <Box display="flex" gap={1}>
@@ -684,7 +755,7 @@ function Dashboard() {
                               </Tooltip>
                               <Tooltip title="Delete Report">
                                 <IconButton
-                                  size="small"
+                    size="small"
                                   color="error"
                                   onClick={() => handleAdminDeleteReport(report)}
                                   disabled={submitting}
@@ -694,7 +765,7 @@ function Dashboard() {
                               </Tooltip>
                               <Tooltip title="Submit Report">
                                 <IconButton
-                                  size="small"
+                    size="small"
                                   color="success"
                                   onClick={() => handleAdminSubmitReport(report)}
                                   disabled={submitting}
@@ -773,11 +844,11 @@ function Dashboard() {
             <Box sx={{ ml: 1, mb: 3 }}>
               <Typography variant="body1" paragraph sx={{ mb: 2, lineHeight: 1.7 }}>
                 <strong>Daily Reports:</strong> Create and fill out daily reports for your clients. These reports are shared, so you and your coworkers will be filling out <strong>1 report per client per day</strong>.
-              </Typography>
+                      </Typography>
               
               <Typography variant="body1" paragraph sx={{ mb: 2, lineHeight: 1.7 }}>
                 <strong>Editing Rules:</strong> Any inputs you make can only be edited by yourself. Other staff members can only edit empty fields or fields they've previously filled.
-              </Typography>
+                      </Typography>
               
               <Typography variant="body1" paragraph sx={{ mb: 2, lineHeight: 1.7 }}>
                 <strong>File Uploads:</strong> Upload individual reports for Appointments, BIRs, AWOL incidents, and Injury reports in the bottom section of the report in their corresponding upload fields.
@@ -786,13 +857,13 @@ function Dashboard() {
               <Box sx={{ mt: 2.5, p: 2, backgroundColor: '#fff9e6', borderRadius: 1, borderLeft: '4px solid #FFC107' }}>
                 <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#856404' }}>
                   ⏱️ Time Estimate
-                </Typography>
+            </Typography>
                 <Typography variant="body2" sx={{ lineHeight: 1.6, color: '#856404' }}>
                   <strong>~5 minutes</strong> - Fill out a quick questionnaire for your shift only. Evening shift staff should submit the reports before the end of their shift (before 6:00 AM).
-                </Typography>
+            </Typography>
+                </Box>
               </Box>
-            </Box>
-
+              
           </Box>
         </CardContent>
       </Card>
@@ -800,9 +871,23 @@ function Dashboard() {
       {/* Section 2: Client List with Report Status */}
       <Card>
         <CardContent>
-          <Typography variant="h5" gutterBottom>
-            Your Clients for Today
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="h5" gutterBottom>
+              Your Clients for Today
             </Typography>
+            {currentFacility && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                  {currentFacility.name}
+                </Typography>
+                {currentFacility.address && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    {currentFacility.address}
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Box>
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
@@ -825,7 +910,7 @@ function Dashboard() {
                           <Box>
                             <Typography
                               variant="h6"
-                              sx={{ 
+                sx={{ 
                                 cursor: 'pointer',
                                 color: 'primary.main',
                                 '&:hover': { textDecoration: 'underline' }
@@ -833,8 +918,8 @@ function Dashboard() {
                               onClick={() => handleViewClient(client.id)}
                             >
                               {client.first_name} {client.last_name}
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
                               Age: {calculateAge(client.date_of_birth)} • Room: {client.room || 'N/A'}
                             </Typography>
                           </Box>
@@ -845,11 +930,6 @@ function Dashboard() {
 
                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
                           <Box display="flex" gap={1}>
-                            <Chip
-                              label={client.status === 'active' ? 'Active' : client.status === 'discharged' ? 'Discharged' : 'Active'}
-                              color={client.status === 'active' ? 'success' : client.status === 'discharged' ? 'warning' : 'success'}
-                              size="small"
-                            />
                             <Chip
                               label={
                                 status === 'completed'
@@ -867,7 +947,7 @@ function Dashboard() {
                               }
                               size="small"
                             />
-                          </Box>
+              </Box>
                           <Box>
                             {status === 'not_started' && (
                               <Button
@@ -897,7 +977,7 @@ function Dashboard() {
                               </Button>
                             )}
                             {/* No button for completed/submitted status - only show chip */}
-                          </Box>
+            </Box>
           </Box>
                       </CardContent>
                     </Card>

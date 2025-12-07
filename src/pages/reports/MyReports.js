@@ -27,7 +27,7 @@ import {
 import { useHistory, useLocation } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getCurrentFacilityFromGeofencing } from '../../utils/geofencing';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import { getOperationalDate } from '../../utils/dateHelpers';
 
 
@@ -91,33 +91,39 @@ function MyReports() {
       setLoading(true);
       setError(null);
       try {
-        const { supabaseUrl } = getSupabaseConfig();
-        
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Get the current operational date (6 AM - 6 AM logic)
         const operationalDate = getOperationalDate();
         
-        // Build query URL
+        let query = supabase
+          .from('daily_reports_v2')
+          .select(`
+            *,
+            clients(first_name, last_name, room, facility_id),
+            facilities(name)
+          `)
+          .eq('status', 'draft');
+        
         // For employees: filter by facility_id (geofenced facility) and operational date
         // For admins: Show ALL draft reports (no date or facility filter)
-        let queryUrl;
         if (!isAdmin && currentFacilityId) {
-          // Employee view: Filter by facility_id and operational date to show only today's in-progress reports for clients in the geofenced facility
-          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&facility_id=eq.${currentFacilityId}&report_date=eq.${operationalDate}&select=*,clients(first_name,last_name,room,facility_id),facilities(name)&order=report_date.desc`;
+          // Employee view: Filter by facility_id and operational date
+          query = query
+            .eq('facility_id', currentFacilityId)
+            .eq('report_date', operationalDate)
+            .order('report_date', { ascending: false });
         } else {
           // Admin view: Show ALL draft reports across all dates and facilities
-          queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&select=*,clients(first_name,last_name,room,facility_id),facilities(name)&order=report_date.desc,created_at.desc`;
+          query = query
+            .order('report_date', { ascending: false })
+            .order('created_at', { ascending: false });
         }
 
-        const response = await fetch(queryUrl, {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        });
+        const { data, error } = await query;
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (error) {
+          throw new Error(`Failed to fetch reports: ${error.message}`);
         }
-
-        const data = await response.json();
         console.log('🔍 MyReports fetched data:', data);
         console.log('🔍 Operational date filter:', operationalDate);
         

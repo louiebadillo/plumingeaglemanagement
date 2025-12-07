@@ -79,23 +79,18 @@ export const SupabaseProvider = ({ children }) => {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
-      console.log('🔄 Auth state change:', event, session?.user?.id || 'no user');
-      
       // If logout is in progress, ignore all auth state changes except SIGNED_OUT
       if (isLoggingOutRef.current && event !== 'SIGNED_OUT') {
-        console.log('⚠️ Ignoring auth state change during logout:', event);
         return;
       }
       
       // If we're on the logout page, ignore SIGNED_IN events
       if (event === 'SIGNED_IN' && (window.location.pathname === '/logout' || isLoggingOutRef.current)) {
-        console.log('⚠️ Ignoring SIGNED_IN event - logout in progress');
         return;
       }
       
       // Handle SIGNED_OUT event explicitly
       if (event === 'SIGNED_OUT' || !session) {
-        console.log('🔄 User logged out, clearing profile and stopping loading');
         isLoggingOutRef.current = false; // Reset logout flag
         setUser(null);
         setUserProfile(null);
@@ -234,7 +229,6 @@ export const SupabaseProvider = ({ children }) => {
         setUserProfile(null);
       }
     } else {
-      console.log('✅ User profile fetched successfully:', data);
       // Cache the successful result
       const profileToCache = { ...data, _cachedAt: Date.now() };
       localStorage.setItem(cacheKey, JSON.stringify(profileToCache));
@@ -242,16 +236,13 @@ export const SupabaseProvider = ({ children }) => {
     }
   };
 
-  const fetchUserProfile = async (userId, userEmail = '') => {
+  const fetchUserProfile = async (userId) => {
     try {
-      console.log('🔄 Fetching user profile for:', userId, 'email:', userEmail);
-      
       // Check for development user profile first
       const devUserProfile = localStorage.getItem('devUserProfile');
       if (devUserProfile) {
         try {
           const parsedProfile = JSON.parse(devUserProfile);
-          console.log('✅ Using development user profile:', parsedProfile);
           setUserProfile(parsedProfile);
           clearTimeout(loadingTimeoutRef.current);
           setLoading(false);
@@ -270,15 +261,14 @@ export const SupabaseProvider = ({ children }) => {
           // Only use cached profile if it's recent (less than 5 minutes old)
           const cacheAge = Date.now() - (parsedCached._cachedAt || 0);
           if (cacheAge < 5 * 60 * 1000) { // 5 minutes
-            console.log('✅ Using cached user profile:', parsedCached);
             // Remove the cache timestamp before setting profile
             const { _cachedAt, ...profile } = parsedCached;
             setUserProfile(profile);
             clearTimeout(loadingTimeoutRef.current);
             setLoading(false);
             // Still try to fetch fresh data in the background
-            fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(err => {
-              console.log('Background profile refresh failed:', err);
+            fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(() => {
+              // Silently fail background refresh
             });
             return;
           }
@@ -317,9 +307,7 @@ export const SupabaseProvider = ({ children }) => {
         role: defaultRole
       };
       setUserProfile(defaultProfile);
-      console.log('✅ Default profile set due to error:', defaultProfile);
     } finally {
-      console.log('🔄 Clearing timeout and setting loading to false');
       clearTimeout(loadingTimeoutRef.current);
       setLoading(false);
     }

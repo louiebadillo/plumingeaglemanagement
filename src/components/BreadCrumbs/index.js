@@ -24,7 +24,7 @@ import { parseClientSlug } from '../../utils/urlUtils';
 // Supabase configuration
 // Get Supabase URL from configuration
 // Import Supabase configuration
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 
 // Tab styling
 const CustomTab = withStyles((theme) => ({
@@ -50,22 +50,15 @@ const BreadCrumbs = () => {
     const loadFacilities = async () => {
       try {
         setLoading(true);
-        const { supabaseUrl } = getSupabaseConfig();
-        const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&order=name.asc`, {
-          method: 'GET',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
-        });
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        const { data: facilitiesData, error } = await supabase
+          .from('facilities')
+          .select('*')
+          .order('name', { ascending: true });
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (error) {
+          throw new Error(`Failed to fetch facilities: ${error.message}`);
         }
-
-        const facilitiesData = await response.json();
         // Filter out any null or undefined facilities (safety check)
         const validFacilities = (facilitiesData || []).filter(f => f && f.id && f.name);
         setFacilities(validFacilities);
@@ -87,23 +80,15 @@ const BreadCrumbs = () => {
     }
 
     try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/clients?select=*&id=eq.${clientId}`, {
-        method: 'GET',
-        headers: {
-          ...getSupabaseHeaders(),
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { data: clientData, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', clientId)
+        .maybeSingle();
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const clientData = await response.json();
-      if (clientData && clientData.length > 0) {
-        const client = clientData[0];
+      if (!error && clientData) {
+        const client = clientData;
         setClients(prev => ({
           ...prev,
           [clientId]: client
@@ -126,23 +111,16 @@ const BreadCrumbs = () => {
       // Parse the client slug to get first and last name
       const { firstName, lastName } = parseClientSlug(clientSlug);
       
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/clients?first_name=eq.${firstName}&last_name=eq.${lastName}&select=*`, {
-        method: 'GET',
-        headers: {
-          ...getSupabaseHeaders(),
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const clientData = await response.json();
-      if (clientData && clientData.length > 0) {
-        const client = clientData[0];
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { data: clientData, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('first_name', firstName)
+        .eq('last_name', lastName)
+        .maybeSingle();
+      
+      if (!error && clientData) {
+        const client = clientData;
         setClients(prev => ({
           ...prev,
           [clientSlug]: client

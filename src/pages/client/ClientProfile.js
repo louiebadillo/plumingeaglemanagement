@@ -55,7 +55,7 @@ import { useParams, useHistory, useLocation } from 'react-router-dom';
 import { formatDate, calculateAge } from '../../context/clientMock';
 import { useSupabase } from '../../context/SupabaseContext';
 import { parseClientSlug, createClientUrl } from '../../utils/urlUtils';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import SocialMediaManager from '../../components/Client/SocialMediaManager';
 import AllowedContactsManager from '../../components/Client/AllowedContactsManager';
 import SuccessModal from '../../components/Modals/SuccessModal';
@@ -86,48 +86,44 @@ function ClientProfile() {
   const isNewClient = !clientSlug || clientSlug === 'new' || window.location.pathname === '/app/client/new' || window.location.pathname.endsWith('/client/new');
 
   // Helper function to load facility information
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
   const loadFacilityInfo = async (facilityId) => {
     try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const facilityResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityId}`, {
-        method: 'GET',
-        headers: {
-          ...getSupabaseHeaders(),
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
+      const { data: facilityData, error } = await supabase
+        .from('facilities')
+        .select('*')
+        .eq('id', facilityId)
+        .maybeSingle();
       
-      if (facilityResponse.ok) {
-        const facilityData = await facilityResponse.json();
-        if (facilityData && facilityData.length > 0) {
-          setFacility(facilityData[0]);
-        }
+      if (error) {
+        console.error('Error loading facility:', error);
+        return;
       }
-    } catch (error) {
+      
+      if (facilityData) {
+        setFacility(facilityData);
+      }
+      } catch (error) {
       console.error('Error loading facility:', error);
     }
   };
 
   // Helper function to load all facilities for selection
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
   const loadFacilities = async () => {
     try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const facilitiesResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&order=name.asc`, {
-        method: 'GET',
-        headers: {
-          ...getSupabaseHeaders(),
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
+      const { data: facilitiesData, error } = await supabase
+        .from('facilities')
+        .select('*')
+        .order('name', { ascending: true });
       
-      if (facilitiesResponse.ok) {
-        const facilitiesData = await facilitiesResponse.json();
-        setFacilities(facilitiesData || []);
-        return facilitiesData || [];
+      if (error) {
+        console.error('Error loading facilities:', error);
+        return [];
       }
-      return [];
+      
+      setFacilities(facilitiesData || []);
+      return facilitiesData || [];
       } catch (error) {
       console.error('Error loading facilities:', error);
       return [];
@@ -288,7 +284,6 @@ function ClientProfile() {
       // Load existing client from Supabase
       const loadClient = async () => {
         try {
-          const { supabaseUrl } = getSupabaseConfig();
           let supabaseClient = null;
           
           // Check if clientSlug is a UUID (client ID)
@@ -296,23 +291,20 @@ function ClientProfile() {
           const isClientId = uuidRegex.test(clientSlug);
           
           if (isClientId) {
+            // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
             // Load client directly by ID
-            const response = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${clientSlug}&select=*`, {
-              method: 'GET',
-              headers: {
-                ...getSupabaseHeaders(),
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache'
-              }
-            });
+            const { data, error } = await supabase
+              .from('clients')
+              .select('*')
+              .eq('id', clientSlug)
+              .maybeSingle();
             
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+            if (error) {
+              throw new Error(`Failed to fetch client: ${error.message}`);
             }
             
-            const data = await response.json();
-            if (data && data.length > 0) {
-              supabaseClient = data[0];
+            if (data) {
+              supabaseClient = data; // maybeSingle() returns a single object, not an array
             }
           } else {
             // Fall back to name-based lookup for backward compatibility
@@ -327,28 +319,21 @@ function ClientProfile() {
             const firstName = firstNameParts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
             const lastName = lastNameParts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
             
-            // Properly encode the names for the Supabase query
-            const encodedFirstName = encodeURIComponent(firstName);
-            const encodedLastName = encodeURIComponent(lastName);
-              const queryUrl = `${supabaseUrl}/rest/v1/clients?first_name=eq.${encodedFirstName}&last_name=eq.${encodedLastName}&select=*`;
+            // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+            // Query by first and last name
+            const { data, error } = await supabase
+              .from('clients')
+              .select('*')
+              .eq('first_name', firstName)
+              .eq('last_name', lastName)
+              .maybeSingle();
             
-            const response = await fetch(queryUrl, {
-              method: 'GET',
-              headers: {
-                ...getSupabaseHeaders(),
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache'
-              }
-            });
-            
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+            if (error) {
+              throw new Error(`Failed to fetch client: ${error.message}`);
             }
             
-            const data = await response.json();
-            
-            if (data && data.length > 0) {
-              foundClient = data[0];
+            if (data) {
+              foundClient = data;
               break;
             }
           }
@@ -546,24 +531,18 @@ function ClientProfile() {
         
         console.log('🆕 Creating new client with data:', clientData);
         
-        const { supabaseUrl } = getSupabaseConfig();
-        const response = await fetch(`${supabaseUrl}/rest/v1/clients`, {
-          method: 'POST',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(clientData)
-        });
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        const { data: newClient, error } = await supabase
+          .from('clients')
+          .insert([clientData])
+          .select()
+          .single();
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Supabase error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        if (error) {
+          console.error('❌ Supabase error response:', error);
+          throw new Error(`Failed to create client: ${error.message}`);
         }
         
-        const newClient = await response.json();
         console.log('✅ Client created successfully:', newClient);
         
         setEditDialogOpen(false);
@@ -572,8 +551,8 @@ function ClientProfile() {
         setSuccessModalOpen(true);
         // Redirect to the new client's profile page after a short delay
         setTimeout(() => {
-          const clientUrl = createClientUrl(newClient[0]);
-          history.push(clientUrl);
+          const clientUrl = createClientUrl(newClient);
+        history.push(clientUrl);
         }, 1500);
       } else {
         // Update existing client in Supabase
@@ -624,20 +603,17 @@ function ClientProfile() {
         
         console.log('🔄 Updating client with data:', clientData);
         
-        const { supabaseUrl } = getSupabaseConfig();
-        const response = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${client.id}`, {
-          method: 'PATCH',
-          headers: {
-            ...getSupabaseHeaders(),
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(clientData)
-        });
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+        const { data: updatedClient, error } = await supabase
+          .from('clients')
+          .update(clientData)
+          .eq('id', client.id)
+          .select()
+          .single();
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Supabase error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        if (error) {
+          console.error('❌ Supabase error response:', error);
+          throw new Error(`Failed to update client: ${error.message}`);
         }
         
         console.log('✅ Client updated successfully');
@@ -657,23 +633,23 @@ function ClientProfile() {
 
     try {
       setDeleting(true);
-      console.log('Deleting client:', client.id);
+    console.log('Deleting client:', client.id);
       
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/clients?id=eq.${client.id}`, {
-        method: 'DELETE',
-        headers: getSupabaseHeaders()
-      });
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', client.id);
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error) {
+        throw new Error(`Failed to delete client: ${error.message}`);
       }
 
       const clientName = `${client.firstName} ${client.lastName}`;
       const facilityId = client.facility;
       
       // Close delete dialog and show success
-      setDeleteDialogOpen(false);
+    setDeleteDialogOpen(false);
       setSuccessMessage(`Client "${clientName}" has been deleted successfully.`);
       setSuccessModalOpen(true);
       
@@ -1246,26 +1222,26 @@ function ClientProfile() {
                 />
                   </CardContent>
                 </Card>
-              </Grid>
-        )}
+            </Grid>
+          )}
 
         {/* Risks and Preferences */}
         {client.risksAndPreferences && (
           <Grid item xs={12}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
+                      <Card>
+                        <CardContent>
+                          <Typography variant="h6" gutterBottom>
                   <NotesIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
                   Risks and Preferences
-                    </Typography>
+                          </Typography>
                 <Divider sx={{ mb: 2 }} />
                 <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
                   <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>
                     {client.risksAndPreferences}
-                    </Typography>
+                </Typography>
                 </Paper>
-                  </CardContent>
-                </Card>
+              </CardContent>
+            </Card>
             </Grid>
           )}
       </Grid>
@@ -1739,7 +1715,7 @@ function ClientProfile() {
           <Box sx={{ mt: 2 }}>
             <Typography variant="body1" gutterBottom>
               Please select which facility this client will be assigned to:
-            </Typography>
+          </Typography>
             <FormControl fullWidth sx={{ mt: 3 }}>
               <InputLabel>Facility</InputLabel>
               <Select

@@ -41,7 +41,7 @@ import {
 import { useParams, useHistory } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
 import { createClientUrl } from '../../utils/urlUtils';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 
 // Initial form data for creating/editing clients
@@ -85,36 +85,33 @@ function FacilityPage() {
         setLoading(true);
         console.log('🔄 Loading facility and clients for ID:', facilityId);
         
+        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Load facility information
-        const { supabaseUrl } = getSupabaseConfig();
-        const facilityResponse = await fetch(`${supabaseUrl}/rest/v1/facilities?id=eq.${facilityId}`, {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        });
+        const { data: facilityData, error: facilityError } = await supabase
+          .from('facilities')
+          .select('*')
+          .eq('id', facilityId)
+          .maybeSingle();
         
-        if (!facilityResponse.ok) {
-          throw new Error(`HTTP error! status: ${facilityResponse.status}`);
+        if (facilityError) {
+          throw new Error(`Failed to fetch facility: ${facilityError.message}`);
         }
         
-        const facilityData = await facilityResponse.json();
-        if (facilityData && facilityData.length > 0) {
-          setFacility(facilityData[0]);
-          console.log('✅ Facility loaded:', facilityData[0]);
+        if (facilityData) {
+          setFacility(facilityData);
+          console.log('✅ Facility loaded:', facilityData);
         } else {
           console.log('❌ Facility not found, redirecting to first available facility');
           // Try to redirect to the first available facility instead of management
-          const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=*&limit=1`, {
-            method: 'GET',
-            headers: getSupabaseHeaders()
-          });
+          const { data: facilities, error: facilitiesError } = await supabase
+            .from('facilities')
+            .select('*')
+            .limit(1);
           
-          if (response.ok) {
-            const facilities = await response.json();
-            if (facilities && facilities.length > 0) {
-              console.log('🔄 Redirecting to first available facility:', facilities[0].id);
-              history.push(`/app/facility/${facilities[0].id}`);
-              return;
-            }
+          if (!facilitiesError && facilities && facilities.length > 0) {
+            console.log('🔄 Redirecting to first available facility:', facilities[0].id);
+            history.push(`/app/facility/${facilities[0].id}`);
+            return;
           }
           
           // Fallback to management if no facilities found
@@ -124,16 +121,15 @@ function FacilityPage() {
         }
         
         // Load clients for this facility
-        const clientsResponse = await fetch(`${supabaseUrl}/rest/v1/clients?facility_id=eq.${facilityId}`, {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        });
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('facility_id', facilityId)
+          .limit(100);
         
-        if (!clientsResponse.ok) {
-          throw new Error(`HTTP error! status: ${clientsResponse.status}`);
+        if (clientsError) {
+          throw new Error(`Failed to fetch clients: ${clientsError.message}`);
         }
-        
-        const clientsData = await clientsResponse.json();
         setClients(clientsData || []);
         console.log('✅ Clients loaded:', clientsData);
         

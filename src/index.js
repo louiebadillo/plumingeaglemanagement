@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 import { routerMiddleware } from 'connected-react-router';
 import { ThemeProvider as ThemeProviderV5, createTheme } from '@mui/material/styles';
 import { StyledEngineProvider } from '@mui/material/styles';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './components/App';
 import ErrorBoundary from './components/ErrorBoundary';
 import * as serviceWorker from './serviceWorker';
@@ -48,6 +49,18 @@ export function getHistory() {
   return history;
 }
 
+// ✅ FIX #4: Setup React Query for caching
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh for 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes - cache is kept for 10 minutes after last use
+      refetchOnWindowFocus: false, // Don't refetch when window regains focus
+      refetchOnMount: false, // Don't refetch on component mount if data is fresh
+      retry: 1, // Retry failed requests once
+    },
+  },
+});
 
 export const store = createStore(
   createRootReducer(history),
@@ -108,28 +121,30 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(
   <ErrorBoundary>
-    <Provider store={store}>
-      <LayoutProvider>
-        <StyledEngineProvider injectFirst>
-          <ThemeChangeProvider>
-            <ThemeStateContext.Consumer>
-              {(theme) => {
-                // Ensure theme is always valid
-                const validTheme = theme && theme.palette && theme.palette.primary ? theme : defaultMuiTheme;
-                return (
-                  <ThemeProviderV5 theme={validTheme}>
-                    <ManagementProvider>
-                      <CssBaseline />
-                      <App />
-                    </ManagementProvider>
-                  </ThemeProviderV5>
-                );
-              }}
-            </ThemeStateContext.Consumer>
-          </ThemeChangeProvider>
-        </StyledEngineProvider>
-      </LayoutProvider>
-    </Provider>
+    <QueryClientProvider client={queryClient}>
+      <Provider store={store}>
+        <LayoutProvider>
+          <StyledEngineProvider injectFirst>
+            <ThemeChangeProvider>
+              <ThemeStateContext.Consumer>
+                {(theme) => {
+                  // Ensure theme is always valid
+                  const validTheme = theme && theme.palette && theme.palette.primary ? theme : defaultMuiTheme;
+                  return (
+                    <ThemeProviderV5 theme={validTheme}>
+                      <ManagementProvider>
+                        <CssBaseline />
+                        <App />
+                      </ManagementProvider>
+                    </ThemeProviderV5>
+                  );
+                }}
+              </ThemeStateContext.Consumer>
+            </ThemeChangeProvider>
+          </StyledEngineProvider>
+        </LayoutProvider>
+      </Provider>
+    </QueryClientProvider>
   </ErrorBoundary>,
 );
 

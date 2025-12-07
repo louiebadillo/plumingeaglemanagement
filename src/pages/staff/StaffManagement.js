@@ -39,7 +39,6 @@ import {
   VisibilityOff as HideIcon,
   LockReset as LockResetIcon
 } from '@mui/icons-material';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
@@ -103,38 +102,17 @@ function StaffManagement() {
         setLoading(true);
         console.log('🔄 Loading users from Supabase...');
         
-        // Use proper Supabase config utilities
-        const { supabaseUrl, supabaseServiceKey } = getSupabaseConfig();
+        // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
+        console.log('🔍 Fetching users from Supabase...');
         
-        if (!supabaseUrl || !supabaseServiceKey) {
-          console.error('❌ Missing Supabase configuration!');
-          console.error('Supabase URL:', supabaseUrl);
-          console.error('Service Key present:', !!supabaseServiceKey);
-          setError('Missing Supabase configuration. Please check environment variables.');
-          setLoading(false);
-          return;
+        const { data: users, error } = await supabaseAdmin
+          .from('users')
+          .select('*');
+        
+        if (error) {
+          console.error('❌ Error fetching users:', error);
+          throw new Error(`Failed to fetch users: ${error.message}`);
         }
-        
-        const headers = getSupabaseHeaders();
-        
-        console.log('🔍 Making fetch request to Supabase API...');
-        console.log('📍 Supabase URL:', supabaseUrl);
-        console.log('🔑 Service Key present:', !!supabaseServiceKey);
-        
-        const response = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
-          method: 'GET',
-          headers: headers
-        });
-        
-        console.log('📡 Response status:', response.status, response.statusText);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ HTTP error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-        
-        const users = await response.json();
         
         console.log('✅ Query completed, checking results...');
         console.log('📋 Raw users data from Supabase:', users);
@@ -337,17 +315,14 @@ function StaffManagement() {
       setSuccessMessage(`Staff member "${deletedName}" has been deleted successfully.`);
       setSuccessModalOpen(true);
       
+      // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
       // Reload users from Supabase to confirm deletion
       console.log('🔄 Reloading users after deletion...');
-      const { supabaseUrl } = getSupabaseConfig();
-      const headers = getSupabaseHeaders();
-      const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
-        method: 'GET',
-        headers: headers
-      });
+      const { data: remainingUsers, error: reloadError } = await supabaseAdmin
+        .from('users')
+        .select('*');
       
-      if (reloadResponse.ok) {
-        const remainingUsers = await reloadResponse.json();
+      if (!reloadError && remainingUsers) {
         const transformedUsers = remainingUsers.map(user => ({
           id: user.id,
           firstName: user.first_name || '',
@@ -361,7 +336,7 @@ function StaffManagement() {
         setRenderKey(prev => prev + 1);
         console.log('✅ Users reloaded after deletion, count:', transformedUsers.length);
       } else {
-        console.error('❌ Reload failed:', reloadResponse.status);
+        console.error('❌ Reload failed:', reloadError);
       }
       
     } catch (error) {
@@ -503,12 +478,12 @@ function StaffManagement() {
         console.log('⏰ Waiting 2 seconds for database to process update...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
-          method: 'GET',
-          headers: headers
-        });
+        // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
+        const { data: reloadedUsers, error: reloadError } = await supabaseAdmin
+          .from('users')
+          .select('*');
         
-        if (reloadResponse.ok) {
+        if (!reloadError && reloadedUsers) {
           const updatedUsers = await reloadResponse.json();
           console.log('📋 Raw updated users from reload:', updatedUsers);
           const transformedUsers = updatedUsers.map(user => ({
@@ -526,7 +501,7 @@ function StaffManagement() {
           console.log('⏰ Reload state updated at:', new Date().toISOString());
           console.log('✅ Users reloaded after update');
         } else {
-          console.error('❌ Reload failed:', reloadResponse.status);
+          console.error('❌ Reload failed:', reloadError);
         }
       } else {
         // Add new staff using Supabase
@@ -634,14 +609,15 @@ function StaffManagement() {
         // Wait a moment for the database to process the changes
         await new Promise(resolve => setTimeout(resolve, 1000));
         
+        // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
         // Reload users from Supabase to get the latest data
         console.log('🔄 Reloading users after creation...');
-        const reloadResponse = await fetch(`${supabaseUrl}/rest/v1/users?select=*&order=created_at.desc`, {
-          method: 'GET',
-          headers: headers
-        });
+        const { data: reloadedUsers, error: reloadError } = await supabaseAdmin
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-        if (reloadResponse.ok) {
+        if (!reloadError && reloadedUsers) {
           const updatedUsers = await reloadResponse.json();
           console.log('📋 Raw updated users from reload:', updatedUsers);
           const transformedUsers = updatedUsers.map(user => ({
@@ -658,7 +634,7 @@ function StaffManagement() {
           setRenderKey(prev => prev + 1); // Force table re-render
           console.log('✅ Users reloaded after creation');
         } else {
-          console.error('❌ Reload failed:', reloadResponse.status);
+          console.error('❌ Reload failed:', reloadError);
         }
       }
       
@@ -785,14 +761,12 @@ function StaffManagement() {
                 console.log('🔄 Manual refresh triggered');
                 setLoading(true);
                 try {
-                  const { supabaseUrl } = getSupabaseConfig();
-                  const headers = getSupabaseHeaders();
-                  const response = await fetch(`${supabaseUrl}/rest/v1/users?select=*`, {
-                    method: 'GET',
-                    headers: headers
-                  });
+                  // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
+                  const { data: users, error: fetchError } = await supabaseAdmin
+                    .from('users')
+                    .select('*');
                   
-                  if (response.ok) {
+                  if (!fetchError && users) {
                     const users = await response.json();
                     const transformedUsers = users.map(user => ({
                       id: user.id,
@@ -807,7 +781,7 @@ function StaffManagement() {
                     setRenderKey(prev => prev + 1);
                     console.log('✅ Manual refresh completed:', transformedUsers.length, 'users');
                   } else {
-                    console.error('❌ Manual refresh failed:', response.status);
+                    console.error('❌ Manual refresh failed:', fetchError);
                   }
                 } catch (error) {
                   console.error('💥 Manual refresh error:', error);

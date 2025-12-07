@@ -42,17 +42,14 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useHistory } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSupabase } from '../../context/SupabaseContext';
-import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { supabase } from '../../lib/supabase';
 import ReportViewer from '../../components/Reports/ReportViewer';
 
 function AdminReports() {
   const history = useHistory();
   const { userProfile } = useSupabase();
-  const [reports, setReports] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [facilities, setFacilities] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [facilityFilter, setFacilityFilter] = useState('all');
@@ -66,76 +63,82 @@ function AdminReports() {
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (isAdmin) {
-      loadReports();
-      loadClients();
-      loadFacilities();
-    }
-  }, [isAdmin]);
-
-  const loadReports = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // ✅ FIX #4: Cached reports query - 1 minute TTL (reports change frequently)
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+  const { data: reportsData, isLoading: reportsLoading, error: reportsError, refetch: refetchReports } = useQuery({
+    queryKey: ['admin-reports', 'submitted'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('daily_reports_v2')
+        .select(`
+          *,
+          clients(first_name, last_name, room),
+          facilities(name)
+        `)
+        .eq('status', 'submitted')
+        .order('created_at', { ascending: false })
+        .limit(100);
       
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(
-        `${supabaseUrl}/rest/v1/daily_reports_v2?select=*,clients(first_name,last_name,room),facilities(name)&status=eq.submitted`,
-        {
-          method: 'GET',
-          headers: getSupabaseHeaders()
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error) {
+        throw new Error(`Failed to fetch reports: ${error.message}`);
       }
       
-      const reportsData = await response.json();
-      setReports(reportsData || []);
-    } catch (error) {
+      return data || [];
+    },
+    enabled: isAdmin, // Only fetch if admin
+    staleTime: 1 * 60 * 1000, // Cache for 1 minute (reports change frequently)
+    onError: (error) => {
       console.error('Error loading reports:', error);
       setError('Failed to load reports');
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  const loadClients = async () => {
-    try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/clients?select=id,first_name,last_name`, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+  // ✅ FIX #4: Cached clients query - 5 minute TTL
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+  const { data: clientsData } = useQuery({
+    queryKey: ['clients', 'dropdown'], // Separate cache key for dropdown
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, first_name, last_name')
+        .limit(100);
       
-      if (response.ok) {
-        const clientsData = await response.json();
-        setClients(clientsData || []);
+      if (error) {
+        throw new Error(`Failed to fetch clients: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error loading clients:', error);
-    }
-  };
+      
+      return data || [];
+    },
+    enabled: isAdmin, // Only fetch if admin
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
 
-  const loadFacilities = async () => {
-    try {
-      const { supabaseUrl } = getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/rest/v1/facilities?select=id,name`, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
+  // ✅ FIX #4: Cached facilities query - 30 minute TTL (uses same cache as Layout)
+  // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+  const { data: facilitiesData } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('facilities')
+        .select('id, name')
+        .order('name', { ascending: true });
       
-      if (response.ok) {
-        const facilitiesData = await response.json();
-        setFacilities(facilitiesData || []);
+      if (error) {
+        throw new Error(`Failed to fetch facilities: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error loading facilities:', error);
-    }
-  };
+      
+      return data || [];
+    },
+    enabled: isAdmin, // Only fetch if admin
+    staleTime: 30 * 60 * 1000, // Cache for 30 minutes (facilities rarely change)
+  });
+
+  const reports = reportsData || [];
+  const clients = clientsData || [];
+  const facilities = facilitiesData || [];
+  const loading = reportsLoading;
 
   const filteredReports = reports.filter(report => {
     const matchesSearch = !searchTerm || 
@@ -229,7 +232,11 @@ function AdminReports() {
         <Button
           variant="outlined"
           startIcon={<RefreshIcon />}
-          onClick={loadReports}
+          onClick={() => {
+            refetchReports();
+            queryClient.invalidateQueries(['clients', 'dropdown']);
+            queryClient.invalidateQueries(['facilities']);
+          }}
         >
           Refresh
         </Button>
@@ -239,9 +246,9 @@ function AdminReports() {
         View and manage all submitted daily reports from staff for all clients across all facilities.
       </Typography>
 
-      {error && (
+      {(error || reportsError) && (
         <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
+          {error || reportsError?.message || 'Failed to load reports'}
         </Alert>
       )}
 
