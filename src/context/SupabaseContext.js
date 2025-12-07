@@ -237,6 +237,9 @@ export const SupabaseProvider = ({ children }) => {
   };
 
   const fetchUserProfile = async (userId, userEmail = '') => {
+    // Define cache key at the top level so it's always available
+    const cachedProfileKey = `userProfile_${userId}`;
+    
     try {
       // Check for development user profile first
       const devUserProfile = localStorage.getItem('devUserProfile');
@@ -253,7 +256,6 @@ export const SupabaseProvider = ({ children }) => {
       }
       
       // Check for cached profile in localStorage (from previous successful fetch)
-      const cachedProfileKey = `userProfile_${userId}`;
       const cachedProfile = localStorage.getItem(cachedProfileKey);
       if (cachedProfile) {
         try {
@@ -282,7 +284,6 @@ export const SupabaseProvider = ({ children }) => {
     } catch (error) {
       console.error('❌ Error in fetchUserProfile:', error);
       // Try to use cached profile as fallback
-      const cachedProfileKey = `userProfile_${userId}`;
       const cachedProfile = localStorage.getItem(cachedProfileKey);
       if (cachedProfile) {
         try {
