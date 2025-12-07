@@ -236,7 +236,7 @@ export const SupabaseProvider = ({ children }) => {
     }
   };
 
-  const fetchUserProfile = async (userId) => {
+  const fetchUserProfile = async (userId, userEmail = '') => {
     try {
       // Check for development user profile first
       const devUserProfile = localStorage.getItem('devUserProfile');
@@ -288,7 +288,6 @@ export const SupabaseProvider = ({ children }) => {
         try {
           const parsedCached = JSON.parse(cachedProfile);
           const { _cachedAt, ...profile } = parsedCached;
-          console.log('✅ Using cached profile as fallback:', profile);
           setUserProfile(profile);
           clearTimeout(loadingTimeoutRef.current);
           setLoading(false);
