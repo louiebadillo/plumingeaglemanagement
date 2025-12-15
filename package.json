@@ -72,7 +72,7 @@
     "not op_mini all"
   ],
   "engines": {
-    "node": ">=20.15"
+    "node": "20.x"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.28.4",
