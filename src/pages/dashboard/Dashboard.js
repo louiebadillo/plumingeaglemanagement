@@ -218,6 +218,10 @@ function Dashboard() {
         console.log('✅ Clients loaded:', data?.length || 0, 'clients found for facility', currentFacilityId);
         clientsData = data;
         
+        // ✅ CRITICAL: Set clients state immediately so they appear in UI
+        setClients(data || []);
+        console.log('✅ Clients state updated:', (data || []).length, 'clients');
+        
         if (facilityError) {
           if (facilityError.code === '42501' || facilityError.message?.includes('row-level security')) {
             console.error('RLS policy blocking: Employee does not have permission to read from facilities table');
@@ -247,9 +251,17 @@ function Dashboard() {
         }
         
         clientsData = data;
+        // ✅ CRITICAL: Set clients state for fallback case too
+        setClients(data || []);
+        console.log('✅ Fallback clients state set:', (data || []).length, 'clients');
       }
 
       // Photo loading is now done in parallel with reports (see below)
+      
+      // ✅ CRITICAL: Set clients state FIRST before processing reports/photos
+      // This ensures clients appear in UI immediately, even if reports/photos are still loading
+      console.log('🔧 Setting clients state BEFORE reports/photos processing:', (clientsData || []).length);
+      setClients(clientsData || []);
       
       // ✅ PERFORMANCE: Load reports and photos in parallel (they're independent)
       // Employees can see/create/edit daily reports for clients in their facility for TODAY only
@@ -260,6 +272,8 @@ function Dashboard() {
         // Ensure clientIds is not empty (edge case protection)
         if (!clientIds || clientIds.length === 0) {
           setClientReports([]);
+          setClientPhotoUrls({});
+          // Clients already set above, just return
           setLoading(false);
           return;
         }
@@ -350,6 +364,16 @@ function Dashboard() {
       } else {
         setClientReports([]);
         setClientPhotoUrls({});
+      }
+      
+      // ✅ CRITICAL: Always set clients state at the end (ensures they appear in UI)
+      // This is a safety check to ensure clients are set even if something went wrong earlier
+      if (clientsData) {
+        console.log('✅ Final setClients call - clientsData:', clientsData.length, 'clients');
+        setClients(clientsData);
+      } else {
+        console.log('⚠️ No clientsData to set');
+        setClients([]);
       }
     } catch (err) {
       console.error('Error loading employee data:', err);
@@ -1006,6 +1030,14 @@ function Dashboard() {
               {error}
             </Alert>
           )}
+          {(() => {
+            console.log('🔍 UI Render - clients state:', {
+              clientsLength: clients.length,
+              clients: clients,
+              loading: loading
+            });
+            return null;
+          })()}
           {clients.length === 0 ? (
             <Typography variant="body1" color="textSecondary" sx={{ mt: 2 }}>
               No active clients found in your facility.
