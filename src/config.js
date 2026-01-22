@@ -4,7 +4,7 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
 const redirectUrl = process.env.NODE_ENV === "development" 
   ? "http://localhost:3000" 
-  : process.env.REACT_APP_SITE_URL || "https://plumingeaglemanagement.vercel.app";
+  : process.env.REACT_APP_SITE_URL || "https://pelreports.ca";
 
 export default {
   supabaseUrl,

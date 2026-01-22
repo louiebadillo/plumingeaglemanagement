@@ -199,6 +199,13 @@ function Dashboard() {
         const { data, error: clientsError } = clientsResult;
         const { data: facilityInfo, error: facilityError } = facilityResult;
         
+        console.log('🔍 Client query result:', {
+          facilityId: currentFacilityId,
+          dataLength: data?.length || 0,
+          data: data,
+          error: clientsError
+        });
+        
         if (clientsError) {
           console.error('❌ Error loading clients:', clientsError);
           // Check if it's an RLS error
@@ -208,6 +215,7 @@ function Dashboard() {
           throw new Error(`Failed to load clients: ${clientsError.message}`);
         }
         
+        console.log('✅ Clients loaded:', data?.length || 0, 'clients found for facility', currentFacilityId);
         clientsData = data;
         
         if (facilityError) {
