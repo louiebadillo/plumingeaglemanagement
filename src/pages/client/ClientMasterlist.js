@@ -27,7 +27,8 @@ import {
   Alert,
   CircularProgress,
   Avatar,
-  Tooltip
+  Tooltip,
+  Pagination
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -36,7 +37,9 @@ import {
   Visibility as ViewIcon,
   FolderOpen as FolderIcon,
   SwapHoriz as TransferIcon,
-  Assessment as AssessmentIcon
+  Assessment as AssessmentIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
@@ -44,6 +47,7 @@ import { useSupabase } from '../../context/SupabaseContext';
 import { useHistory } from 'react-router-dom';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
+import { getProfilePhotoUrl } from '../../utils/fileUpload';
 
 function ClientMasterlist() {
   const { userProfile } = useSupabase();
@@ -59,6 +63,15 @@ function ClientMasterlist() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [clientPhotoUrls, setClientPhotoUrls] = useState({});
+  
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterBy, setFilterBy] = useState('first_name'); // 'first_name', 'last_name', 'age', 'admission_date', 'band_no', 'status'
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50); // Default: 50 items per page
   const [clientForm, setClientForm] = useState({
     first_name: '',
     last_name: '',
@@ -97,9 +110,7 @@ function ClientMasterlist() {
             address
           )
         `)
-        .order('status', { ascending: true }) // 'active' comes before 'discharged' alphabetically
-        .order('first_name', { ascending: true }) // Then sort by first name
-        .limit(100); // ✅ FIX #2: Limit to 100 records for performance
+        .limit(1000); // Increased limit to allow client-side filtering
 
       if (error) throw error;
       return data || [];
@@ -126,19 +137,132 @@ function ClientMasterlist() {
     staleTime: 30 * 60 * 1000, // Cache for 30 minutes (facilities rarely change)
   });
 
-  // ✅ FIX #5: Data is already sorted by database (status, then first_name)
-  // Since 'active' < 'discharged' alphabetically, database sort works correctly
-  // Minimal JavaScript processing only for null/undefined status handling
+  // Filter and sort clients
   const clients = useMemo(() => {
     if (!clientsData) return [];
     
-    // Database sorts by: status (ascending) then first_name (ascending)
-    // This naturally puts 'active' before 'discharged', then sorts by name within each status
-    // Only need to handle null/undefined status values
-    return clientsData.map(client => ({
+    let filtered = clientsData.map(client => ({
       ...client,
       status: client.status || 'active' // Normalize null status to 'active' for display
     }));
+    
+    // Apply search filter (name, address)
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(client =>
+        (client.first_name && client.first_name.toLowerCase().includes(searchLower)) ||
+        (client.last_name && client.last_name.toLowerCase().includes(searchLower)) ||
+        (client.facilities?.name && client.facilities.name.toLowerCase().includes(searchLower)) ||
+        (client.facilities?.address && client.facilities.address.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    // Apply sorting/filtering based on selected option
+    filtered.sort((a, b) => {
+      switch (filterBy) {
+        case 'first_name':
+          const firstNameA = (a.first_name || '').toLowerCase();
+          const firstNameB = (b.first_name || '').toLowerCase();
+          return firstNameA.localeCompare(firstNameB);
+        
+        case 'last_name':
+          const lastNameA = (a.last_name || '').toLowerCase();
+          const lastNameB = (b.last_name || '').toLowerCase();
+          return lastNameA.localeCompare(lastNameB);
+        
+        case 'age':
+          const ageA = calculateAge(a.date_of_birth);
+          const ageB = calculateAge(b.date_of_birth);
+          if (ageA === 'N/A') return 1;
+          if (ageB === 'N/A') return -1;
+          return ageA - ageB; // Ascending (youngest to oldest)
+        
+        case 'admission_date':
+          if (!a.admission_date) return 1;
+          if (!b.admission_date) return -1;
+          return new Date(b.admission_date) - new Date(a.admission_date); // Descending (most recent first)
+        
+        case 'band_no':
+          const bandA = a.band_no ? parseFloat(a.band_no) : Infinity;
+          const bandB = b.band_no ? parseFloat(b.band_no) : Infinity;
+          if (isNaN(bandA) && isNaN(bandB)) {
+            // Both are non-numeric, sort alphabetically
+            return (a.band_no || '').localeCompare(b.band_no || '');
+          }
+          if (isNaN(bandA)) return 1;
+          if (isNaN(bandB)) return -1;
+          return bandA - bandB; // Ascending (numerical order)
+        
+        case 'status':
+          const statusA = (a.status || 'active').toLowerCase();
+          const statusB = (b.status || 'active').toLowerCase();
+          // Active should come first
+          if (statusA === 'active' && statusB !== 'active') return -1;
+          if (statusA !== 'active' && statusB === 'active') return 1;
+          return statusA.localeCompare(statusB);
+        
+        case 'facility':
+          // Group by facility - sort by facility name, then by first name within each facility
+          const facilityNameA = (a.facilities?.name || 'No Facility').toLowerCase();
+          const facilityNameB = (b.facilities?.name || 'No Facility').toLowerCase();
+          const facilityCompare = facilityNameA.localeCompare(facilityNameB);
+          if (facilityCompare !== 0) return facilityCompare;
+          // If same facility, sort by first name
+          const facilityFirstNameA = (a.first_name || '').toLowerCase();
+          const facilityFirstNameB = (b.first_name || '').toLowerCase();
+          return facilityFirstNameA.localeCompare(facilityFirstNameB);
+        
+        default:
+          return 0;
+      }
+    });
+    
+    return filtered;
+  }, [clientsData, searchTerm, filterBy]);
+
+  // Calculate paginated clients (only if > 100 total clients)
+  const totalClients = clients.length;
+  const shouldPaginate = totalClients > 100;
+  const paginatedClients = useMemo(() => {
+    if (!shouldPaginate) return clients;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return clients.slice(startIndex, endIndex);
+  }, [clients, currentPage, itemsPerPage, shouldPaginate]);
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterBy]);
+
+  // Load signed URLs for profile photos
+  useEffect(() => {
+    const loadPhotoUrls = async () => {
+      if (!clientsData || clientsData.length === 0) return;
+      
+      const photoUrlPromises = clientsData
+        .filter(client => client.profile_photo_url)
+        .map(async (client) => {
+          try {
+            const signedUrl = await getProfilePhotoUrl(client.profile_photo_url, 3600);
+            return { clientId: client.id, url: signedUrl };
+          } catch (error) {
+            console.error(`Error loading photo for client ${client.id}:`, error);
+            return null;
+          }
+        });
+      
+      const photoResults = await Promise.all(photoUrlPromises);
+      const photoUrlMap = {};
+      photoResults.forEach(result => {
+        if (result) {
+          photoUrlMap[result.clientId] = result.url;
+        }
+      });
+      setClientPhotoUrls(photoUrlMap);
+    };
+    
+    loadPhotoUrls();
   }, [clientsData]);
 
   const facilities = facilitiesData || [];
@@ -282,10 +406,15 @@ function ClientMasterlist() {
 
       if (error) throw error;
 
-      // Refresh the clients list
-      fetchClients();
+      const clientName = `${transferringClient.first_name} ${transferringClient.last_name}`;
+      
+      // ✅ FIX: Invalidate cache to refetch fresh data (using React Query)
+      queryClient.invalidateQueries(['clients']);
+      
       setOpenTransferDialog(false);
       setTransferringClient(null);
+      setSuccessMessage(`Client "${clientName}" has been transferred successfully.`);
+      setSuccessModalOpen(true);
     } catch (err) {
       console.error('Error transferring client:', err);
       setError(err.message);
@@ -313,6 +442,11 @@ function ClientMasterlist() {
     );
   }
 
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setFilterBy('first_name');
+  };
+
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -334,6 +468,75 @@ function ClientMasterlist() {
         </Alert>
       )}
 
+      {/* Search and Filter Section */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Box display="flex" alignItems="center" gap={2}>
+            <TextField
+              placeholder="Search by name or facility..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
+              }}
+              sx={{ flexGrow: 1 }}
+            />
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Filter By</InputLabel>
+              <Select
+                value={filterBy}
+                label="Filter By"
+                onChange={(e) => setFilterBy(e.target.value)}
+              >
+                <MenuItem value="first_name">First Name (A-Z)</MenuItem>
+                <MenuItem value="last_name">Last Name (A-Z)</MenuItem>
+                <MenuItem value="age">Age (Youngest to Oldest)</MenuItem>
+                <MenuItem value="admission_date">Admission Date (Most Recent)</MenuItem>
+                <MenuItem value="band_no">Band No (Numerical)</MenuItem>
+                <MenuItem value="status">Status (Active First)</MenuItem>
+                <MenuItem value="facility">Group by Facility</MenuItem>
+              </Select>
+            </FormControl>
+            {(searchTerm || filterBy !== 'first_name') && (
+              <Button
+                variant="outlined"
+                startIcon={<ClearIcon />}
+                onClick={handleClearFilters}
+              >
+                Clear
+              </Button>
+            )}
+          </Box>
+        </CardContent>
+      </Card>
+
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="body2" color="text.secondary">
+          {shouldPaginate ? (
+            <>Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalClients)} of {totalClients} clients</>
+          ) : (
+            <>Showing {totalClients} of {clientsData?.length || 0} clients</>
+          )}
+        </Typography>
+        {shouldPaginate && (
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Per Page</InputLabel>
+            <Select
+              value={itemsPerPage}
+              label="Per Page"
+              onChange={(e) => {
+                setItemsPerPage(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <MenuItem value={25}>25</MenuItem>
+              <MenuItem value={50}>50</MenuItem>
+              <MenuItem value={100}>100</MenuItem>
+            </Select>
+          </FormControl>
+        )}
+      </Box>
+
       <Card>
         <CardContent>
           <TableContainer component={Paper}>
@@ -347,17 +550,21 @@ function ClientMasterlist() {
                       <TableCell>Band No</TableCell>
                       <TableCell>Facility</TableCell>
                       <TableCell>Room</TableCell>
+                      <TableCell>Admission Date</TableCell>
                       <TableCell>Status</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
                   </TableHead>
               <TableBody>
-                {clients.map((client) => (
+                {paginatedClients.map((client) => (
                   <TableRow key={client.id}>
                     <TableCell>
                       <Box display="flex" alignItems="center" gap={2}>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
-                          {getGenderIcon(client.gender)}
+                        <Avatar 
+                          sx={{ bgcolor: 'primary.main' }}
+                          src={clientPhotoUrls[client.id]}
+                        >
+                          {clientPhotoUrls[client.id] ? null : getGenderIcon(client.gender)}
                         </Avatar>
                         <Box>
                           <Typography 
@@ -384,13 +591,20 @@ function ClientMasterlist() {
                     <TableCell>{client.band_no || 'N/A'}</TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {client.facilities?.name || 'Unknown'}
+                        {client.facilities?.name || 'No Facility'}
                       </Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        {client.facilities?.address}
-                      </Typography>
+                      {client.facilities?.address && (
+                        <Typography variant="caption" color="textSecondary">
+                          {client.facilities.address}
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell>{client.room || 'N/A'}</TableCell>
+                    <TableCell>
+                      {client.admission_date 
+                        ? new Date(client.admission_date).toLocaleDateString() 
+                        : 'N/A'}
+                    </TableCell>
                     <TableCell>
                       <Chip
                         label={client.status === 'active' ? 'Active' : client.status === 'discharged' ? 'Discharged' : 'Active'}
@@ -436,6 +650,21 @@ function ClientMasterlist() {
               </TableBody>
             </Table>
           </TableContainer>
+          
+          {/* Pagination Controls */}
+          {shouldPaginate && (
+            <Box display="flex" justifyContent="center" alignItems="center" mt={3}>
+              <Pagination
+                count={Math.ceil(totalClients / itemsPerPage)}
+                page={currentPage}
+                onChange={(event, value) => setCurrentPage(value)}
+                color="primary"
+                showFirstButton
+                showLastButton
+                size="large"
+              />
+            </Box>
+          )}
         </CardContent>
       </Card>
 
@@ -624,7 +853,7 @@ function ClientMasterlist() {
               </Typography>
               
               <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                Current Facility: {transferringClient.facilities?.name || 'Unknown'}
+                Current Facility: {transferringClient.facilities?.name || 'No Facility'}
               </Typography>
 
               <FormControl fullWidth>

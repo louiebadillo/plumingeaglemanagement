@@ -9,7 +9,8 @@ import {
   Link,
   CircularProgress,
   Alert,
-  Paper
+  Paper,
+  Avatar
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -20,6 +21,7 @@ import {
 import { useParams, useHistory } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import ClientFileManager from '../../components/Client/ClientFileManager';
+import { getProfilePhotoUrl } from '../../utils/fileUpload';
 
 function ClientFiles() {
   const { clientId } = useParams();
@@ -27,6 +29,7 @@ function ClientFiles() {
   const [client, setClient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
 
   useEffect(() => {
     const loadClient = async () => {
@@ -62,10 +65,21 @@ function ClientFiles() {
             gender: clients.gender,
             room: clients.room,
             facility: clients.facility_id,
-            facilities: clients.facilities
+            facilities: clients.facilities,
+            profilePhoto: clients.profile_photo_url
           };
           
           setClient(transformedClient);
+          
+          // Load signed URL for profile photo if it exists
+          if (clients.profile_photo_url) {
+            try {
+              const signedUrl = await getProfilePhotoUrl(clients.profile_photo_url, 3600);
+              setProfilePhotoUrl(signedUrl);
+            } catch (error) {
+              console.error('Error loading profile photo URL:', error);
+            }
+          }
         } else {
           setError('Client not found');
         }
@@ -136,8 +150,46 @@ function ClientFiles() {
       </Breadcrumbs>
 
       {/* Header */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Paper sx={{ p: 3, mb: 3, display: 'flex', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            width: 120,
+            minWidth: 120,
+            bgcolor: 'primary.main',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            mr: 3
+          }}
+        >
+          {profilePhotoUrl ? (
+            <Box
+              component="img"
+              src={profilePhotoUrl}
+              alt={`${client.firstName} ${client.lastName}`}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center'
+              }}
+            />
+          ) : (
+            <Typography 
+              variant="h3" 
+              sx={{ 
+                color: 'white', 
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}
+            >
+              {client.firstName?.[0]}{client.lastName?.[0]}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
             <Typography variant="h4" gutterBottom>
               File Management

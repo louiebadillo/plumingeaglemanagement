@@ -43,6 +43,7 @@ import { useSupabase } from '../../context/SupabaseContext';
 import { createClientUrl } from '../../utils/urlUtils';
 import { supabase } from '../../lib/supabase';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
+import { getProfilePhotoUrl } from '../../utils/fileUpload';
 
 // Initial form data for creating/editing clients
 const initialClientFormData = {
@@ -69,6 +70,7 @@ function FacilityPage() {
   const [submitting, setSubmitting] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
+  const [clientPhotoUrls, setClientPhotoUrls] = useState({});
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -130,8 +132,33 @@ function FacilityPage() {
         if (clientsError) {
           throw new Error(`Failed to fetch clients: ${clientsError.message}`);
         }
-        setClients(clientsData || []);
-        console.log('✅ Clients loaded:', clientsData);
+        const clientsList = clientsData || [];
+        setClients(clientsList);
+        console.log('✅ Clients loaded:', clientsList);
+        
+        // Load signed URLs for profile photos
+        if (clientsList.length > 0) {
+          const photoUrlPromises = clientsList
+            .filter(client => client.profile_photo_url)
+            .map(async (client) => {
+              try {
+                const signedUrl = await getProfilePhotoUrl(client.profile_photo_url, 3600);
+                return { clientId: client.id, url: signedUrl };
+              } catch (error) {
+                console.error(`Error loading photo for client ${client.id}:`, error);
+                return null;
+              }
+            });
+          
+          const photoResults = await Promise.all(photoUrlPromises);
+          const photoUrlMap = {};
+          photoResults.forEach(result => {
+            if (result) {
+              photoUrlMap[result.clientId] = result.url;
+            }
+          });
+          setClientPhotoUrls(photoUrlMap);
+        }
         
       } catch (error) {
         console.error('💥 Error loading facility and clients:', error);
@@ -281,9 +308,10 @@ function FacilityPage() {
                         <TableRow key={client.id} hover>
                           <TableCell>
                             <Avatar
-                              sx={{ width: 40, height: 40 }}
+                              sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}
+                              src={clientPhotoUrls[client.id]}
                             >
-                              {client.first_name?.[0]}{client.last_name?.[0]}
+                              {clientPhotoUrls[client.id] ? null : client.first_name?.[0]}{client.last_name?.[0]}
                             </Avatar>
                           </TableCell>
                           <TableCell>

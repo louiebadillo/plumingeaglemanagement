@@ -149,7 +149,22 @@ function FacilityManagement() {
     try {
       setDeleting(true);
       console.log('🗑️ Deleting facility:', facilityToDelete.id);
-      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      
+      // First, set all clients' facility_id to NULL for this facility
+      console.log('🔄 Setting clients facility_id to NULL for deleted facility...');
+      const { error: clientsError } = await supabase
+        .from('clients')
+        .update({ facility_id: null })
+        .eq('facility_id', facilityToDelete.id);
+      
+      if (clientsError) {
+        console.warn('⚠️ Warning: Could not update clients facility_id:', clientsError.message);
+        // Continue with deletion even if client update fails
+      } else {
+        console.log('✅ Clients updated - facility_id set to NULL');
+      }
+      
+      // Now delete the facility
       const { error } = await supabase
         .from('facilities')
         .delete()
@@ -169,7 +184,7 @@ function FacilityManagement() {
       // Close delete dialog and show success
       setDeleteDialogOpen(false);
       setFacilityToDelete(null);
-      setSuccessMessage(`Facility "${facilityToDelete.name}" has been deleted successfully.`);
+      setSuccessMessage(`Facility "${facilityToDelete.name}" has been deleted successfully. Clients have been moved to "No Facility".`);
       setSuccessModalOpen(true);
     } catch (error) {
       console.error('💥 Error deleting facility:', error);
@@ -188,7 +203,6 @@ function FacilityManagement() {
     try {
       setSubmitting(true);
       console.log('💾 Saving facility:', formData);
-      const { supabaseUrl } = getSupabaseConfig();
 
       if (isNewFacility) {
         // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
@@ -239,21 +253,35 @@ function FacilityManagement() {
         // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Update existing facility
         console.log('🔄 Updating existing facility:', editingFacility.id);
-        const { data: updatedFacility, error } = await supabase
+        
+        // First, perform the update without select to avoid coercion issues
+        const { error: updateError } = await supabase
           .from('facilities')
           .update(formData)
-          .eq('id', editingFacility.id)
-          .select()
-          .single();
+          .eq('id', editingFacility.id);
 
-        if (error) {
-          console.error('❌ Supabase error response:', error);
-          throw new Error(`Failed to update facility: ${error.message}`);
+        if (updateError) {
+          console.error('❌ Supabase update error:', updateError);
+          throw new Error(`Failed to update facility: ${updateError.message}`);
         }
 
-        // Update local state
+        // Then, fetch the updated facility separately
+        const { data: updatedFacility, error: fetchError } = await supabase
+          .from('facilities')
+          .select('*')
+          .eq('id', editingFacility.id)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error('❌ Supabase fetch error:', fetchError);
+          // Don't throw - update was successful, just couldn't fetch the result
+          console.warn('⚠️ Update succeeded but could not fetch updated facility');
+        }
+
+        // Update local state with either the fetched data or the form data
+        const updatedData = updatedFacility || { ...editingFacility, ...formData };
         setFacilities(facilities.map(facility => 
-          facility.id === editingFacility.id ? { ...facility, ...formData } : facility
+          facility.id === editingFacility.id ? updatedData : facility
         ));
         console.log('✅ Facility updated successfully!');
         

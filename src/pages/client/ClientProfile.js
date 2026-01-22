@@ -60,6 +60,9 @@ import SocialMediaManager from '../../components/Client/SocialMediaManager';
 import AllowedContactsManager from '../../components/Client/AllowedContactsManager';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
+import { uploadProfilePhoto, deleteProfilePhoto, getProfilePhotoUrl } from '../../utils/fileUpload';
+import ImageCropDialog from '../../components/ImageCrop/ImageCropDialog';
+import { blobToFile } from '../../utils/imageUtils';
 
 function ClientProfile() {
   const { clientSlug } = useParams();
@@ -77,6 +80,11 @@ function ClientProfile() {
   const [facilitySelectionOpen, setFacilitySelectionOpen] = useState(false);
   const [facilities, setFacilities] = useState([]);
   const [selectedFacilityId, setSelectedFacilityId] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [profilePhotoPath, setProfilePhotoPath] = useState(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
   
   const { userProfile } = useSupabase();
   const userRole = userProfile?.role || 'employee';
@@ -238,10 +246,15 @@ function ClientProfile() {
         allergies: '',
         diagnosis: '',
         familyDoctor: '',
+        familyDoctorCheckup: '',
         dentist: '',
+        dentistCheckup: '',
         optometrist: '',
+        optometristCheckup: '',
         specialist: '',
+        specialistCheckup: '',
         pediatrician: '',
+        pediatricianCheckup: '',
         allowedContacts: [],
         risksAndPreferences: '',
         emergencyContact: {
@@ -395,10 +408,15 @@ function ClientProfile() {
               allergies: supabaseClient.allergies,
               diagnosis: supabaseClient.diagnosis,
               familyDoctor: supabaseClient.family_doctor,
+              familyDoctorCheckup: supabaseClient.family_doctor_checkup,
               dentist: supabaseClient.dentist,
+              dentistCheckup: supabaseClient.dentist_checkup,
               optometrist: supabaseClient.optometrist,
+              optometristCheckup: supabaseClient.optometrist_checkup,
               specialist: supabaseClient.specialist,
+              specialistCheckup: supabaseClient.specialist_checkup,
               pediatrician: supabaseClient.pediatrician,
+              pediatricianCheckup: supabaseClient.pediatrician_checkup,
               allowedContacts: supabaseClient.allowed_contacts || [],
               risksAndPreferences: supabaseClient.risks_and_preferences,
               // Keep old fields for backward compatibility but don't use in UI
@@ -419,12 +437,23 @@ function ClientProfile() {
               },
               facility: supabaseClient.facility_id,
               status: supabaseClient.status || 'active',
+              profilePhoto: supabaseClient.profile_photo_url,
               assignedStaff: [],
               lastUpdated: supabaseClient.updated_at
             };
             
             setClient(transformedClient);
             setEditingClient(transformedClient);
+            
+            // Load signed URL for profile photo if it exists
+            if (supabaseClient.profile_photo_url) {
+              try {
+                const signedUrl = await getProfilePhotoUrl(supabaseClient.profile_photo_url, 3600);
+                setProfilePhotoUrl(signedUrl);
+              } catch (error) {
+                console.error('Error loading profile photo URL:', error);
+              }
+            }
           } else {
             // Only redirect if we're not trying to create a new client
             if (clientSlug !== 'new' && !isNewClient) {
@@ -520,12 +549,18 @@ function ClientProfile() {
           allergies: editingClient.allergies,
           diagnosis: editingClient.diagnosis,
           family_doctor: editingClient.familyDoctor,
+          family_doctor_checkup: cleanDateField(editingClient.familyDoctorCheckup),
           dentist: editingClient.dentist,
+          dentist_checkup: cleanDateField(editingClient.dentistCheckup),
           optometrist: editingClient.optometrist,
+          optometrist_checkup: cleanDateField(editingClient.optometristCheckup),
           specialist: editingClient.specialist,
+          specialist_checkup: cleanDateField(editingClient.specialistCheckup),
           pediatrician: editingClient.pediatrician,
+          pediatrician_checkup: cleanDateField(editingClient.pediatricianCheckup),
           allowed_contacts: editingClient.allowedContacts || [],
           risks_and_preferences: editingClient.risksAndPreferences,
+          profile_photo_url: editingClient.profilePhoto || null,
           facility_id: facilityFromUrl || editingClient.facility // Use the facility ID from URL or from editingClient
         };
         
@@ -544,6 +579,12 @@ function ClientProfile() {
         }
         
         console.log('✅ Client created successfully:', newClient);
+        
+        // If there's a profile photo to upload (stored temporarily), upload it now
+        if (editingClient.profilePhoto && editingClient.profilePhoto.startsWith('blob:')) {
+          // This means we have a temporary file URL, we need to handle it differently
+          // For now, we'll skip this and let the user upload after creation
+        }
         
         setEditDialogOpen(false);
         // Show success modal before redirecting
@@ -598,7 +639,8 @@ function ClientProfile() {
           specialist: editingClient.specialist,
           pediatrician: editingClient.pediatrician,
           allowed_contacts: editingClient.allowedContacts || [],
-          risks_and_preferences: editingClient.risksAndPreferences
+          risks_and_preferences: editingClient.risksAndPreferences,
+          profile_photo_url: editingClient.profilePhoto || null
         };
         
         console.log('🔄 Updating client with data:', clientData);
@@ -670,6 +712,126 @@ function ClientProfile() {
       ...prev,
       [field]: value
     }));
+  };
+
+  const handleProfilePhotoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Create a preview URL for cropping
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImageToCrop(e.target.result);
+      setCropDialogOpen(true);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset file input
+    event.target.value = '';
+  };
+
+  const handleCropComplete = async (croppedBlob) => {
+    try {
+      setUploadingPhoto(true);
+      
+      // Convert blob to File
+      const croppedFile = blobToFile(croppedBlob, 'profile-photo.jpg');
+      
+      // For new clients, we need to create the client first
+      // For existing clients, upload immediately
+      if (client?.id || editingClient?.id) {
+        const clientId = client?.id || editingClient?.id;
+        const result = await uploadProfilePhoto(croppedFile, clientId);
+        
+        // Store the path (not URL, since it's private)
+        setProfilePhotoPath(result.path);
+        
+        // Generate signed URL for preview
+        const signedUrl = await getProfilePhotoUrl(result.path, 3600);
+        
+        // Update editing client with the path (we'll use signed URLs when displaying)
+        setEditingClient(prev => ({
+          ...prev,
+          profilePhoto: result.path // Store path, not URL
+        }));
+        
+        // Also update the current client state for immediate preview
+        if (client) {
+          setClient(prev => ({
+            ...prev,
+            profilePhoto: result.path
+          }));
+        }
+        
+        setProfilePhotoUrl(signedUrl);
+      } else {
+        // For new clients, store the file temporarily
+        // We'll upload after client creation
+        const tempUrl = URL.createObjectURL(croppedBlob);
+        setEditingClient(prev => ({
+          ...prev,
+          profilePhoto: tempUrl // Temporary blob URL
+        }));
+        // Store the blob for later upload
+        setImageToCrop(croppedBlob);
+      }
+    } catch (error) {
+      console.error('Error uploading profile photo:', error);
+      alert(`Error uploading profile photo: ${error.message}`);
+    } finally {
+      setUploadingPhoto(false);
+      setCropDialogOpen(false);
+      setImageToCrop(null);
+    }
+  };
+
+  const handleProfilePhotoRemove = async () => {
+    if (!profilePhotoPath && !editingClient?.profilePhoto) {
+      // Just remove from UI if no path stored
+      setEditingClient(prev => ({
+        ...prev,
+        profilePhoto: null
+      }));
+      if (client) {
+        setClient(prev => ({
+          ...prev,
+          profilePhoto: null
+        }));
+      }
+      return;
+    }
+
+    try {
+      // Extract path from URL if we have a URL but not a path
+      let pathToDelete = profilePhotoPath;
+      if (!pathToDelete && editingClient?.profilePhoto) {
+        // Extract path from URL (format: https://...supabase.co/storage/v1/object/public/profile-photos/client-{id}/...)
+        const urlParts = editingClient.profilePhoto.split('/profile-photos/');
+        if (urlParts.length > 1) {
+          pathToDelete = urlParts[1];
+        }
+      }
+
+      if (pathToDelete) {
+        await deleteProfilePhoto(pathToDelete);
+      }
+
+      // Update state
+      setEditingClient(prev => ({
+        ...prev,
+        profilePhoto: null
+      }));
+      if (client) {
+        setClient(prev => ({
+          ...prev,
+          profilePhoto: null
+        }));
+      }
+      setProfilePhotoPath(null);
+    } catch (error) {
+      console.error('Error removing profile photo:', error);
+      alert(`Error removing profile photo: ${error.message}`);
+    }
   };
 
   const handleEmergencyContactChange = (field, value) => {
@@ -802,14 +964,46 @@ function ClientProfile() {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box display="flex" alignItems="center">
-          <Avatar
-            sx={{ width: 80, height: 80, mr: 3, bgcolor: 'primary.main' }}
-            src={client?.profilePhoto}
-          >
-            {client?.firstName?.[0]}{client?.lastName?.[0]}
-          </Avatar>
+      <Paper sx={{ p: 3, mb: 3, display: 'flex', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            width: 150,
+            minWidth: 150,
+            bgcolor: 'primary.main',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            mr: 3
+          }}
+        >
+          {profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null) ? (
+            <Box
+              component="img"
+              src={profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null)}
+              alt={`${client?.firstName} ${client?.lastName}`}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center'
+              }}
+            />
+          ) : (
+            <Typography 
+              variant="h2" 
+              sx={{ 
+                color: 'white', 
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}
+            >
+              {client?.firstName?.[0]}{client?.lastName?.[0]}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
             <Typography variant="h4" gutterBottom>
               {client?.firstName} {client?.lastName}
@@ -825,21 +1019,21 @@ function ClientProfile() {
               />
             </Box>
           </Box>
-        </Box>
-        
-        {isAdmin && (
-          <Box>
-            <IconButton onClick={handleEdit} color="primary" sx={{ mr: 1 }}>
-              <EditIcon />
-            </IconButton>
-            {!isNewClient && (
-              <IconButton onClick={handleDelete} color="error">
-                <DeleteIcon />
+          
+          {isAdmin && (
+            <Box>
+              <IconButton onClick={handleEdit} color="primary" sx={{ mr: 1 }}>
+                <EditIcon />
               </IconButton>
-            )}
-          </Box>
-        )}
-      </Box>
+              {!isNewClient && (
+                <IconButton onClick={handleDelete} color="error">
+                  <DeleteIcon />
+                </IconButton>
+              )}
+            </Box>
+          )}
+        </Box>
+      </Paper>
 
       <Grid container spacing={3}>
         {/* Basic Information */}
@@ -1134,7 +1328,16 @@ function ClientProfile() {
                   <ListItem>
                     <ListItemText 
                       primary="Family Doctor" 
-                      secondary={client.familyDoctor} 
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.familyDoctor}</Typography>
+                          {client.familyDoctorCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.familyDoctorCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
                     />
                   </ListItem>
                 )}
@@ -1142,7 +1345,16 @@ function ClientProfile() {
                   <ListItem>
                     <ListItemText 
                       primary="Dentist" 
-                      secondary={client.dentist} 
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.dentist}</Typography>
+                          {client.dentistCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.dentistCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
                     />
                   </ListItem>
                 )}
@@ -1150,7 +1362,16 @@ function ClientProfile() {
                   <ListItem>
                     <ListItemText 
                       primary="Optometrist" 
-                      secondary={client.optometrist} 
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.optometrist}</Typography>
+                          {client.optometristCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.optometristCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
                     />
                   </ListItem>
                 )}
@@ -1158,7 +1379,16 @@ function ClientProfile() {
                   <ListItem>
                     <ListItemText 
                       primary="Specialist" 
-                      secondary={client.specialist} 
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.specialist}</Typography>
+                          {client.specialistCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.specialistCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
                     />
                   </ListItem>
                 )}
@@ -1166,7 +1396,16 @@ function ClientProfile() {
                   <ListItem>
                     <ListItemText 
                       primary="Pediatrician" 
-                      secondary={client.pediatrician} 
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.pediatrician}</Typography>
+                          {client.pediatricianCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.pediatricianCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
                     />
                   </ListItem>
                 )}
@@ -1253,6 +1492,51 @@ function ClientProfile() {
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
+            {/* Profile Photo Upload */}
+            <Grid item xs={12}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
+                <Avatar
+                  sx={{ width: 120, height: 120, mb: 2, bgcolor: 'primary.main' }}
+                  src={profilePhotoUrl || (editingClient?.profilePhoto && !editingClient.profilePhoto.startsWith('client-') ? editingClient.profilePhoto : null)}
+                >
+                  {editingClient?.firstName?.[0]}{editingClient?.lastName?.[0]}
+                </Avatar>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <input
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    id="profile-photo-upload"
+                    type="file"
+                    onChange={handleProfilePhotoUpload}
+                    disabled={uploadingPhoto}
+                  />
+                  <label htmlFor="profile-photo-upload">
+                    <Button
+                      variant="outlined"
+                      component="span"
+                      startIcon={<PhotoCameraIcon />}
+                      disabled={uploadingPhoto}
+                    >
+                      {uploadingPhoto ? 'Uploading...' : editingClient?.profilePhoto ? 'Change Photo' : 'Upload Photo'}
+                    </Button>
+                  </label>
+                  {editingClient?.profilePhoto && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={handleProfilePhotoRemove}
+                      disabled={uploadingPhoto}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </Box>
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1 }}>
+                  JPG, PNG, or WEBP (max 5MB, will be compressed to 800x800px)
+                </Typography>
+              </Box>
+              <Divider sx={{ mb: 2 }} />
+            </Grid>
             
             <Grid item xs={12} sm={6}>
               <TextField
@@ -1621,11 +1905,21 @@ function ClientProfile() {
                   />
                 </Grid>
             <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
+              <TextField
+                fullWidth
                 label="Family Doctor"
                 value={editingClient.familyDoctor || ''}
                 onChange={(e) => handleInputChange('familyDoctor', e.target.value)}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Family Doctor - Recent Annual Checkup"
+                type="date"
+                value={editingClient.familyDoctorCheckup || ''}
+                onChange={(e) => handleInputChange('familyDoctorCheckup', e.target.value)}
+                InputLabelProps={{ shrink: true }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1639,9 +1933,29 @@ function ClientProfile() {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                label="Dentist - Recent Annual Checkup"
+                type="date"
+                value={editingClient.dentistCheckup || ''}
+                onChange={(e) => handleInputChange('dentistCheckup', e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
                 label="Optometrist"
                 value={editingClient.optometrist || ''}
                 onChange={(e) => handleInputChange('optometrist', e.target.value)}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Optometrist - Recent Annual Checkup"
+                type="date"
+                value={editingClient.optometristCheckup || ''}
+                onChange={(e) => handleInputChange('optometristCheckup', e.target.value)}
+                InputLabelProps={{ shrink: true }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1655,11 +1969,31 @@ function ClientProfile() {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                label="Specialist - Recent Annual Checkup"
+                type="date"
+                value={editingClient.specialistCheckup || ''}
+                onChange={(e) => handleInputChange('specialistCheckup', e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
                 label="Pediatrician"
                 value={editingClient.pediatrician || ''}
                 onChange={(e) => handleInputChange('pediatrician', e.target.value)}
-                  />
-                </Grid>
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Pediatrician - Recent Annual Checkup"
+                type="date"
+                value={editingClient.pediatricianCheckup || ''}
+                onChange={(e) => handleInputChange('pediatricianCheckup', e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
@@ -1703,6 +2037,18 @@ function ClientProfile() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Image Crop Dialog */}
+      <ImageCropDialog
+        open={cropDialogOpen}
+        onClose={() => {
+          setCropDialogOpen(false);
+          setImageToCrop(null);
+        }}
+        imageSrc={imageToCrop}
+        onCropComplete={handleCropComplete}
+        aspect={1}
+      />
 
       {/* Facility Selection Dialog - shown when creating new client without facility parameter */}
       <Dialog open={facilitySelectionOpen} onClose={() => {

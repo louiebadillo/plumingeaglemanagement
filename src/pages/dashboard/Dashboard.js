@@ -22,7 +22,12 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Tooltip
+  Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Pagination
 } from '@mui/material';
 import {
   Create as CreateIcon,
@@ -42,6 +47,7 @@ import {
   AccordionDetails
 } from '@mui/material';
 import { useHistory, useLocation } from 'react-router-dom';
+import { getProfilePhotoUrl } from '../../utils/fileUpload';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
@@ -89,13 +95,19 @@ function Dashboard() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [clientInfoModalOpen, setClientInfoModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(null);
+  const [clientPhotoUrls, setClientPhotoUrls] = useState({});
   
   // Admin state
   const [unsubmittedReports, setUnsubmittedReports] = useState([]);
+  const [allUnsubmittedReports, setAllUnsubmittedReports] = useState([]); // Store all reports before filtering
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [reportToDelete, setReportToDelete] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [currentFacility, setCurrentFacility] = useState(null); // Store facility name and address
+  const [facilityFilter, setFacilityFilter] = useState('all'); // Facility filter for admin dashboard
+  const [facilities, setFacilities] = useState([]); // All facilities for filter dropdown
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const isAdmin = userProfile?.role === 'admin';
   const employeeName = userProfile?.first_name || 'Employee';
@@ -107,6 +119,30 @@ function Dashboard() {
   // This will replace the need for facility_id in user profile
   // For now, using facility_id as fallback until geofencing is implemented
 
+  // Load facilities for admin filter
+  useEffect(() => {
+    if (isAdmin && userProfile) {
+      const loadFacilities = async () => {
+        try {
+          const { data: facilitiesData, error } = await supabase
+            .from('facilities')
+            .select('id, name')
+            .order('name', { ascending: true });
+          
+          if (error) {
+            console.error('Error loading facilities:', error);
+          } else {
+            setFacilities(facilitiesData || []);
+          }
+        } catch (error) {
+          console.error('Error loading facilities:', error);
+        }
+      };
+      
+      loadFacilities();
+    }
+  }, [isAdmin, userProfile, supabase]);
+
   // Load data based on user role
   // Also reload when location changes (user navigates back to dashboard)
   useEffect(() => {
@@ -117,79 +153,54 @@ function Dashboard() {
         loadEmployeeData();
       }
     }
-  }, [userProfile, isAdmin, operationalDate, location.pathname]);
+  }, [userProfile, isAdmin, operationalDate, location.pathname, facilityFilter]);
 
   const loadEmployeeData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Get facility from geofencing (location-based detection)
+      // ✅ PERFORMANCE: Get facility from geofencing (cached for 5 minutes)
       // This will automatically detect which facility the employee is currently at
       let currentFacilityId = await getCurrentFacilityFromGeofencing();
+      console.log('📍 Geofencing detected facility:', currentFacilityId);
       
       // Fallback: If geofencing not implemented or employee not at a facility,
       // use facility_id from user profile (temporary until geofencing is fully implemented)
       if (!currentFacilityId) {
+        console.log('📍 No facility from geofencing, using employee profile facility_id:', employeeFacilityId);
         currentFacilityId = employeeFacilityId;
       }
       
-      // Load clients based on facility detection
+      console.log('📍 Final facility ID to use:', currentFacilityId);
+      
+      // ✅ PERFORMANCE: Parallelize independent queries
+      // Load clients and facility info in parallel (they don't depend on each other)
       let clientsData = null;
+      let facilityData = null;
       
       if (currentFacilityId) {
-        // Load clients in employee's current facility (determined by geofencing)
-        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
-        // Removed status filter - showing all clients in facility
-        // Employees can only manage today's daily reports for clients
-        
-        // First, try querying with facility_id filter
-        let { data, error: clientsError } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('facility_id', currentFacilityId)
-          .limit(100);
-        
-        // If no clients found, try querying all clients to see what facility_ids exist
-        if (!clientsError && (!data || data.length === 0)) {
-          const { data: allClientsCheck, error: checkError } = await supabase
+        // Parallel queries: clients and facility info
+        const [clientsResult, facilityResult] = await Promise.all([
+          // Load clients in employee's current facility
+          supabase
             .from('clients')
-            .select('id, first_name, last_name, facility_id')
-            .limit(50);
-          
-          if (checkError) {
-            if (checkError.code === '42501') {
-              console.error('RLS policy blocking: Cannot read from clients table');
-            }
-          } else if (allClientsCheck && allClientsCheck.length > 0) {
-            const facilityIds = [...new Set(allClientsCheck.map(c => c.facility_id))];
-            
-            // If geofenced facility_id doesn't match, use all clients as fallback
-            if (!facilityIds.some(id => String(id) === String(currentFacilityId))) {
-              const { data: allClientsData, error: allError } = await supabase
-                .from('clients')
-                .select('*')
-                .limit(100);
-              
-              if (allError) {
-                if (allError.code === '42501') {
-                  console.error('RLS policy blocking: Cannot read from clients table without facility filter');
-                }
-              } else if (allClientsData) {
-                data = allClientsData;
-              }
-            }
-          }
-        }
-
+            .select('*')
+            .eq('facility_id', currentFacilityId)
+            .limit(100),
+          // Load facility information for display
+          supabase
+            .from('facilities')
+            .select('id, name, address')
+            .eq('id', currentFacilityId)
+            .maybeSingle()
+        ]);
+        
+        const { data, error: clientsError } = clientsResult;
+        const { data: facilityInfo, error: facilityError } = facilityResult;
+        
         if (clientsError) {
           console.error('❌ Error loading clients:', clientsError);
-          console.error('❌ Error details:', {
-            code: clientsError.code,
-            message: clientsError.message,
-            details: clientsError.details,
-            hint: clientsError.hint
-          });
           // Check if it's an RLS error
           if (clientsError.code === '42501' || clientsError.message?.includes('row-level security')) {
             throw new Error('Access denied. You may not have permission to view clients in this facility. Please contact an administrator.');
@@ -197,35 +208,20 @@ function Dashboard() {
           throw new Error(`Failed to load clients: ${clientsError.message}`);
         }
         
-        console.log('🔍 Raw query result:', {
-          data: data,
-          dataLength: data?.length || 0,
-          isArray: Array.isArray(data),
-          firstClient: data?.[0]
-        });
-        
         clientsData = data;
-        
-        // Load facility information for display (always load if facilityId exists)
-        const { data: facilityData, error: facilityError } = await supabase
-          .from('facilities')
-          .select('id, name, address')
-          .eq('id', currentFacilityId)
-          .maybeSingle();
         
         if (facilityError) {
           if (facilityError.code === '42501' || facilityError.message?.includes('row-level security')) {
             console.error('RLS policy blocking: Employee does not have permission to read from facilities table');
           }
           setCurrentFacility(null);
-        } else if (facilityData) {
-          setCurrentFacility(facilityData);
+        } else if (facilityInfo) {
+          setCurrentFacility(facilityInfo);
         } else {
           setCurrentFacility(null);
         }
       } else {
         // If no facility detected, try to load all active clients as fallback
-        // This allows employees to see clients even if geofencing isn't configured
         const { data, error: allClientsError } = await supabase
           .from('clients')
           .select('*')
@@ -245,71 +241,107 @@ function Dashboard() {
         clientsData = data;
       }
 
-      setClients(clientsData || []);
+      // Photo loading is now done in parallel with reports (see below)
       
-      // Load today's reports for these clients
+      // ✅ PERFORMANCE: Load reports and photos in parallel (they're independent)
       // Employees can see/create/edit daily reports for clients in their facility for TODAY only
       const clientsToProcess = clientsData || [];
       if (clientsToProcess && clientsToProcess.length > 0) {
         const clientIds = clientsData.map(c => c.id);
         
-        // ✅ FIX #1: Single query for all clients' reports (instead of N+1 queries)
-        // ✅ FIX #3: Query optimized to use idx_reports_client_date index
-        try {
-          // Ensure clientIds is not empty (edge case protection)
-          if (!clientIds || clientIds.length === 0) {
-            setClientReports([]);
-            return;
-          }
-          
-          const { data: allReports, error: reportsError } = await supabase
-            .from('daily_reports_v2')
-            .select('*, clients(first_name, last_name)')
-            .eq('report_date', operationalDate)
-            .in('client_id', clientIds)
-            .order('created_at', { ascending: false }); // For consistency when multiple reports exist
-          
-          if (reportsError) {
-            console.error('Error fetching reports:', reportsError);
-            setClientReports([]);
-          } else {
-            // Filter out null_report status in JavaScript (not a valid enum value, so can't filter in DB)
-            const validReports = (allReports || []).filter(report => report.status !== 'null_report');
-            
-            // Process results: Group by client_id and find draft or submitted report for each
-            const reportsByClient = {};
-            validReports.forEach(report => {
-              if (!reportsByClient[report.client_id]) {
-                reportsByClient[report.client_id] = [];
-              }
-              reportsByClient[report.client_id].push(report);
-            });
-            
-            // For each client, find draft report (priority) or submitted report
-            const reportResults = clientIds.map(clientId => {
-              const clientReports = reportsByClient[clientId] || [];
-              const draftReport = clientReports.find(r => r.status === 'draft');
-              const submittedReport = clientReports.find(r => r.status === 'submitted');
-              return draftReport || submittedReport || null;
-            }).filter(r => r !== null);
-            
-            // Additional safeguard: Filter to ensure all reports match the operational date
-            const normalizedOperationalDate = normalizeDate(operationalDate);
-            
-            const reportsForOperationalDate = reportResults.filter(r => {
-              const normalizedReportDate = normalizeDate(r.report_date);
-              return normalizedReportDate === normalizedOperationalDate;
-            });
-            
-            setClientReports(reportsForOperationalDate);
-          }
-        } catch (err) {
-          console.error('Error fetching reports:', err);
+        // Ensure clientIds is not empty (edge case protection)
+        if (!clientIds || clientIds.length === 0) {
           setClientReports([]);
+          setLoading(false);
+          return;
         }
         
-        // Load previous day's submitted reports
-        await loadPreviousDayReports(clientIds);
+        // ✅ PERFORMANCE: Parallelize photo loading and report loading
+        const [reportsResult, photoResults] = await Promise.all([
+          // Load today's reports for these clients
+          (async () => {
+            try {
+              const { data: allReports, error: reportsError } = await supabase
+                .from('daily_reports_v2')
+                .select('*, clients(first_name, last_name)')
+                .eq('report_date', operationalDate)
+                .in('client_id', clientIds)
+                .order('created_at', { ascending: false });
+            
+              if (reportsError) {
+                console.error('Error fetching reports:', reportsError);
+                return [];
+              }
+              
+              // Filter out null_report status in JavaScript
+              const validReports = (allReports || []).filter(report => report.status !== 'null_report');
+              
+              // Process results: Group by client_id and find draft or submitted report for each
+              const reportsByClient = {};
+              validReports.forEach(report => {
+                if (!reportsByClient[report.client_id]) {
+                  reportsByClient[report.client_id] = [];
+                }
+                reportsByClient[report.client_id].push(report);
+              });
+              
+              // For each client, find draft report (priority) or submitted report
+              const reportResults = clientIds.map(clientId => {
+                const clientReports = reportsByClient[clientId] || [];
+                const draftReport = clientReports.find(r => r.status === 'draft');
+                const submittedReport = clientReports.find(r => r.status === 'submitted');
+                return draftReport || submittedReport || null;
+              }).filter(r => r !== null);
+              
+              // Additional safeguard: Filter to ensure all reports match the operational date
+              const normalizedOperationalDate = normalizeDate(operationalDate);
+              
+              return reportResults.filter(r => {
+                const normalizedReportDate = normalizeDate(r.report_date);
+                return normalizedReportDate === normalizedOperationalDate;
+              });
+            } catch (err) {
+              console.error('Error fetching reports:', err);
+              return [];
+            }
+          })(),
+          // Load signed URLs for profile photos (in parallel with reports)
+          (async () => {
+            if (!clientsData || clientsData.length === 0) return {};
+            
+            const photoUrlPromises = clientsData
+              .filter(client => client.profile_photo_url)
+              .map(async (client) => {
+                try {
+                  const signedUrl = await getProfilePhotoUrl(client.profile_photo_url, 3600);
+                  return { clientId: client.id, url: signedUrl };
+                } catch (error) {
+                  console.error(`Error loading photo for client ${client.id}:`, error);
+                  return null;
+                }
+              });
+            
+            const results = await Promise.all(photoUrlPromises);
+            const photoUrlMap = {};
+            results.forEach(result => {
+              if (result) {
+                photoUrlMap[result.clientId] = result.url;
+              }
+            });
+            return photoUrlMap;
+          })()
+        ]);
+        
+        setClientReports(reportsResult);
+        setClientPhotoUrls(photoResults);
+        
+        // Load previous day's submitted reports (can be done after main data loads)
+        loadPreviousDayReports(clientIds).catch(err => {
+          console.error('Error loading previous day reports:', err);
+        });
+      } else {
+        setClientReports([]);
+        setClientPhotoUrls({});
       }
     } catch (err) {
       console.error('Error loading employee data:', err);
@@ -367,32 +399,72 @@ function Dashboard() {
     try {
       setLoading(true);
       setError(null);
-      const { supabaseUrl } = getSupabaseConfig();
-
+      
+      // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
       // Fetch ALL unsubmitted (draft) reports regardless of date or time
-      // Same logic as MyReports.js for admins
-      const queryUrl = `${supabaseUrl}/rest/v1/daily_reports_v2?status=eq.draft&select=*,clients(first_name,last_name,room,facility_id),facilities(name)&order=report_date.desc,created_at.desc`;
+      const { data: reportsData, error: reportsError } = await supabase
+        .from('daily_reports_v2')
+        .select(`
+          *,
+          clients(first_name, last_name, room, facility_id),
+          facilities(name)
+        `)
+        .eq('status', 'draft')
+        .order('report_date', { ascending: false })
+        .order('created_at', { ascending: false });
 
-      const response = await fetch(queryUrl, {
-        method: 'GET',
-        headers: getSupabaseHeaders()
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (reportsError) {
+        throw new Error(`Failed to load reports: ${reportsError.message}`);
       }
 
-      const reportsData = await response.json();
+      // ✅ PERFORMANCE: Batch fetch editor names (avoid N+1 queries)
+      // Collect all unique editor IDs first
+      const editorIds = new Set();
+      reportsData.forEach(report => {
+        const editorId = getLastEditorId(report);
+        if (editorId) {
+          editorIds.add(editorId);
+        }
+      });
+      
+      // Batch fetch all editor names in one query
+      const editorNamesMap = {};
+      if (editorIds.size > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, first_name, last_name')
+          .in('id', Array.from(editorIds));
+        
+        if (!usersError && usersData) {
+          usersData.forEach(user => {
+            const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+            editorNamesMap[user.id] = fullName || 'Unknown';
+          });
+        }
+      }
+      
+      // Map editor names to reports
+      const reportsWithEditors = reportsData.map(report => {
+        const editorId = getLastEditorId(report);
+        const editorName = editorId ? (editorNamesMap[editorId] || 'Unknown') : 'Unknown';
+        return { ...report, lastEditorName: editorName };
+      });
 
-      // Fetch editor names for all reports
-      const reportsWithEditors = await Promise.all(
-        reportsData.map(async (report) => {
-          const editorName = await getLastEditor(report);
-          return { ...report, lastEditorName: editorName };
-        })
-      );
-
-      setUnsubmittedReports(reportsWithEditors || []);
+      const allReports = reportsWithEditors || [];
+      setAllUnsubmittedReports(allReports);
+      
+      // Apply facility filter
+      let filteredReports = allReports;
+      if (facilityFilter !== 'all') {
+        filteredReports = allReports.filter(report => {
+          const reportFacilityId = report.facility_id || report.clients?.facility_id;
+          return String(reportFacilityId) === String(facilityFilter);
+        });
+      }
+      
+      setUnsubmittedReports(filteredReports);
+      // Reset to page 1 when filter changes
+      setCurrentPage(1);
     } catch (err) {
       console.error('Error loading unsubmitted reports:', err);
       setError('Failed to load unsubmitted reports.');
@@ -570,8 +642,8 @@ function Dashboard() {
     }
   };
 
-  const getLastEditor = async (report) => {
-    // Get the most recent updated_by from any tracking field
+  // ✅ PERFORMANCE: Extract editor ID without fetching (for batch processing)
+  const getLastEditorId = (report) => {
     const trackingFields = [
       'medication_updated_by',
       'sleep_updated_by',
@@ -608,41 +680,15 @@ function Dashboard() {
 
     // Find the most recent updated_by
     let lastEditorId = report.created_by; // Default to creator
-    let lastUpdateTime = new Date(report.created_at);
 
     trackingFields.forEach(field => {
       const updatedBy = report[field];
       if (updatedBy) {
-        // Use the most recent one (we'll use created_at as proxy since we don't have timestamps per field)
         lastEditorId = updatedBy;
       }
     });
 
-    // Fetch user name
-    if (lastEditorId) {
-      try {
-        const { supabaseUrl } = getSupabaseConfig();
-        const response = await fetch(
-          `${supabaseUrl}/rest/v1/users?id=eq.${lastEditorId}&select=first_name,last_name`,
-          {
-            method: 'GET',
-            headers: getSupabaseHeaders()
-          }
-        );
-
-        if (response.ok) {
-          const users = await response.json();
-          if (users && users.length > 0) {
-            const user = users[0];
-            return `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown';
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching last editor:', err);
-      }
-    }
-
-    return 'Unknown';
+    return lastEditorId;
   };
 
   if (loading) {
@@ -675,12 +721,34 @@ function Dashboard() {
         {/* In-Progress Reports Section */}
         <Card>
           <CardContent>
-            <Typography variant="h5" gutterBottom>
-              Daily Reports 
-            </Typography>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.
-            </Typography>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+              <Box>
+                <Typography variant="h5" gutterBottom>
+                  Daily Reports 
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.
+                </Typography>
+              </Box>
+              <FormControl sx={{ minWidth: 200 }}>
+                <InputLabel>Filter by Facility</InputLabel>
+                <Select
+                  value={facilityFilter}
+                  label="Filter by Facility"
+                  onChange={(e) => {
+                    setFacilityFilter(e.target.value);
+                    setCurrentPage(1); // Reset to first page when filter changes
+                  }}
+                >
+                  <MenuItem value="all">All Facilities</MenuItem>
+                  {facilities.map((facility) => (
+                    <MenuItem key={facility.id} value={facility.id}>
+                      {facility.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
@@ -701,7 +769,8 @@ function Dashboard() {
                 </Typography>
               </Box>
             ) : (
-              <TableContainer component={Paper} sx={{ mt: 2 }}>
+              <>
+                <TableContainer component={Paper} sx={{ mt: 2 }}>
                 <Table>
                   <TableHead>
                     <TableRow>
@@ -714,7 +783,9 @@ function Dashboard() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {unsubmittedReports.map((report) => {
+                    {unsubmittedReports
+                      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                      .map((report) => {
                       const statusIndicator = getReportStatusIndicator(report.report_date);
                       return (
                         <TableRow key={report.id} hover>
@@ -778,9 +849,43 @@ function Dashboard() {
                         </TableRow>
                       );
                     })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                
+                {/* Pagination */}
+                {unsubmittedReports.length > itemsPerPage && (
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
+                    <Typography variant="body2" color="textSecondary">
+                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, unsubmittedReports.length)} of {unsubmittedReports.length} reports
+                    </Typography>
+                    <Pagination
+                      count={Math.ceil(unsubmittedReports.length / itemsPerPage)}
+                      page={currentPage}
+                      onChange={(event, value) => setCurrentPage(value)}
+                      color="primary"
+                      showFirstButton
+                      showLastButton
+                    />
+                    <FormControl size="small" sx={{ minWidth: 120 }}>
+                      <InputLabel>Per Page</InputLabel>
+                      <Select
+                        value={itemsPerPage}
+                        label="Per Page"
+                        onChange={(e) => {
+                          setItemsPerPage(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <MenuItem value={10}>10</MenuItem>
+                        <MenuItem value={25}>25</MenuItem>
+                        <MenuItem value={50}>50</MenuItem>
+                        <MenuItem value={100}>100</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -904,28 +1009,64 @@ function Dashboard() {
 
                 return (
                   <Grid item xs={12} sm={6} md={4} key={client.id}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
-                          <Box>
-                            <Typography
-                              variant="h6"
-                sx={{ 
-                                cursor: 'pointer',
-                                color: 'primary.main',
-                                '&:hover': { textDecoration: 'underline' }
-                              }}
-                              onClick={() => handleViewClient(client.id)}
-                            >
-                              {client.first_name} {client.last_name}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                              Age: {calculateAge(client.date_of_birth)} • Room: {client.room || 'N/A'}
-                            </Typography>
-                          </Box>
-                          <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    <Card variant="outlined" sx={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+                      <Box
+                        sx={{
+                          width: 100,
+                          minWidth: 100,
+                          bgcolor: 'primary.main',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {clientPhotoUrls[client.id] ? (
+                          <Box
+                            component="img"
+                            src={clientPhotoUrls[client.id]}
+                            alt={`${client.first_name} ${client.last_name}`}
+                            sx={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              objectPosition: 'center'
+                            }}
+                          />
+                        ) : (
+                          <Typography 
+                            variant="h4" 
+                            sx={{ 
+                              color: 'white', 
+                              fontWeight: 'bold',
+                              textAlign: 'center'
+                            }}
+                          >
                             {client.first_name?.[0]}{client.last_name?.[0]}
-                          </Avatar>
+                          </Typography>
+                        )}
+                      </Box>
+                      <CardContent sx={{ flex: 1, p: 2 }}>
+                        <Box mb={2}>
+                          <Typography
+                            variant="h6"
+                            sx={{ 
+                              cursor: 'pointer',
+                              color: 'primary.main',
+                              '&:hover': { textDecoration: 'underline' },
+                              mb: 0.5
+                            }}
+                            onClick={() => {
+                              setSelectedClientId(client.id);
+                              setClientInfoModalOpen(true);
+                            }}
+                          >
+                            {client.first_name} {client.last_name}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            Age: {calculateAge(client.date_of_birth)} • Room: {client.room || 'N/A'}
+                          </Typography>
                         </Box>
 
                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>

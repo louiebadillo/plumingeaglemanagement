@@ -27,7 +27,7 @@ export const SupabaseProvider = ({ children }) => {
         console.log('Auth loading timeout reached, setting loading to false');
         setLoading(false);
       }
-    }, 5000); // 5 second timeout
+    }, 2000); // 2 second timeout (reduced from 5s for faster perceived performance)
 
     // Get initial session with timeout
     const initAuth = async () => {
@@ -268,10 +268,13 @@ export const SupabaseProvider = ({ children }) => {
             setUserProfile(profile);
             clearTimeout(loadingTimeoutRef.current);
             setLoading(false);
-            // Still try to fetch fresh data in the background
-            fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(() => {
-              // Silently fail background refresh
-            });
+            // Only fetch fresh data in background if cache is older than 2 minutes
+            // This reduces unnecessary network calls
+            if (cacheAge > 2 * 60 * 1000) {
+              fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(() => {
+                // Silently fail background refresh
+              });
+            }
             return;
           }
         } catch (parseError) {

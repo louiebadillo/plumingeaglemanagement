@@ -28,7 +28,9 @@ import {
   AccordionSummary,
   AccordionDetails,
   Tooltip,
-  Paper
+  Paper,
+  Checkbox,
+  ListItemIcon
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -37,7 +39,9 @@ import {
   Folder as FolderIcon,
   ExpandMore as ExpandMoreIcon,
   CalendarToday as CalendarIcon,
-  Category as CategoryIcon
+  Category as CategoryIcon,
+  CheckBox as CheckBoxIcon,
+  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -62,6 +66,9 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadError, setUploadError] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedFiles, setSelectedFiles] = useState(new Set()); // Set of file keys: "category-index"
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (clientId) {
@@ -227,6 +234,119 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
     }
   };
 
+  const handleToggleFileSelection = (category, index) => {
+    const fileKey = `${category}-${index}`;
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileKey)) {
+        newSet.delete(fileKey);
+      } else {
+        newSet.add(fileKey);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allFileKeys = new Set();
+    Object.keys(FILE_CATEGORIES).forEach(category => {
+      const categoryFiles = files[category] || [];
+      categoryFiles.forEach((_, index) => {
+        allFileKeys.add(`${category}-${index}`);
+      });
+    });
+    setSelectedFiles(allFileKeys);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedFiles(new Set());
+  };
+
+  const getSelectedFilesData = () => {
+    const selectedFilesData = [];
+    selectedFiles.forEach(fileKey => {
+      const [category, index] = fileKey.split('-');
+      const categoryFiles = files[category] || [];
+      if (categoryFiles[parseInt(index)]) {
+        selectedFilesData.push({
+          ...categoryFiles[parseInt(index)],
+          category
+        });
+      }
+    });
+    return selectedFilesData;
+  };
+
+  const handleBulkDownload = async () => {
+    const selectedFilesData = getSelectedFilesData();
+    if (selectedFilesData.length === 0) {
+      alert('Please select at least one file to download.');
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      for (const file of selectedFilesData) {
+        try {
+          await handleFileDownload(file);
+          // Small delay between downloads to avoid browser blocking
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.error(`Error downloading ${file.name}:`, error);
+        }
+      }
+      setSelectedFiles(new Set());
+    } catch (error) {
+      console.error('Bulk download error:', error);
+      alert('Some files failed to download. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const selectedFilesData = getSelectedFilesData();
+    if (selectedFilesData.length === 0) {
+      alert('Please select at least one file to delete.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete ${selectedFilesData.length} file(s)? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const file of selectedFilesData) {
+        try {
+          await deleteFile(file.path, file.category);
+          successCount++;
+        } catch (error) {
+          console.error(`Error deleting ${file.name}:`, error);
+          failCount++;
+        }
+      }
+
+      // Refresh file list
+      await fetchAllFiles();
+      setSelectedFiles(new Set());
+
+      if (failCount > 0) {
+        alert(`Deleted ${successCount} file(s). ${failCount} file(s) failed to delete.`);
+      } else {
+        alert(`Successfully deleted ${successCount} file(s).`);
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      alert('Some files failed to delete. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
 
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -252,20 +372,71 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
     );
   }
 
+  const totalFiles = Object.values(files).reduce((sum, categoryFiles) => sum + categoryFiles.length, 0);
+  const selectedCount = selectedFiles.size;
+
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h5" gutterBottom>
           File Management - {clientName}
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<UploadIcon />}
-          onClick={() => setOpenUploadDialog(true)}
-        >
-          Upload File
-        </Button>
+        <Box display="flex" gap={1}>
+          {selectedCount > 0 && (
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={handleBulkDownload}
+                disabled={downloading}
+              >
+                Download Selected ({selectedCount})
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={handleBulkDelete}
+                disabled={deleting}
+              >
+                Delete Selected ({selectedCount})
+              </Button>
+            </>
+          )}
+          <Button
+            variant="contained"
+            startIcon={<UploadIcon />}
+            onClick={() => setOpenUploadDialog(true)}
+          >
+            Upload File
+          </Button>
+        </Box>
       </Box>
+
+      {totalFiles > 0 && (
+        <Box display="flex" gap={1} mb={2}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleSelectAll}
+          >
+            Select All
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleDeselectAll}
+            disabled={selectedCount === 0}
+          >
+            Deselect All
+          </Button>
+          {selectedCount > 0 && (
+            <Typography variant="body2" sx={{ alignSelf: 'center', ml: 2 }}>
+              {selectedCount} file(s) selected
+            </Typography>
+          )}
+        </Box>
+      )}
 
       {Object.keys(FILE_CATEGORIES).map((category) => {
         const categoryFiles = files[category] || [];
@@ -284,10 +455,30 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
                   No files uploaded for this category.
                 </Typography>
               ) : (
-                <List>
-                  {categoryFiles.map((file, index) => (
-                    <React.Fragment key={index}>
-                      <ListItem>
+                <Box
+                  sx={{
+                    maxHeight: 400, // Approximately 4-5 files (each file ~80-100px)
+                    overflowY: 'auto',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1
+                  }}
+                >
+                  <List>
+                    {categoryFiles.map((file, index) => {
+                      const fileKey = `${category}-${index}`;
+                      const isSelected = selectedFiles.has(fileKey);
+                      return (
+                      <React.Fragment key={index}>
+                        <ListItem>
+                        <ListItemIcon>
+                          <Checkbox
+                            edge="start"
+                            checked={isSelected}
+                            onChange={() => handleToggleFileSelection(category, index)}
+                            tabIndex={-1}
+                          />
+                        </ListItemIcon>
                         <ListItemText
                           primary={
                             <Box display="flex" alignItems="center" gap={1}>
@@ -341,8 +532,10 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
                       </ListItem>
                       {index < categoryFiles.length - 1 && <Divider />}
                     </React.Fragment>
-                  ))}
-                </List>
+                  );
+                  })}
+                  </List>
+                </Box>
               )}
             </AccordionDetails>
           </Accordion>

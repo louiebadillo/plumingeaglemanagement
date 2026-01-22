@@ -45,6 +45,11 @@ import { isReportLocked, getOperationalDate } from '../../utils/dateHelpers';
 
 // Initial form data structure
 const initialFormData = {
+  // Client in facility flags for each shift
+  morning_client_in_facility: null,
+  afternoon_client_in_facility: null,
+  evening_client_in_facility: null,
+  
   // Morning shift fields
   medication_required: null,
   medication_status: '',
@@ -89,6 +94,11 @@ const initialFormData = {
 
 // Field update tracking - matches database schema exactly
 const initialFieldTracking = {
+  // Client in facility tracking
+  morning_client_in_facility_updated_by: null,
+  afternoon_client_in_facility_updated_by: null,
+  evening_client_in_facility_updated_by: null,
+  
   // Morning shift tracking
   medication_updated_by: null,
   sleep_updated_by: null,
@@ -446,6 +456,11 @@ function DailyReportForm() {
             
             // Load form data from existing report
             const loadedFormData = {
+            // Client in facility flags
+            morning_client_in_facility: report.morning_client_in_facility,
+            afternoon_client_in_facility: report.afternoon_client_in_facility,
+            evening_client_in_facility: report.evening_client_in_facility,
+            
             // Morning shift fields
             medication_required: report.medication_required,
             medication_status: report.medication_status || '',
@@ -511,6 +526,11 @@ function DailyReportForm() {
             
             // Load field tracking
             const loadedFieldTracking = {
+            // Client in facility tracking
+            morning_client_in_facility_updated_by: report.morning_client_in_facility_updated_by,
+            afternoon_client_in_facility_updated_by: report.afternoon_client_in_facility_updated_by,
+            evening_client_in_facility_updated_by: report.evening_client_in_facility_updated_by,
+            
             // Morning shift tracking
             medication_updated_by: report.medication_updated_by,
             sleep_updated_by: report.sleep_updated_by,
@@ -577,6 +597,11 @@ function DailyReportForm() {
   // Mapping from form field names to database tracking field names
   const getTrackingFieldName = (field) => {
     const fieldMapping = {
+      // Client in facility flags
+      'morning_client_in_facility': 'morning_client_in_facility_updated_by',
+      'afternoon_client_in_facility': 'afternoon_client_in_facility_updated_by',
+      'evening_client_in_facility': 'evening_client_in_facility_updated_by',
+      
       // Morning shift fields
       'medication_required': 'medication_updated_by',
       'medication_status': 'medication_updated_by',
@@ -622,10 +647,54 @@ function DailyReportForm() {
   };
 
   const handleFieldChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [field]: value
+      };
+      
+      // If client is not in facility for a shift, nullify all fields in that shift
+      if (field === 'morning_client_in_facility' && value === false) {
+        // Nullify all morning shift fields
+        updated.medication_required = null;
+        updated.medication_status = '';
+        updated.sleep_woke_on_time = null;
+        updated.diet_ate_well = null;
+        updated.dental_hygiene_done = null;
+        updated.routine_made_bed = null;
+        updated.routine_put_clothes_away = null;
+        updated.routine_cleared_floor = null;
+        updated.routine_washed_dishes = null;
+        updated.behaviour_observation = null;
+        updated.behaviour_followed_rules = null;
+        updated.behaviour_listened = null;
+        updated.behaviour_control = null;
+      } else if (field === 'afternoon_client_in_facility' && value === false) {
+        // Nullify all afternoon shift fields
+        updated.afternoon_medication_required = null;
+        updated.afternoon_medication_status = '';
+        updated.afternoon_slept_on_time = null;
+        updated.afternoon_diet_ate_well = null;
+        updated.afternoon_dental_hygiene_done = null;
+        updated.afternoon_shower_taken = null;
+        updated.afternoon_routine_made_bed = null;
+        updated.afternoon_routine_put_clothes_away = null;
+        updated.afternoon_routine_cleared_floor = null;
+        updated.afternoon_routine_washed_dishes = null;
+        updated.afternoon_school_supposed_to_go = null;
+        updated.afternoon_school_status = '';
+        updated.afternoon_behaviour_observation = null;
+        updated.afternoon_behaviour_followed_rules = null;
+        updated.afternoon_behaviour_listened = null;
+        updated.afternoon_behaviour_control = null;
+      } else if (field === 'evening_client_in_facility' && value === false) {
+        // Nullify all evening shift fields
+        updated.evening_medication_required = null;
+        updated.evening_medication_status = '';
+      }
+      
+      return updated;
+    });
     
     // Update field tracking with correct database field name
     const trackingField = getTrackingFieldName(field);
@@ -633,6 +702,49 @@ function DailyReportForm() {
       ...prev,
       [trackingField]: currentUserId
     }));
+  };
+  
+  // Helper functions to check if client is in facility for each shift
+  const isClientInFacilityForShift = (shift) => {
+    switch (shift) {
+      case 'morning':
+        return formData.morning_client_in_facility === true;
+      case 'afternoon':
+        return formData.afternoon_client_in_facility === true;
+      case 'evening':
+        return formData.evening_client_in_facility === true;
+      default:
+        return true; // Default to true if shift not specified
+    }
+  };
+  
+  // Helper to check if a field should be enabled (considering both shift availability and client in facility)
+  const isFieldEnabled = (field, shift) => {
+    // Admins can bypass all restrictions
+    if (isAdmin) {
+      return canEditField(field);
+    }
+    
+    // First check shift availability and edit permissions (time-based locking)
+    let canEdit = false;
+    if (shift) {
+      canEdit = canEditFieldWithShift(field, shift);
+    } else {
+      canEdit = canEditField(field);
+    }
+    
+    // If shift is not available or field can't be edited, disable it
+    if (!canEdit) {
+      return false;
+    }
+    
+    // Then check if client is in facility for this shift
+    // If client is not in facility, disable all shift fields
+    if (shift && !isClientInFacilityForShift(shift)) {
+      return false;
+    }
+    
+    return true;
   };
 
   // Helper function to check if shift is available based on current time
@@ -703,14 +815,11 @@ function DailyReportForm() {
   const canEditFieldWithShift = (field, shift) => {
     if (isAdmin) return canEditField(field);
     
-    // For draft reports, allow editing regardless of shift time
-    const isDraftReport = existingReport?.status === 'draft';
-    if (isDraftReport) {
-      return canEditField(field);
-    }
-    
-    // For new reports, check shift availability
+    // Always check shift availability first (even for draft reports)
+    // Draft reports can be edited, but only during the appropriate shift times
     if (!isFieldShiftAvailable(field)) return false;
+    
+    // Then check other edit permissions
     return canEditField(field);
   };
 
@@ -728,19 +837,14 @@ function DailyReportForm() {
     }
     
     // Appointments, BIR, AWOL, and Injuries are always editable by any employee (unless locked)
+    // Note: Shift availability is checked in canEditFieldWithShift, not here
     if (field === 'appointments' || field === 'bir_incidents' || 
         field === 'awol_incidents' || field === 'injuries') {
       return true;
     }
     
-    // For draft reports, skip shift availability check - allow editing all fields
-    if (!isDraftReport) {
-      // Check shift availability (for non-admin employees) - only for new reports
-      // This ensures fields are only editable during their respective shift times
-      if (!isFieldShiftAvailable(field)) {
-        return false;
-      }
-    }
+    // Shift availability is now handled in canEditFieldWithShift
+    // This function only checks lock status and field ownership
     
     const trackingField = getTrackingFieldName(field);
     const updatedBy = fieldTracking[trackingField];
@@ -774,8 +878,20 @@ function DailyReportForm() {
   const validateForm = () => {
     const errors = [];
     
-    // Morning shift validation
-    if (formData.medication_required === null) {
+    // Check if client in facility flags are set
+    if (formData.morning_client_in_facility === null) {
+      errors.push('Morning Shift: Please specify if client was in facility during this shift');
+    }
+    if (formData.afternoon_client_in_facility === null) {
+      errors.push('Afternoon Shift: Please specify if client was in facility during this shift');
+    }
+    if (formData.evening_client_in_facility === null) {
+      errors.push('Evening Shift: Please specify if client was in facility during this shift');
+    }
+    
+    // Morning shift validation - only validate if client was in facility
+    if (formData.morning_client_in_facility === true) {
+      if (formData.medication_required === null) {
       errors.push('Morning Medication: Please specify if medication is required');
     } else if (formData.medication_required && !formData.medication_status) {
       errors.push('Morning Medication: Please specify medication status');
@@ -824,9 +940,11 @@ function DailyReportForm() {
     if (formData.behaviour_control === null) {
       errors.push('Morning Behaviour: Please specify if client was able to control behaviour');
     }
+    }
     
-    // Afternoon shift validation
-    if (formData.afternoon_medication_required === null) {
+    // Afternoon shift validation - only validate if client was in facility
+    if (formData.afternoon_client_in_facility === true) {
+      if (formData.afternoon_medication_required === null) {
       errors.push('Afternoon Medication: Please specify if medication is required');
     } else if (formData.afternoon_medication_required && !formData.afternoon_medication_status) {
       errors.push('Afternoon Medication: Please specify medication status');
@@ -886,13 +1004,16 @@ function DailyReportForm() {
     
     if (formData.afternoon_behaviour_control === null) {
       errors.push('Afternoon Behaviour: Please specify if client was able to control behaviour');
+      }
     }
     
-    // Evening shift validation
-    if (formData.evening_medication_required === null) {
+    // Evening shift validation - only validate if client was in facility
+    if (formData.evening_client_in_facility === true) {
+      if (formData.evening_medication_required === null) {
       errors.push('Evening Medication: Please specify if medication is required');
     } else if (formData.evening_medication_required && !formData.evening_medication_status) {
       errors.push('Evening Medication: Please specify medication status');
+      }
     }
     
     // AWOL and Injuries validation removed - they're now optional arrays
@@ -922,6 +1043,47 @@ function DailyReportForm() {
         afternoon_medication_status: formData.afternoon_medication_status === '' ? null : formData.afternoon_medication_status,
         evening_medication_status: formData.evening_medication_status === '' ? null : formData.evening_medication_status
       };
+      
+      // If client is not in facility for a shift, nullify all fields in that shift
+      if (cleanedFormData.morning_client_in_facility === false) {
+        cleanedFormData.medication_required = null;
+        cleanedFormData.medication_status = null;
+        cleanedFormData.sleep_woke_on_time = null;
+        cleanedFormData.diet_ate_well = null;
+        cleanedFormData.dental_hygiene_done = null;
+        cleanedFormData.routine_made_bed = null;
+        cleanedFormData.routine_put_clothes_away = null;
+        cleanedFormData.routine_cleared_floor = null;
+        cleanedFormData.routine_washed_dishes = null;
+        cleanedFormData.behaviour_observation = null;
+        cleanedFormData.behaviour_followed_rules = null;
+        cleanedFormData.behaviour_listened = null;
+        cleanedFormData.behaviour_control = null;
+      }
+      
+      if (cleanedFormData.afternoon_client_in_facility === false) {
+        cleanedFormData.afternoon_medication_required = null;
+        cleanedFormData.afternoon_medication_status = null;
+        cleanedFormData.afternoon_slept_on_time = null;
+        cleanedFormData.afternoon_diet_ate_well = null;
+        cleanedFormData.afternoon_dental_hygiene_done = null;
+        cleanedFormData.afternoon_shower_taken = null;
+        cleanedFormData.afternoon_routine_made_bed = null;
+        cleanedFormData.afternoon_routine_put_clothes_away = null;
+        cleanedFormData.afternoon_routine_cleared_floor = null;
+        cleanedFormData.afternoon_routine_washed_dishes = null;
+        cleanedFormData.afternoon_school_supposed_to_go = null;
+        cleanedFormData.afternoon_school_status = null;
+        cleanedFormData.afternoon_behaviour_observation = null;
+        cleanedFormData.afternoon_behaviour_followed_rules = null;
+        cleanedFormData.afternoon_behaviour_listened = null;
+        cleanedFormData.afternoon_behaviour_control = null;
+      }
+      
+      if (cleanedFormData.evening_client_in_facility === false) {
+        cleanedFormData.evening_medication_required = null;
+        cleanedFormData.evening_medication_status = null;
+      }
 
       // Ensure facility_id is a valid UUID or null (not the string "null")
       // Use actualFacilityId state which is set when client is loaded
@@ -1306,6 +1468,32 @@ function DailyReportForm() {
             </Typography>
           
           <Grid container spacing={3}>
+            {/* Client in Facility Question */}
+            <Grid item xs={12}>
+              <Card variant="outlined" sx={{ mb: 2, backgroundColor: '#fff' }}>
+                <CardContent>
+                  <FormControl component="fieldset" disabled={!isFieldEnabled('morning_client_in_facility', 'morning')}>
+                    <FormLabel component="legend" sx={{ fontWeight: 'bold', mb: 1 }}>
+                      Was the client in the facility during the morning shift (6 AM - 2 PM)?
+                    </FormLabel>
+                    <RadioGroup
+                      row
+                      value={formData.morning_client_in_facility}
+                      onChange={(e) => handleFieldChange('morning_client_in_facility', e.target.value === 'true')}
+                    >
+                      <FormControlLabel value={true} control={<Radio />} label="Yes - Client was in facility" />
+                      <FormControlLabel value={false} control={<Radio />} label="No - Client was not in facility" />
+                    </RadioGroup>
+                    {formData.morning_client_in_facility === false && (
+                      <Alert severity="info" sx={{ mt: 2 }}>
+                        All morning shift questionnaires will be set to null since the client was not in the facility.
+                      </Alert>
+                    )}
+                  </FormControl>
+                </CardContent>
+              </Card>
+            </Grid>
+            
             {/* Medication */}
             <Grid item xs={12}>
               <Card variant="outlined">
@@ -1313,7 +1501,7 @@ function DailyReportForm() {
                   <Typography variant="subtitle1" gutterBottom>
                     Medication
                   </Typography>
-                  <FormControl component="fieldset" disabled={!canEditField('medication_required')}>
+                  <FormControl component="fieldset" disabled={!isFieldEnabled('medication_required', 'morning')}>
                     <FormLabel component="legend" id="medication-required-label">Needs to take meds in shift?</FormLabel>
                     <RadioGroup
                       id="medication-required"
@@ -1328,7 +1516,7 @@ function DailyReportForm() {
                   </FormControl>
                   
                   {formData.medication_required && (
-                    <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditField('medication_status')}>
+                    <FormControl fullWidth sx={{ mt: 2 }} disabled={!isFieldEnabled('medication_status', 'morning')}>
                       <FormLabel id="medication-status-label">Medication Status</FormLabel>
                       <Select
                         id="medication-status"
@@ -1357,7 +1545,7 @@ function DailyReportForm() {
                   <Typography variant="subtitle1" gutterBottom>
                     Sleep
                   </Typography>
-                  <FormControl component="fieldset" disabled={!canEditField('sleep_woke_on_time')}>
+                  <FormControl component="fieldset" disabled={!isFieldEnabled('sleep_woke_on_time', 'morning')}>
                     <FormLabel component="legend" id="sleep-woke-on-time-label">Woke up in time?</FormLabel>
                     <RadioGroup
                       id="sleep-woke-on-time"
@@ -1381,7 +1569,7 @@ function DailyReportForm() {
                   <Typography variant="subtitle1" gutterBottom>
                     Diet and Food
                   </Typography>
-                  <FormControl component="fieldset" disabled={!canEditField('diet_ate_well')}>
+                  <FormControl component="fieldset" disabled={!isFieldEnabled('diet_ate_well', 'morning')}>
                     <FormLabel component="legend" id="diet-ate-well-label">How was the client's diet/appetite?</FormLabel>
                     <RadioGroup
                       id="diet-ate-well"
@@ -1405,7 +1593,7 @@ function DailyReportForm() {
                   <Typography variant="subtitle1" gutterBottom>
                     Dental Hygiene
                   </Typography>
-                  <FormControl component="fieldset" disabled={!canEditField('dental_hygiene_done')}>
+                  <FormControl component="fieldset" disabled={!isFieldEnabled('dental_hygiene_done', 'morning')}>
                     <FormLabel component="legend" id="dental-hygiene-done-label">Morning Dental Hygiene done?</FormLabel>
                     <RadioGroup
                       id="dental-hygiene-done"
@@ -1437,7 +1625,7 @@ function DailyReportForm() {
                       { key: 'routine_washed_dishes', label: 'Washed Dishes' }
                     ].map(({ key, label }) => (
                       <Grid item xs={12} sm={6} key={key}>
-                        <FormControl fullWidth disabled={!canEditField(key)}>
+                        <FormControl fullWidth disabled={!isFieldEnabled(key, 'morning')}>
                           <FormLabel id={`${key}-label`}>{label}</FormLabel>
                           <Select
                             id={key}
@@ -1469,7 +1657,7 @@ function DailyReportForm() {
                   </Typography>
                   <Grid container spacing={2}>
                     <Grid item xs={12} sm={6}>
-                      <FormControl component="fieldset" disabled={!canEditField('behaviour_observation')}>
+                      <FormControl component="fieldset" disabled={!isFieldEnabled('behaviour_observation', 'morning')}>
                         <FormLabel component="legend" id="behaviour-observation-label">Observation</FormLabel>
                         <RadioGroup
                           id="behaviour-observation"
@@ -1485,7 +1673,7 @@ function DailyReportForm() {
                     </Grid>
                     
                     <Grid item xs={12} sm={6}>
-                      <FormControl component="fieldset" disabled={!canEditField('behaviour_followed_rules')}>
+                      <FormControl component="fieldset" disabled={!isFieldEnabled('behaviour_followed_rules', 'morning')}>
                         <FormLabel component="legend" id="behaviour-followed-rules-label">Followed Rules</FormLabel>
                         <RadioGroup
                           id="behaviour-followed-rules"
@@ -1501,7 +1689,7 @@ function DailyReportForm() {
                     </Grid>
                     
                     <Grid item xs={12} sm={6}>
-                      <FormControl component="fieldset" disabled={!canEditField('behaviour_listened')}>
+                      <FormControl component="fieldset" disabled={!isFieldEnabled('behaviour_listened', 'morning')}>
                         <FormLabel component="legend" id="behaviour-listened-label">Listened to Instructions</FormLabel>
                         <RadioGroup
                           id="behaviour-listened"
@@ -1517,7 +1705,7 @@ function DailyReportForm() {
                     </Grid>
                     
                     <Grid item xs={12} sm={6}>
-                      <FormControl component="fieldset" disabled={!canEditField('behaviour_control')}>
+                      <FormControl component="fieldset" disabled={!isFieldEnabled('behaviour_control', 'morning')}>
                         <FormLabel component="legend" id="behaviour-control-label">Able to Control Behaviour</FormLabel>
                         <RadioGroup
                           id="behaviour-control"
@@ -1551,6 +1739,32 @@ function DailyReportForm() {
             )}
             
             <Grid container spacing={3}>
+              {/* Client in Facility Question */}
+              <Grid item xs={12}>
+                <Card variant="outlined" sx={{ mb: 2, backgroundColor: '#fff' }}>
+                  <CardContent>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_client_in_facility', 'afternoon')}>
+                      <FormLabel component="legend" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Was the client in the facility during the afternoon shift (2 PM - 10 PM)?
+                      </FormLabel>
+                      <RadioGroup
+                        row
+                        value={formData.afternoon_client_in_facility}
+                        onChange={(e) => handleFieldChange('afternoon_client_in_facility', e.target.value === 'true')}
+                      >
+                        <FormControlLabel value={true} control={<Radio />} label="Yes - Client was in facility" />
+                        <FormControlLabel value={false} control={<Radio />} label="No - Client was not in facility" />
+                      </RadioGroup>
+                      {formData.afternoon_client_in_facility === false && (
+                        <Alert severity="info" sx={{ mt: 2 }}>
+                          All afternoon shift questionnaires will be set to null since the client was not in the facility.
+                        </Alert>
+                      )}
+                    </FormControl>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
               {/* Afternoon Medication */}
               <Grid item xs={12}>
                 <Card variant="outlined">
@@ -1558,7 +1772,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Medication (2pm – 10pm)
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditField('afternoon_medication_required')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_medication_required', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-medication-required-label">Needs to take meds in shift?</FormLabel>
                       <RadioGroup
                         id="afternoon-medication-required"
@@ -1573,7 +1787,7 @@ function DailyReportForm() {
                     </FormControl>
                     
                     {formData.afternoon_medication_required && (
-                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_medication_status', 'afternoon')}>
+                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!isFieldEnabled('afternoon_medication_status', 'afternoon')}>
                         <FormLabel id="afternoon-medication-status-label">Medication Status</FormLabel>
                         <Select
                           id="afternoon-medication-status"
@@ -1602,7 +1816,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Sleep
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_slept_on_time', 'afternoon')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_slept_on_time', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-slept-on-time-label">Slept on time?</FormLabel>
                       <RadioGroup
                         id="afternoon-slept-on-time"
@@ -1626,7 +1840,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Diet and Food
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_diet_ate_well', 'afternoon')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_diet_ate_well', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-diet-ate-well-label">How was the client's diet/appetite?</FormLabel>
                       <RadioGroup
                         id="afternoon-diet-ate-well"
@@ -1650,7 +1864,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Dental Hygiene
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_dental_hygiene_done', 'afternoon')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_dental_hygiene_done', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-dental-hygiene-done-label">Evening dental hygiene done?</FormLabel>
                       <RadioGroup
                         id="afternoon-dental-hygiene-done"
@@ -1674,7 +1888,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Shower
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_shower_taken', 'afternoon')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_shower_taken', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-shower-taken-label">Took a shower today?</FormLabel>
                       <RadioGroup
                         id="afternoon-shower-taken"
@@ -1706,7 +1920,7 @@ function DailyReportForm() {
                         { key: 'afternoon_routine_washed_dishes', label: 'Washed Dishes' }
                       ].map(({ key, label }) => (
                         <Grid item xs={12} sm={6} key={key}>
-                          <FormControl fullWidth disabled={!canEditFieldWithShift(key, 'afternoon')}>
+                          <FormControl fullWidth disabled={!isFieldEnabled(key, 'afternoon')}>
                             <FormLabel id={`${key}-label`}>{label}</FormLabel>
                             <Select
                               id={key}
@@ -1736,7 +1950,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       School
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_school_supposed_to_go', 'afternoon')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_school_supposed_to_go', 'afternoon')}>
                       <FormLabel component="legend" id="afternoon-school-supposed-to-go-label">Supposed to go to school today?</FormLabel>
                       <RadioGroup
                         id="afternoon-school-supposed-to-go"
@@ -1751,7 +1965,7 @@ function DailyReportForm() {
                     </FormControl>
                     
                     {formData.afternoon_school_supposed_to_go === false && (
-                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
+                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!isFieldEnabled('afternoon_school_status', 'afternoon')}>
                         <FormLabel id="afternoon-school-status-reason-label">Reason</FormLabel>
                         <Select
                           id="afternoon-school-status-reason"
@@ -1768,7 +1982,7 @@ function DailyReportForm() {
                     )}
                     
                     {formData.afternoon_school_supposed_to_go === true && (
-                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('afternoon_school_status', 'afternoon')}>
+                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!isFieldEnabled('afternoon_school_status', 'afternoon')}>
                         <FormLabel id="afternoon-school-status-label">School Status</FormLabel>
                         <Select
                           id="afternoon-school-status"
@@ -1797,7 +2011,7 @@ function DailyReportForm() {
                     </Typography>
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6}>
-                        <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_observation', 'afternoon')}>
+                        <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_behaviour_observation', 'afternoon')}>
                           <FormLabel component="legend" id="afternoon-behaviour-observation-label">Observation</FormLabel>
                           <RadioGroup
                             id="afternoon-behaviour-observation"
@@ -1813,7 +2027,7 @@ function DailyReportForm() {
                       </Grid>
                       
                       <Grid item xs={12} sm={6}>
-                        <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_followed_rules', 'afternoon')}>
+                        <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_behaviour_followed_rules', 'afternoon')}>
                           <FormLabel component="legend" id="afternoon-behaviour-followed-rules-label">Followed Rules</FormLabel>
                           <RadioGroup
                             id="afternoon-behaviour-followed-rules"
@@ -1829,7 +2043,7 @@ function DailyReportForm() {
                       </Grid>
                       
                       <Grid item xs={12} sm={6}>
-                        <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_listened', 'afternoon')}>
+                        <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_behaviour_listened', 'afternoon')}>
                           <FormLabel component="legend" id="afternoon-behaviour-listened-label">Listened to Instructions</FormLabel>
                           <RadioGroup
                             id="afternoon-behaviour-listened"
@@ -1845,7 +2059,7 @@ function DailyReportForm() {
                       </Grid>
                       
                       <Grid item xs={12} sm={6}>
-                        <FormControl component="fieldset" disabled={!canEditFieldWithShift('afternoon_behaviour_control', 'afternoon')}>
+                        <FormControl component="fieldset" disabled={!isFieldEnabled('afternoon_behaviour_control', 'afternoon')}>
                           <FormLabel component="legend" id="afternoon-behaviour-control-label">Able to Control Behaviour</FormLabel>
                           <RadioGroup
                             id="afternoon-behaviour-control"
@@ -1879,6 +2093,32 @@ function DailyReportForm() {
             )}
             
             <Grid container spacing={3}>
+              {/* Client in Facility Question */}
+              <Grid item xs={12}>
+                <Card variant="outlined" sx={{ mb: 2, backgroundColor: '#fff' }}>
+                  <CardContent>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('evening_client_in_facility', 'evening')}>
+                      <FormLabel component="legend" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Was the client in the facility during the evening shift (10 PM - 6 AM)?
+                      </FormLabel>
+                      <RadioGroup
+                        row
+                        value={formData.evening_client_in_facility}
+                        onChange={(e) => handleFieldChange('evening_client_in_facility', e.target.value === 'true')}
+                      >
+                        <FormControlLabel value={true} control={<Radio />} label="Yes - Client was in facility" />
+                        <FormControlLabel value={false} control={<Radio />} label="No - Client was not in facility" />
+                      </RadioGroup>
+                      {formData.evening_client_in_facility === false && (
+                        <Alert severity="info" sx={{ mt: 2 }}>
+                          All evening shift questionnaires will be set to null since the client was not in the facility.
+                        </Alert>
+                      )}
+                    </FormControl>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
               {/* Evening Medication */}
               <Grid item xs={12}>
                 <Card variant="outlined">
@@ -1886,7 +2126,7 @@ function DailyReportForm() {
                     <Typography variant="subtitle1" gutterBottom>
                       Medication (10pm – 6am)
                     </Typography>
-                    <FormControl component="fieldset" disabled={!canEditFieldWithShift('evening_medication_required', 'evening')}>
+                    <FormControl component="fieldset" disabled={!isFieldEnabled('evening_medication_required', 'evening')}>
                       <FormLabel component="legend" id="evening-medication-required-label">Needs to take meds in shift?</FormLabel>
                       <RadioGroup
                         id="evening-medication-required"
@@ -1901,7 +2141,7 @@ function DailyReportForm() {
                     </FormControl>
                     
                     {formData.evening_medication_required && (
-                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!canEditFieldWithShift('evening_medication_status', 'evening')}>
+                      <FormControl fullWidth sx={{ mt: 2 }} disabled={!isFieldEnabled('evening_medication_status', 'evening')}>
                         <FormLabel id="evening-medication-status-label">Medication Status</FormLabel>
                         <Select
                           id="evening-medication-status"
