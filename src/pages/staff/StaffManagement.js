@@ -40,6 +40,7 @@ import {
   LockReset as LockResetIcon
 } from '@mui/icons-material';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 
