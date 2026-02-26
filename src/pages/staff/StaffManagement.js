@@ -485,7 +485,7 @@ function StaffManagement() {
           .select('*');
         
         if (!reloadError && reloadedUsers) {
-          const updatedUsers = await reloadResponse.json();
+          const updatedUsers = reloadedUsers;
           console.log('📋 Raw updated users from reload:', updatedUsers);
           const transformedUsers = updatedUsers.map(user => ({
             id: user.id,
@@ -619,7 +619,7 @@ function StaffManagement() {
           .order('created_at', { ascending: false });
 
         if (!reloadError && reloadedUsers) {
-          const updatedUsers = await reloadResponse.json();
+          const updatedUsers = reloadedUsers;
           console.log('📋 Raw updated users from reload:', updatedUsers);
           const transformedUsers = updatedUsers.map(user => ({
             id: user.id,
