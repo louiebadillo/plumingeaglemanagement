@@ -6,6 +6,9 @@
     { "source": "/login", "destination": "/index.html" },
     { "source": "/logout", "destination": "/index.html" },
     { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/static/:path*", "destination": "/static/:path*" },
+    { "source": "/app/manifest.json", "destination": "/manifest.json" },
+    { "source": "/app/pellogofinal.png", "destination": "/pellogofinal.png" },
     { "source": "/app/:path*", "destination": "/index.html" }
   ],
   "headers": [
