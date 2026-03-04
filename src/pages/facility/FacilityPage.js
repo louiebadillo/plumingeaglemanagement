@@ -240,8 +240,7 @@ function FacilityPage() {
   );
 
   const handleViewClient = (client) => {
-    const clientUrl = createClientUrl(client);
-    history.push(clientUrl);
+    history.push(`/app/client/${client.id}`);
   };
 
   const handleEditClient = (client) => {
@@ -598,26 +597,15 @@ function FacilityPage() {
                                 </IconButton>
                               </Tooltip>
                               {isAdmin && (
-                                <>
-                                  <Tooltip title="Edit Client">
-                                    <IconButton 
-                                      size="small" 
-                                      onClick={() => handleEditClient(client)}
-                                      color="secondary"
-                                    >
-                                      <EditIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete Client">
-                                    <IconButton 
-                                      size="small" 
-                                      onClick={() => handleDeleteClient(client.id)}
-                                      color="error"
-                                    >
-                                      <DeleteIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
+                                <Tooltip title="Delete Client">
+                                  <IconButton 
+                                    size="small" 
+                                    onClick={() => handleDeleteClient(client.id)}
+                                    color="error"
+                                  >
+                                    <DeleteIcon />
+                                  </IconButton>
+                                </Tooltip>
                               )}
                             </Box>
                           </TableCell>

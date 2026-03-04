@@ -613,14 +613,19 @@ function ClientMasterlist() {
                       />
                     </TableCell>
                     <TableCell>
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          onClick={() => history.push(`/app/client/${client.id}`)}
+                          color="primary"
+                        >
+                          <ViewIcon />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="View Files">
                         <IconButton
                           size="small"
-                          onClick={() => {
-                            console.log('Client data:', client);
-                            console.log('Client ID from data:', client.id);
-                            handleViewFiles(client.id);
-                          }}
+                          onClick={() => handleViewFiles(client.id)}
                           color="primary"
                         >
                           <FolderIcon />
