@@ -1292,14 +1292,14 @@ function DailyReportForm() {
         throw new Error(`Failed to delete report: ${error.message}`);
       }
 
-      // Show success message and redirect to dashboard
+      // Show success message and redirect to same list page (or dashboard)
       setSuccessMessage('Report deleted successfully.');
       setShowSuccessModal(true);
       setShowDeleteDialog(false);
-      
-      // Redirect to dashboard after a short delay
+      const returnTo = urlParams.get('returnTo');
+      const redirectPath = returnTo && returnTo.startsWith('/app/') ? returnTo : '/app/dashboard';
       setTimeout(() => {
-        history.push('/app/dashboard');
+        history.push(redirectPath);
       }, 1500);
     } catch (err) {
       console.error('Error deleting report:', err);

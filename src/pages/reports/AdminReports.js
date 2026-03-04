@@ -185,7 +185,8 @@ function AdminReports() {
   };
 
   const handleEditReport = (report) => {
-    history.push(`/app/reports/daily-report?clientId=${report.client_id}&date=${report.report_date}&facility=${report.facility_id}&edit=true`);
+    const returnTo = encodeURIComponent('/app/reports/admin-reports');
+    history.push(`/app/reports/daily-report?clientId=${report.client_id}&date=${report.report_date}&facility=${report.facility_id}&edit=true&returnTo=${returnTo}`);
   };
 
   const getStatusColor = (status) => {

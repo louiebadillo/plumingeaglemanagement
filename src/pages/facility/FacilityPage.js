@@ -28,11 +28,22 @@ import {
   Select,
   MenuItem,
   CircularProgress,
-  Alert
+  Alert,
+  Checkbox,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Radio,
+  RadioGroup,
+  FormControlLabel
 } from '@mui/material';
 import { 
   Search as SearchIcon, 
   Add as AddIcon, 
+  PersonAdd as PersonAddIcon,
+  SwapHoriz as TransferIcon,
   Edit as EditIcon, 
   Delete as DeleteIcon,
   Visibility as ViewIcon,
@@ -71,6 +82,25 @@ function FacilityPage() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [clientPhotoUrls, setClientPhotoUrls] = useState({});
+  // Add Client (transfer) modal
+  const [addClientModalOpen, setAddClientModalOpen] = useState(false);
+  const [allClientsForTransfer, setAllClientsForTransfer] = useState([]);
+  const [facilitiesList, setFacilitiesList] = useState([]);
+  const [transferModalLoading, setTransferModalLoading] = useState(false);
+  const [selectedTransferIds, setSelectedTransferIds] = useState(new Set());
+  const [transferTarget, setTransferTarget] = useState('this'); // 'this' | 'other'
+  const [selectedTransferFacilityId, setSelectedTransferFacilityId] = useState('');
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [transferSuccessMessage, setTransferSuccessMessage] = useState('');
+  const [transferError, setTransferError] = useState('');
+  // Transfer selected (clients in this facility) modal
+  const [selectedClientsInFacility, setSelectedClientsInFacility] = useState(new Set());
+  const [transferSelectedModalOpen, setTransferSelectedModalOpen] = useState(false);
+  const [transferSelectedFacilities, setTransferSelectedFacilities] = useState([]);
+  const [transferSelectedTargetId, setTransferSelectedTargetId] = useState('');
+  const [transferSelectedSubmitting, setTransferSelectedSubmitting] = useState(false);
+  const [transferSelectedError, setTransferSelectedError] = useState('');
+  const [transferSelectedSuccess, setTransferSelectedSuccess] = useState('');
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -228,16 +258,173 @@ function FacilityPage() {
     }
   };
 
-  const handleAddClient = () => {
-    console.log('🔍 handleAddClient called:', { facilityId, facility });
+  const handleCreateNewClient = () => {
     if (!facilityId) {
       console.error('❌ No facilityId available');
       alert('Error: Facility ID is missing. Please try again.');
       return;
     }
-    const url = `/app/client/new?facility=${facilityId}`;
-    console.log('🚀 Navigating to:', url);
-    history.push(url);
+    history.push(`/app/client/new?facility=${facilityId}`);
+  };
+
+  const handleOpenAddClientModal = async () => {
+    setAddClientModalOpen(true);
+    setTransferModalLoading(true);
+    setTransferError('');
+    setSelectedTransferIds(new Set());
+    setTransferTarget('this');
+    setSelectedTransferFacilityId('');
+    try {
+      const [clientsRes, facilitiesRes] = await Promise.all([
+        supabase.from('clients').select('id, first_name, last_name, facility_id, facilities(id, name)').limit(500),
+        supabase.from('facilities').select('id, name').order('name', { ascending: true })
+      ]);
+      if (clientsRes.error) throw new Error(clientsRes.error.message);
+      if (facilitiesRes.error) throw new Error(facilitiesRes.error.message);
+      setAllClientsForTransfer(clientsRes.data || []);
+      const facList = facilitiesRes.data || [];
+      setFacilitiesList(facList);
+      setSelectedTransferFacilityId(facList[0]?.id || '');
+    } catch (err) {
+      console.error('Error loading data for Add Client modal:', err);
+      setTransferError(err.message || 'Failed to load clients and facilities.');
+    } finally {
+      setTransferModalLoading(false);
+    }
+  };
+
+  const handleCloseAddClientModal = () => {
+    setAddClientModalOpen(false);
+    setAllClientsForTransfer([]);
+    setFacilitiesList([]);
+    setSelectedTransferIds(new Set());
+    setTransferSuccessMessage('');
+    setTransferError('');
+  };
+
+  const handleToggleTransferClient = (clientId) => {
+    setSelectedTransferIds(prev => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const handleSelectAllTransfer = () => {
+    setSelectedTransferIds(new Set(allClientsForTransfer.map(c => c.id)));
+  };
+
+  const handleDeselectAllTransfer = () => {
+    setSelectedTransferIds(new Set());
+  };
+
+  const getTargetFacilityId = () => {
+    if (transferTarget === 'this') return facilityId;
+    return selectedTransferFacilityId || null;
+  };
+
+  const handleConfirmTransfer = async () => {
+    const targetId = getTargetFacilityId();
+    if (!targetId || selectedTransferIds.size === 0) {
+      setTransferError(transferTarget === 'this' ? 'Please select at least one client.' : 'Please select a facility and at least one client.');
+      return;
+    }
+    setTransferSubmitting(true);
+    setTransferError('');
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .update({ facility_id: targetId, updated_at: new Date().toISOString() })
+        .in('id', Array.from(selectedTransferIds));
+      if (error) throw error;
+      const count = selectedTransferIds.size;
+      setTransferSuccessMessage(`${count} client${count !== 1 ? 's' : ''} transferred successfully.`);
+      setSelectedTransferIds(new Set());
+      // Reload current facility's clients if we're on this facility
+      if (targetId === facilityId) {
+        const { data } = await supabase.from('clients').select('*').eq('facility_id', facilityId);
+        setClients(data || []);
+      }
+      setTimeout(() => {
+        handleCloseAddClientModal();
+      }, 1500);
+    } catch (err) {
+      console.error('Error transferring clients:', err);
+      setTransferError(err.message || 'Failed to transfer clients.');
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
+  const handleToggleClientForTransfer = (clientId) => {
+    setSelectedClientsInFacility(prev => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const handleSelectAllInFacility = () => {
+    setSelectedClientsInFacility(new Set(filteredClients.map(c => c.id)));
+  };
+
+  const handleDeselectAllInFacility = () => {
+    setSelectedClientsInFacility(new Set());
+  };
+
+  const handleOpenTransferSelectedModal = async () => {
+    if (selectedClientsInFacility.size === 0) return;
+    setTransferSelectedModalOpen(true);
+    setTransferSelectedError('');
+    setTransferSelectedSuccess('');
+    try {
+      const { data, error } = await supabase
+        .from('facilities')
+        .select('id, name')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const list = (data || []).filter(f => f.id !== facilityId);
+      setTransferSelectedFacilities(list);
+      setTransferSelectedTargetId(list[0]?.id || '');
+    } catch (err) {
+      console.error('Error loading facilities for transfer:', err);
+      setTransferSelectedError(err.message || 'Failed to load facilities.');
+    }
+  };
+
+  const handleCloseTransferSelectedModal = () => {
+    setTransferSelectedModalOpen(false);
+    setSelectedClientsInFacility(new Set());
+    setTransferSelectedFacilities([]);
+    setTransferSelectedTargetId('');
+    setTransferSelectedError('');
+    setTransferSelectedSuccess('');
+  };
+
+  const handleConfirmTransferSelected = async () => {
+    if (selectedClientsInFacility.size === 0 || !transferSelectedTargetId) return;
+    setTransferSelectedSubmitting(true);
+    setTransferSelectedError('');
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .update({ facility_id: transferSelectedTargetId, updated_at: new Date().toISOString() })
+        .in('id', Array.from(selectedClientsInFacility));
+      if (error) throw error;
+      const count = selectedClientsInFacility.size;
+      setTransferSelectedSuccess(`${count} client${count !== 1 ? 's' : ''} transferred successfully.`);
+      const { data } = await supabase.from('clients').select('*').eq('facility_id', facilityId);
+      setClients(data || []);
+      setSelectedClientsInFacility(new Set());
+      setTimeout(handleCloseTransferSelectedModal, 1500);
+    } catch (err) {
+      console.error('Error transferring selected clients:', err);
+      setTransferSelectedError(err.message || 'Failed to transfer clients.');
+    } finally {
+      setTransferSelectedSubmitting(false);
+    }
   };
 
   const handleCreateReport = (client) => {
@@ -263,14 +450,33 @@ function FacilityPage() {
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                 <Typography variant="h6">Clients in {facility.name}</Typography>
                 {isAdmin && (
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={handleAddClient}
-                  >
-                    Add Client
-                  </Button>
+                  <Box display="flex" gap={1} alignItems="center">
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<TransferIcon />}
+                      onClick={handleOpenTransferSelectedModal}
+                      disabled={selectedClientsInFacility.size === 0}
+                    >
+                      Transfer selected {selectedClientsInFacility.size > 0 ? `(${selectedClientsInFacility.size})` : ''}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<PersonAddIcon />}
+                      onClick={handleOpenAddClientModal}
+                    >
+                      Add Client
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={<AddIcon />}
+                      onClick={handleCreateNewClient}
+                    >
+                      Create a new client
+                    </Button>
+                  </Box>
                 )}
               </Box>
               
@@ -290,10 +496,28 @@ function FacilityPage() {
                 sx={{ mb: 2 }}
               />
               
+              {isAdmin && selectedClientsInFacility.size > 0 && (
+                <Box display="flex" gap={1} alignItems="center" mb={1}>
+                  <Typography variant="body2" color="textSecondary">
+                    {selectedClientsInFacility.size} selected
+                  </Typography>
+                  <Button size="small" onClick={handleSelectAllInFacility}>Select all</Button>
+                  <Button size="small" onClick={handleDeselectAllInFacility}>Deselect all</Button>
+                </Box>
+              )}
               <TableContainer component={Paper}>
                 <Table>
                   <TableHead>
                     <TableRow>
+                      {isAdmin && (
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            indeterminate={selectedClientsInFacility.size > 0 && selectedClientsInFacility.size < filteredClients.length}
+                            checked={filteredClients.length > 0 && selectedClientsInFacility.size === filteredClients.length}
+                            onChange={(e) => e.target.checked ? handleSelectAllInFacility() : handleDeselectAllInFacility()}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>Photo</TableCell>
                       <TableCell>Name</TableCell>
                       <TableCell>Age</TableCell>
@@ -306,6 +530,14 @@ function FacilityPage() {
                     {filteredClients.length > 0 ? (
                       filteredClients.map((client) => (
                         <TableRow key={client.id} hover>
+                          {isAdmin && (
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={selectedClientsInFacility.has(client.id)}
+                                onChange={() => handleToggleClientForTransfer(client.id)}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Avatar
                               sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}
@@ -393,9 +625,9 @@ function FacilityPage() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} align="center">
+                        <TableCell colSpan={isAdmin ? 7 : 6} align="center">
                           <Typography variant="body2" color="textSecondary">
-                            {searchTerm ? 'No clients found matching your search.' : isAdmin ? 'No clients in this facility. Click "Add Client" to add the first client.' : 'No clients in this facility.'}
+                            {searchTerm ? 'No clients found matching your search.' : isAdmin ? 'No clients in this facility. Use "Add Client" to transfer clients here or "Create a new client" to add one.' : 'No clients in this facility.'}
                           </Typography>
                         </TableCell>
                       </TableRow>
@@ -407,6 +639,152 @@ function FacilityPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Add Client (transfer) Modal */}
+      <Dialog open={addClientModalOpen} onClose={handleCloseAddClientModal} maxWidth="sm" fullWidth>
+        <DialogTitle>Add Client – Transfer to facility</DialogTitle>
+        <DialogContent>
+          {transferModalLoading ? (
+            <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+              <CircularProgress size={32} />
+            </Box>
+          ) : (
+            <>
+              {transferError && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setTransferError('')}>
+                  {transferError}
+                </Alert>
+              )}
+              {transferSuccessMessage && (
+                <Alert severity="success" sx={{ mb: 2 }}>{transferSuccessMessage}</Alert>
+              )}
+              <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                Select clients to transfer, then choose the destination facility.
+              </Typography>
+              <FormControl component="fieldset" sx={{ mt: 2, mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Transfer selected clients to:</Typography>
+                <RadioGroup
+                  row
+                  value={transferTarget}
+                  onChange={(e) => setTransferTarget(e.target.value)}
+                >
+                  <FormControlLabel value="this" control={<Radio />} label={`This facility (${facility?.name || 'current'})`} />
+                  <FormControlLabel value="other" control={<Radio />} label="A different facility" />
+                </RadioGroup>
+              </FormControl>
+              {transferTarget === 'other' && (
+                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                  <InputLabel>Facility</InputLabel>
+                  <Select
+                    value={selectedTransferFacilityId}
+                    label="Facility"
+                    onChange={(e) => setSelectedTransferFacilityId(e.target.value)}
+                  >
+                    {facilitiesList.map((f) => (
+                      <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                <Typography variant="subtitle2">Clients ({allClientsForTransfer.length})</Typography>
+                <Box>
+                  <Button size="small" onClick={handleSelectAllTransfer}>Select all</Button>
+                  <Button size="small" onClick={handleDeselectAllTransfer}>Deselect all</Button>
+                </Box>
+              </Box>
+              <List dense sx={{ maxHeight: 320, overflow: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                {allClientsForTransfer.length === 0 ? (
+                  <ListItem>
+                    <ListItemText primary="No clients found." />
+                  </ListItem>
+                ) : (
+                  allClientsForTransfer.map((client) => {
+                    const facilityName = client.facilities?.name ?? (client.facility_id ? 'Unknown' : 'No facility');
+                    return (
+                      <ListItem key={client.id} disablePadding>
+                        <ListItemButton dense onClick={() => handleToggleTransferClient(client.id)}>
+                          <ListItemIcon>
+                            <Checkbox
+                              edge="start"
+                              checked={selectedTransferIds.has(client.id)}
+                              tabIndex={-1}
+                              disableRipple
+                            />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={`${client.first_name || ''} ${client.last_name || ''}`.trim() || 'Unnamed'}
+                            secondary={facilityName}
+                          />
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })
+                )}
+              </List>
+              {selectedTransferIds.size > 0 && (
+                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                  {selectedTransferIds.size} client{selectedTransferIds.size !== 1 ? 's' : ''} selected
+                </Typography>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAddClientModal}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmTransfer}
+            disabled={transferModalLoading || transferSubmitting || selectedTransferIds.size === 0 || (transferTarget === 'other' && !selectedTransferFacilityId)}
+          >
+            {transferSubmitting ? 'Transferring…' : 'Transfer selected'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Transfer selected (clients in this facility) Modal */}
+      <Dialog open={transferSelectedModalOpen} onClose={handleCloseTransferSelectedModal} maxWidth="xs" fullWidth>
+        <DialogTitle>Transfer selected clients</DialogTitle>
+        <DialogContent>
+          {transferSelectedError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setTransferSelectedError('')}>
+              {transferSelectedError}
+            </Alert>
+          )}
+          {transferSelectedSuccess && (
+            <Alert severity="success" sx={{ mb: 2 }}>{transferSelectedSuccess}</Alert>
+          )}
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Transfer {selectedClientsInFacility.size} client{selectedClientsInFacility.size !== 1 ? 's' : ''} to:
+          </Typography>
+          {transferSelectedFacilities.length === 0 ? (
+            <Typography variant="body2" color="textSecondary">No other facilities available.</Typography>
+          ) : (
+            <FormControl fullWidth size="small">
+              <InputLabel>Facility</InputLabel>
+              <Select
+                value={transferSelectedTargetId}
+                label="Facility"
+                onChange={(e) => setTransferSelectedTargetId(e.target.value)}
+              >
+                {transferSelectedFacilities.map((f) => (
+                  <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseTransferSelectedModal}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmTransferSelected}
+            disabled={transferSelectedFacilities.length === 0 || !transferSelectedTargetId || transferSelectedSubmitting}
+          >
+            {transferSelectedSubmitting ? 'Transferring…' : 'Transfer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Date Selection Modal */}
       <DateSelectionModal

@@ -37,6 +37,7 @@ import {
   Clear as ClearIcon
 } from '@mui/icons-material';
 import { useHistory } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSupabase } from '../../context/SupabaseContext';
 import { supabase } from '../../lib/supabase';
 import { geocodeAddress } from '../../utils/geocoding';
@@ -58,10 +59,23 @@ const initialFormData = {
 
 function FacilityManagement() {
   const history = useHistory();
+  const queryClient = useQueryClient();
   const { userProfile } = useSupabase();
-  const [facilities, setFacilities] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Use shared cache with Layout - facilities often already loaded for sidebar, so table shows instantly
+  const { data: facilities = [], isLoading: loading } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('facilities')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) throw new Error(`Failed to fetch facilities: ${error.message}`);
+      return (data || []).filter(f => f && f.id);
+    },
+    staleTime: 30 * 60 * 1000, // 30 minutes - match Layout so cache is shared
+  });
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState(null);
   const [isNewFacility, setIsNewFacility] = useState(false);
@@ -78,34 +92,6 @@ function FacilityManagement() {
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
-
-  // Load facilities from Supabase on component mount
-  useEffect(() => {
-    const loadFacilities = async () => {
-      try {
-        setLoading(true);
-        console.log('🔄 Loading facilities from Supabase...');
-        
-        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
-        const { data: facilitiesData, error } = await supabase
-          .from('facilities')
-          .select('*');
-        
-        if (error) {
-          throw new Error(`Failed to fetch facilities: ${error.message}`);
-        }
-        console.log('✅ Loaded facilities from Supabase:', facilitiesData);
-        setFacilities(facilitiesData || []);
-      } catch (error) {
-        console.error('💥 Error loading facilities:', error);
-        setFacilities([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadFacilities();
-  }, []);
 
   const filteredFacilities = facilities.filter(facility =>
     facility && facility.name && facility.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -174,11 +160,8 @@ function FacilityManagement() {
         throw new Error(`Failed to delete facility: ${error.message}`);
       }
       
-      // Update local state
-      setFacilities(facilities.filter(facility => facility.id !== facilityToDelete.id));
       console.log('✅ Facility deleted successfully!');
-      
-      // Trigger a custom event to refresh facilities in sidebar
+      queryClient.invalidateQueries(['facilities']);
       window.dispatchEvent(new CustomEvent('facilitiesChanged'));
       
       // Close delete dialog and show success
@@ -219,25 +202,7 @@ function FacilityManagement() {
           throw new Error(`Failed to create facility: ${error.message}`);
         }
         console.log('✅ Facility created successfully:', newFacility);
-        
-        // Add new facility to the list
-        if (newFacility) {
-          setFacilities([...facilities, newFacility]);
-        } else {
-          // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
-          // Reload all facilities from database to get the latest data
-          console.log('🔄 Reloading facilities from database...');
-          const { data: reloadedFacilities, error: reloadError } = await supabase
-            .from('facilities')
-            .select('*');
-          
-          if (!reloadError && reloadedFacilities) {
-            console.log('✅ Reloaded facilities:', reloadedFacilities);
-            setFacilities(reloadedFacilities || []);
-          }
-        }
-        
-        // Trigger a custom event to refresh facilities in sidebar
+        queryClient.invalidateQueries(['facilities']);
         window.dispatchEvent(new CustomEvent('facilitiesChanged'));
         
         // Close dialog and show success modal
@@ -278,14 +243,8 @@ function FacilityManagement() {
           console.warn('⚠️ Update succeeded but could not fetch updated facility');
         }
 
-        // Update local state with either the fetched data or the form data
-        const updatedData = updatedFacility || { ...editingFacility, ...formData };
-        setFacilities(facilities.map(facility => 
-          facility.id === editingFacility.id ? updatedData : facility
-        ));
         console.log('✅ Facility updated successfully!');
-        
-        // Trigger a custom event to refresh facilities in sidebar
+        queryClient.invalidateQueries(['facilities']);
         window.dispatchEvent(new CustomEvent('facilitiesChanged'));
         
         // Close dialog and show success modal

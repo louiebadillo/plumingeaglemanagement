@@ -52,6 +52,7 @@ import {
   PersonOutline as PersonOutlineIcon
 } from '@mui/icons-material';
 import { useParams, useHistory, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { formatDate, calculateAge } from '../../context/clientMock';
 import { useSupabase } from '../../context/SupabaseContext';
 import { parseClientSlug, createClientUrl } from '../../utils/urlUtils';
@@ -68,6 +69,7 @@ function ClientProfile() {
   const { clientSlug } = useParams();
   const history = useHistory();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [client, setClient] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -579,6 +581,7 @@ function ClientProfile() {
         }
         
         console.log('✅ Client created successfully:', newClient);
+        queryClient.invalidateQueries(['clients']);
         
         // If there's a profile photo to upload (stored temporarily), upload it now
         if (editingClient.profilePhoto && editingClient.profilePhoto.startsWith('blob:')) {
@@ -634,10 +637,15 @@ function ClientProfile() {
           allergies: editingClient.allergies,
           diagnosis: editingClient.diagnosis,
           family_doctor: editingClient.familyDoctor,
+          family_doctor_checkup: cleanDateField(editingClient.familyDoctorCheckup),
           dentist: editingClient.dentist,
+          dentist_checkup: cleanDateField(editingClient.dentistCheckup),
           optometrist: editingClient.optometrist,
+          optometrist_checkup: cleanDateField(editingClient.optometristCheckup),
           specialist: editingClient.specialist,
+          specialist_checkup: cleanDateField(editingClient.specialistCheckup),
           pediatrician: editingClient.pediatrician,
+          pediatrician_checkup: cleanDateField(editingClient.pediatricianCheckup),
           allowed_contacts: editingClient.allowedContacts || [],
           risks_and_preferences: editingClient.risksAndPreferences,
           profile_photo_url: editingClient.profilePhoto || null
@@ -659,6 +667,7 @@ function ClientProfile() {
         }
         
         console.log('✅ Client updated successfully');
+        queryClient.invalidateQueries(['clients']);
         setClient(editingClient);
         setEditDialogOpen(false);
         setSuccessMessage(`Client "${editingClient.firstName} ${editingClient.lastName}" information has been updated successfully.`);
@@ -689,6 +698,7 @@ function ClientProfile() {
 
       const clientName = `${client.firstName} ${client.lastName}`;
       const facilityId = client.facility;
+      queryClient.invalidateQueries(['clients']);
       
       // Close delete dialog and show success
     setDeleteDialogOpen(false);

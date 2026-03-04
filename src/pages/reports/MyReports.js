@@ -169,7 +169,8 @@ function MyReports() {
       return;
     }
     
-    const url = `/app/reports/daily-report?reportId=${report.id}&clientId=${report.client_id}&facility=${facilityId}&date=${report.report_date}`;
+    const returnTo = encodeURIComponent('/app/reports/my-reports');
+    const url = `/app/reports/daily-report?reportId=${report.id}&clientId=${report.client_id}&facility=${facilityId}&date=${report.report_date}&returnTo=${returnTo}`;
     console.log('🔍 Navigating to:', url, 'Report data:', report, 'Using facilityId:', facilityId);
     history.push(url);
   };
