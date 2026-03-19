@@ -718,6 +718,14 @@ function DailyReportForm() {
     }
   };
   
+  // Gate questions: must stay enabled when unanswered; otherwise isClientInFacilityForShift
+  // is false (null !== true) and every morning/afternoon/evening field—including these radios—stays disabled.
+  const CLIENT_IN_FACILITY_FLAG_FIELDS = new Set([
+    'morning_client_in_facility',
+    'afternoon_client_in_facility',
+    'evening_client_in_facility'
+  ]);
+
   // Helper to check if a field should be enabled (considering both shift availability and client in facility)
   const isFieldEnabled = (field, shift) => {
     // Admins can bypass all restrictions
@@ -738,8 +746,13 @@ function DailyReportForm() {
       return false;
     }
     
+    // "Was client in facility?" must not depend on itself — user answers this first
+    if (CLIENT_IN_FACILITY_FLAG_FIELDS.has(field)) {
+      return true;
+    }
+    
     // Then check if client is in facility for this shift
-    // If client is not in facility, disable all shift fields
+    // If client is not in facility (or not answered yet), disable questionnaire fields for that shift
     if (shift && !isClientInFacilityForShift(shift)) {
       return false;
     }
@@ -747,19 +760,30 @@ function DailyReportForm() {
     return true;
   };
 
+  /**
+   * Evening operational window: 10:00 PM – 5:59 AM (same 6 AM day boundary as getOperationalDate).
+   * During this window, employees may edit morning, afternoon, and evening sections for the current
+   * operational day's report (e.g. night staff completing or correcting earlier shifts before submit).
+   * Without this, times after midnight (hour 0–5) incorrectly lock afternoon (needs hour>=14) and evening (needs hour>=22).
+   */
+  const isEveningShiftWindow = () => {
+    const h = new Date().getHours();
+    return h >= 22 || h < 6;
+  };
+
   // Helper function to check if shift is available based on current time
   // Shift availability logic:
-  // - Morning: Always available
-  // - Afternoon: Available from 2 PM, and when available, morning is also available
-  // - Evening: Available from 10 PM, and when available, all shifts are available
+  // - Morning: Always available (daytime)
+  // - Afternoon: From 2 PM until evening window; during evening window (10 PM–6 AM) all shifts unlocked
+  // - Evening: From 10 PM; during 10 PM–6 AM all shifts unlocked for employees
   const isShiftAvailable = (shift) => {
     if (isAdmin) return true; // Admins can always edit
-    
-    const now = new Date();
-    const currentHour = now.getHours();
-    
+    if (isEveningShiftWindow()) return true;
+
+    const currentHour = new Date().getHours();
+
     if (shift === 'morning') {
-      return true; // Morning shift always available
+      return true;
     } else if (shift === 'afternoon') {
       return currentHour >= 14; // 2 PM
     } else if (shift === 'evening') {
@@ -771,7 +795,9 @@ function DailyReportForm() {
   // Helper to check if a field's shift is available (with cascading logic)
   const isFieldShiftAvailable = (field) => {
     if (isAdmin) return true;
-    
+    // Night / late shift: unlock all shift questionnaires (morning + afternoon + evening)
+    if (isEveningShiftWindow()) return true;
+
     // Determine which shift this field belongs to
     const isMorningField = !field.startsWith('afternoon_') && !field.startsWith('evening_') && 
                           field !== 'appointments' && field !== 'bir_incidents' && 
@@ -780,35 +806,29 @@ function DailyReportForm() {
     const isEveningField = field.startsWith('evening_') || 
                           field === 'appointments' || field === 'bir_incidents' || 
                           field === 'awol_incidents' || field === 'injuries';
-    
-    const now = new Date();
-    const currentHour = now.getHours();
-    
+
+    const currentHour = new Date().getHours();
+
     if (isMorningField) {
-      // Morning fields are always available
       return true;
     } else if (isAfternoonField) {
-      // Afternoon fields available from 2 PM
       return currentHour >= 14;
     } else if (isEveningField) {
-      // Evening fields available from 10 PM
-      // Note: Appointments, BIR, AWOL, Injuries are always editable (handled separately)
       if (field === 'appointments' || field === 'bir_incidents' || 
           field === 'awol_incidents' || field === 'injuries') {
-        return true; // These are always editable
+        return true;
       }
       return currentHour >= 22;
     }
-    
+
     return false;
   };
 
   // Helper function to check if evening shift has started (for submit button)
   const isEveningShiftStarted = () => {
     if (isAdmin) return true; // Admins can always submit
-    const now = new Date();
-    const currentHour = now.getHours();
-    return currentHour >= 22; // 10 PM
+    // Allow submit from 10 PM through 5:59 AM (same window as full-shift editing)
+    return isEveningShiftWindow();
   };
 
   // Helper function to check if field can be edited considering shift availability
