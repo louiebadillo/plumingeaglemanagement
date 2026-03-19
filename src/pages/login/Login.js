@@ -5,7 +5,11 @@ import {
   Grow,
   TextField as Input,
   Typography,
+  IconButton,
+  InputAdornment,
 } from '@mui/material';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { withRouter } from 'react-router-dom';
 
 // styles
@@ -44,6 +48,7 @@ function Login(props) {
   let [error, setError] = useState(null);
   let [loginValue, setLoginValue] = useState('');
   let [passwordValue, setPasswordValue] = useState('');
+  let [showPassword, setShowPassword] = useState(false);
   let [isForgot, setIsForgot] = useState(false);
 
   let isLoginFormValid = () => {
@@ -75,8 +80,12 @@ function Login(props) {
       
       if (error) {
         // Provide more helpful error messages
-        if (error.message.includes('Invalid login credentials')) {
-          setError('Invalid email or password. Please check your credentials and try again.');
+        const msg = (error.message || '').toLowerCase();
+        if (
+          msg.includes('invalid login credentials') ||
+          msg.includes('invalid_grant')
+        ) {
+          setError('Incorrect password or username.');
         } else if (error.message.includes('Email not confirmed')) {
           setError('Please confirm your email address before logging in.');
         } else {
@@ -154,13 +163,13 @@ function Login(props) {
                     </Typography>
                   </div>
                   <Grow
-                    in={error}
+                    in={!!error}
                     style={
                       !error ? { display: 'none' } : { display: 'inline-block' }
                     }
                   >
-                    <Typography className={classes.errorMessage}>
-                      Something is wrong with your login or password :(
+                    <Typography className={classes.errorMessage} component='p'>
+                      {error}
                     </Typography>
                   </Grow>
                   <Input
@@ -172,7 +181,10 @@ function Login(props) {
                       },
                     }}
                     value={loginValue}
-                    onChange={(e) => setLoginValue(e.target.value)}
+                    onChange={(e) => {
+                      setLoginValue(e.target.value);
+                      if (error) setError(null);
+                    }}
                     margin='normal'
                     placeholder='Email Address'
                     type='email'
@@ -187,12 +199,31 @@ function Login(props) {
                         underline: classes.InputUnderline,
                         input: classes.Input,
                       },
+                      endAdornment: (
+                        <InputAdornment position='end'>
+                          <IconButton
+                            aria-label={
+                              showPassword ? 'Hide password' : 'Show password'
+                            }
+                            onClick={() => setShowPassword((v) => !v)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            edge='end'
+                            size='small'
+                            disabled={isLoading}
+                          >
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
                     }}
                     value={passwordValue}
-                    onChange={(e) => setPasswordValue(e.target.value)}
+                    onChange={(e) => {
+                      setPasswordValue(e.target.value);
+                      if (error) setError(null);
+                    }}
                     margin='normal'
                     placeholder='Password'
-                    type='password'
+                    type={showPassword ? 'text' : 'password'}
                     fullWidth
                     disabled={isLoading}
                     onKeyDown={(e) => loginOnEnterKey(e)}
