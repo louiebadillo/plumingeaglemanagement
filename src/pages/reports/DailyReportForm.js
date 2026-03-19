@@ -1142,6 +1142,28 @@ function DailyReportForm() {
         ...fieldTracking
       };
 
+      // Updates must not overwrite creator; omitting avoids RLS/constraint issues on some DB setups
+      const buildUpdatePayload = () => {
+        const { created_by: _omit, ...rest } = reportData;
+        return {
+          ...rest,
+          updated_at: new Date().toISOString()
+        };
+      };
+
+      const refreshReportById = async (id) => {
+        const { data: row, error: fetchError } = await supabase
+          .from('daily_reports_v2')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        if (fetchError) {
+          console.warn('Report saved but reload failed:', fetchError);
+          return null;
+        }
+        return row;
+      };
+
       // Debug: Log the data being saved
       console.log('🔍 Saving report data:', {
         client_id: reportData.client_id,
@@ -1161,25 +1183,30 @@ function DailyReportForm() {
       
       
       // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
+      // Avoid .update().select().single() — can throw "Cannot coerce the result to a single JSON object"
       if (existingReport) {
-        // Update existing report
-        const { data, error } = await supabase
+        const updatePayload = buildUpdatePayload();
+        const { error: updateError } = await supabase
           .from('daily_reports_v2')
-          .update(reportData)
-          .eq('id', existingReport.id)
-          .select()
-          .single();
-        
-        if (error) {
-          console.error('Supabase error response:', error);
-          console.error('Request data that failed:', reportData);
-          
-          // Check for specific database schema errors
-          if (error.message && error.message.includes('Could not find the') && error.message.includes('column')) {
-            throw new Error(`Database schema error: Missing columns detected. Please run the database migration 'add-file-updated-by-columns.sql' in Supabase.`);
+          .update(updatePayload)
+          .eq('id', existingReport.id);
+
+        if (updateError) {
+          console.error('Supabase error response:', updateError);
+          console.error('Request data that failed:', updatePayload);
+
+          if (updateError.message && updateError.message.includes('Could not find') && updateError.message.includes('column')) {
+            throw new Error(
+              `${updateError.message} — Run add-daily-report-client-in-facility-columns.sql (and any other daily_reports_v2 migrations you have not applied) in the Supabase SQL Editor.`
+            );
           }
-          
-          throw new Error(`Failed to update report: ${error.message}`);
+
+          throw new Error(`Failed to update report: ${updateError.message}`);
+        }
+
+        const refreshed = await refreshReportById(existingReport.id);
+        if (refreshed) {
+          setExistingReport(refreshed);
         }
       } else {
         // Create new report
@@ -1187,9 +1214,9 @@ function DailyReportForm() {
         const { data, error } = await supabase
           .from('daily_reports_v2')
           .insert([reportData])
-          .select()
-          .single();
-        
+          .select('*')
+          .maybeSingle();
+
         if (error) {
           console.error('Supabase error response:', error);
           console.error('Request data that failed:', reportData);
@@ -1204,8 +1231,10 @@ function DailyReportForm() {
           }
           
           // Check for specific database schema errors
-          if (error.message && error.message.includes('Could not find the') && error.message.includes('column')) {
-            throw new Error(`Database schema error: Missing columns detected. Please run the database migration 'add-file-updated-by-columns.sql' in Supabase.`);
+          if (error.message && error.message.includes('Could not find') && error.message.includes('column')) {
+            throw new Error(
+              `${error.message} — Run add-daily-report-client-in-facility-columns.sql (and any other daily_reports_v2 migrations you have not applied) in the Supabase SQL Editor.`
+            );
           }
           
           // Handle 409 Conflict (duplicate report) - try to update instead
@@ -1220,21 +1249,20 @@ function DailyReportForm() {
               .maybeSingle();
             
             if (!findError && existingData) {
-              // Update the existing report
-              const { data: updatedData, error: updateError } = await supabase
+              const updatePayload = buildUpdatePayload();
+              const { error: updateError } = await supabase
                 .from('daily_reports_v2')
-                .update(reportData)
-                .eq('id', existingData.id)
-                .select()
-                .single();
-              
+                .update(updatePayload)
+                .eq('id', existingData.id);
+
               if (updateError) {
                 throw new Error(`Failed to update existing report: ${updateError.message}`);
               }
-              
-              if (updatedData) {
-                savedReport = updatedData;
-                setExistingReport(updatedData);
+
+              const refreshed = await refreshReportById(existingData.id);
+              if (refreshed) {
+                savedReport = refreshed;
+                setExistingReport(refreshed);
                 console.log('✅ Updated existing report successfully');
               }
             } else {
@@ -1246,7 +1274,20 @@ function DailyReportForm() {
         } else if (data) {
           savedReport = data;
         }
-        
+
+        // Insert may succeed but return no row under some RLS configs — fetch by natural key
+        if (!savedReport && !error) {
+          const { data: row, error: fetchInsErr } = await supabase
+            .from('daily_reports_v2')
+            .select('*')
+            .eq('client_id', reportData.client_id)
+            .eq('report_date', reportData.report_date)
+            .maybeSingle();
+          if (!fetchInsErr && row) {
+            savedReport = row;
+          }
+        }
+
         if (savedReport) {
           console.log('✅ Report saved successfully:', {
             id: savedReport.id,
