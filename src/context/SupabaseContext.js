@@ -336,9 +336,10 @@ export const SupabaseProvider = ({ children }) => {
     }
   };
 
+  // Do not toggle global `loading` here — AppContent shows a full-screen spinner when loading,
+  // which unmounts the Login page and loses inline error state on failed sign-in.
   const signIn = async (email, password) => {
     try {
-      setLoading(true);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -352,8 +353,6 @@ export const SupabaseProvider = ({ children }) => {
     } catch (error) {
       console.error('Sign in error:', error);
       return { data: null, error };
-    } finally {
-      setLoading(false);
     }
   };
 

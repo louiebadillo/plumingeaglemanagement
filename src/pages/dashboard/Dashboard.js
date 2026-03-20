@@ -27,7 +27,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Pagination
+  Pagination,
+  Stack
 } from '@mui/material';
 import {
   Create as CreateIcon,
@@ -1049,17 +1050,28 @@ function Dashboard() {
 
                 return (
                   <Grid item xs={12} sm={6} md={4} key={client.id}>
-                    <Card variant="outlined" sx={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+                    <Card
+                      variant="outlined"
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: { xs: 'column', sm: 'row' },
+                        overflow: 'hidden'
+                      }}
+                    >
                       <Box
                         sx={{
-                          width: 100,
-                          minWidth: 100,
+                          width: { xs: '100%', sm: 100 },
+                          minWidth: { sm: 100 },
+                          minHeight: { xs: 112, sm: 160 },
+                          alignSelf: { sm: 'stretch' },
                           bgcolor: 'primary.main',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           position: 'relative',
-                          overflow: 'hidden'
+                          overflow: 'hidden',
+                          flexShrink: 0
                         }}
                       >
                         {clientPhotoUrls[client.id] ? (
@@ -1087,15 +1099,25 @@ function Dashboard() {
                           </Typography>
                         )}
                       </Box>
-                      <CardContent sx={{ flex: 1, p: 2 }}>
-                        <Box mb={2}>
+                      <CardContent
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          p: 2,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          '&:last-child': { pb: 2 }
+                        }}
+                      >
+                        <Box mb={1}>
                           <Typography
                             variant="h6"
-                            sx={{ 
+                            sx={{
                               cursor: 'pointer',
                               color: 'primary.main',
                               '&:hover': { textDecoration: 'underline' },
-                              mb: 0.5
+                              mb: 0.5,
+                              wordBreak: 'break-word'
                             }}
                             onClick={() => {
                               setSelectedClientId(client.id);
@@ -1105,64 +1127,74 @@ function Dashboard() {
                             {client.first_name} {client.last_name}
                           </Typography>
                           <Typography variant="body2" color="textSecondary">
-                            Age: {calculateAge(client.date_of_birth)} • Room: {client.room || 'N/A'}
+                            Age: {calculateAge(client.date_of_birth)} • Room:{' '}
+                            {client.room || 'N/A'}
                           </Typography>
                         </Box>
 
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-                          <Box display="flex" gap={1}>
+                        <Stack spacing={1.5} sx={{ width: '100%', mt: 'auto', pt: 1 }}>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              justifyContent: 'flex-start',
+                              flexWrap: 'wrap',
+                              gap: 0.5
+                            }}
+                          >
                             <Chip
                               label={
                                 status === 'completed'
                                   ? 'Submitted'
                                   : status === 'in_progress'
-                                  ? 'In Progress'
-                                  : 'Not Started'
+                                    ? 'In Progress'
+                                    : 'Not Started'
                               }
                               color={
                                 status === 'completed'
                                   ? 'success'
                                   : status === 'in_progress'
-                                  ? 'warning'
-                                  : 'default'
+                                    ? 'warning'
+                                    : 'default'
                               }
                               size="small"
+                              sx={{ maxWidth: '100%' }}
                             />
-              </Box>
-                          <Box>
+                          </Box>
+                          <Box sx={{ width: '100%' }}>
                             {status === 'not_started' && (
                               <Button
-                                size="small"
+                                fullWidth
+                                size="medium"
                                 variant="contained"
                                 startIcon={<CreateIcon />}
                                 onClick={() => handleCreateReport(client)}
                               >
-                                Start
+                                Start report
                               </Button>
                             )}
                             {status === 'in_progress' && (
                               <Button
-                                size="small"
+                                fullWidth
+                                size="medium"
                                 variant="contained"
                                 startIcon={<EditIcon />}
                                 onClick={() => handleEditReport(client)}
                                 sx={{
-                                  backgroundColor: '#FFC107', // Yellow
-                                  color: '#000000', // Black text
+                                  backgroundColor: '#FFC107',
+                                  color: '#000000',
                                   '&:hover': {
-                                    backgroundColor: '#FFB300', // Slightly darker yellow on hover
+                                    backgroundColor: '#FFB300'
                                   }
                                 }}
                               >
-                                Continue
+                                Continue report
                               </Button>
                             )}
-                            {/* No button for completed/submitted status - only show chip */}
-            </Box>
-          </Box>
+                          </Box>
+                        </Stack>
                       </CardContent>
                     </Card>
-      </Grid>
+                  </Grid>
                 );
               })}
     </Grid>

@@ -49,6 +49,229 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { uploadFile, deleteFile, getFileUrl } from '../../utils/fileUpload';
 import { supabase } from '../../lib/supabase';
 
+/**
+ * After storage upload, attach file metadata to daily_reports_v2 so the master list can list it.
+ * (Previously only storage was updated — fetchAllFiles reads from report rows, so uploads appeared "broken".)
+ */
+async function persistUploadedFileToDailyReport({
+  clientId,
+  reportDate,
+  category,
+  fileMeta,
+  userId
+}) {
+  const { data: clientRow, error: clientErr } = await supabase
+    .from('clients')
+    .select('facility_id')
+    .eq('id', clientId)
+    .maybeSingle();
+
+  if (clientErr) {
+    throw new Error(clientErr.message || 'Could not load client');
+  }
+  if (!clientRow?.facility_id) {
+    throw new Error('Client has no facility assigned. File was uploaded to storage but cannot be linked to a report.');
+  }
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('daily_reports_v2')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('report_date', reportDate)
+    .maybeSingle();
+
+  if (fetchErr) {
+    throw new Error(fetchErr.message || 'Could not load daily report');
+  }
+
+  const buildPatch = (report) => {
+    const r = report || {};
+    switch (category) {
+      case 'general':
+        return {
+          general_files: [...(Array.isArray(r.general_files) ? r.general_files : []), fileMeta]
+        };
+      case 'bir': {
+        const bir = r.bir_incidents && typeof r.bir_incidents === 'object'
+          ? { ...r.bir_incidents }
+          : {
+              hasBIR: false,
+              incidents: [],
+              files: [],
+              remarks: '',
+              otherDescription: ''
+            };
+        bir.hasBIR = true;
+        bir.files = [...(Array.isArray(bir.files) ? bir.files : []), fileMeta];
+        bir.updatedBy = userId;
+        bir.updatedAt = new Date().toISOString();
+        return { bir_incidents: bir, bir_updated_by: userId };
+      }
+      case 'awol': {
+        const legacy = [...(Array.isArray(r.awol_files) ? r.awol_files : [])];
+        legacy.push(fileMeta);
+        let incidents = Array.isArray(r.awol_incidents) ? [...r.awol_incidents] : [];
+        if (incidents.length === 0) {
+          incidents = [{
+            id: `ml-awol-${Date.now()}`,
+            status: '',
+            remarks: 'Files uploaded from Client Masterlist',
+            files: [fileMeta],
+            updatedBy: userId,
+            updatedAt: new Date().toISOString()
+          }];
+        } else {
+          const last = { ...incidents[incidents.length - 1] };
+          last.files = [...(Array.isArray(last.files) ? last.files : []), fileMeta];
+          incidents = [...incidents.slice(0, -1), last];
+        }
+        return { awol_files: legacy, awol_incidents: incidents, awol_updated_by: userId };
+      }
+      case 'injury': {
+        const legacy = [...(Array.isArray(r.injury_files) ? r.injury_files : [])];
+        legacy.push(fileMeta);
+        let injuries = Array.isArray(r.injuries) ? [...r.injuries] : [];
+        if (injuries.length === 0) {
+          injuries = [{
+            id: `ml-inj-${Date.now()}`,
+            type: '',
+            perpetrator: '',
+            remarks: 'Files uploaded from Client Masterlist',
+            files: [fileMeta],
+            updatedBy: userId,
+            updatedAt: new Date().toISOString()
+          }];
+        } else {
+          const last = { ...injuries[injuries.length - 1] };
+          last.files = [...(Array.isArray(last.files) ? last.files : []), fileMeta];
+          injuries = [...injuries.slice(0, -1), last];
+        }
+        return { injury_files: legacy, injuries, injury_updated_by: userId };
+      }
+      case 'appointments': {
+        const appts = [...(Array.isArray(r.appointments) ? r.appointments : [])];
+        const idx = appts.findIndex(a => a && a._masterlistDocs);
+        if (idx < 0) {
+          appts.push({
+            id: `ml-appt-${Date.now()}`,
+            type: 'Masterlist documentation',
+            date: reportDate,
+            time: '',
+            provider: '',
+            _masterlistDocs: true,
+            files: [fileMeta]
+          });
+        } else {
+          const a = { ...appts[idx] };
+          a.files = [...(Array.isArray(a.files) ? a.files : []), fileMeta];
+          appts[idx] = a;
+        }
+        return { appointments: appts, appointments_updated_by: userId };
+      }
+      default:
+        throw new Error(`Unknown category: ${category}`);
+    }
+  };
+
+  const now = new Date().toISOString();
+
+  if (existing?.id) {
+    let patch = buildPatch(existing);
+    let { error: upErr } = await supabase
+      .from('daily_reports_v2')
+      .update({ ...patch, updated_at: now })
+      .eq('id', existing.id);
+
+    // general_files column may not exist on older DBs — fall back to appointments bucket
+    if (upErr && category === 'general') {
+      const msg = (upErr.message || '').toLowerCase();
+      if (msg.includes('general_files') || msg.includes('column')) {
+        const appts = [...(Array.isArray(existing.appointments) ? existing.appointments : [])];
+        appts.push({
+          id: `ml-general-fallback-${Date.now()}`,
+          type: 'General documentation',
+          date: reportDate,
+          _masterlistDocs: true,
+          _generalFallback: true,
+          files: [fileMeta]
+        });
+        ({ error: upErr } = await supabase
+          .from('daily_reports_v2')
+          .update({
+            appointments: appts,
+            appointments_updated_by: userId,
+            updated_at: now
+          })
+          .eq('id', existing.id));
+      }
+    }
+
+    if (upErr) {
+      throw new Error(upErr.message || 'Failed to link file to daily report (update).');
+    }
+    return;
+  }
+
+  // No report for this date — create a minimal draft row and attach the file
+  let patch = buildPatch(null);
+  if (category === 'general') {
+    const ins = await supabase.from('daily_reports_v2').insert([{
+      client_id: clientId,
+      facility_id: clientRow.facility_id,
+      report_date: reportDate,
+      status: 'draft',
+      created_by: userId,
+      ...patch,
+      updated_at: now
+    }]);
+    if (ins.error) {
+      const msg = (ins.error.message || '').toLowerCase();
+      if (msg.includes('general_files') || msg.includes('column')) {
+        patch = {
+          appointments: [{
+            id: `ml-general-fallback-${Date.now()}`,
+            type: 'General documentation',
+            date: reportDate,
+            _masterlistDocs: true,
+            _generalFallback: true,
+            files: [fileMeta]
+          }],
+          appointments_updated_by: userId
+        };
+        const retry = await supabase.from('daily_reports_v2').insert([{
+          client_id: clientId,
+          facility_id: clientRow.facility_id,
+          report_date: reportDate,
+          status: 'draft',
+          created_by: userId,
+          ...patch,
+          updated_at: now
+        }]);
+        if (retry.error) {
+          throw new Error(retry.error.message || 'Failed to create report row for file.');
+        }
+        return;
+      }
+      throw new Error(ins.error.message || 'Failed to create report row for file.');
+    }
+    return;
+  }
+
+  const { error: insErr } = await supabase.from('daily_reports_v2').insert([{
+    client_id: clientId,
+    facility_id: clientRow.facility_id,
+    report_date: reportDate,
+    status: 'draft',
+    created_by: userId,
+    ...patch,
+    updated_at: now
+  }]);
+
+  if (insErr) {
+    throw new Error(insErr.message || 'Failed to create report row for file.');
+  }
+}
+
 const FILE_CATEGORIES = {
   'general': { label: 'General Files', color: 'default' },
   'appointments': { label: 'Appointments', color: 'primary' },
@@ -86,12 +309,14 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
         allFiles[category] = [];
       });
       
-      // Fetch all reports for this client that contain file data
+      // Loads file metadata from daily_reports_v2 rows for this client.
+      // Includes draft saves (status = 'draft'): uploads persist on Save/auto-save before submit,
+      // so those files appear here too — not a separate "pending storage" silo.
       const { data: reports, error } = await supabase
         .from('daily_reports_v2')
-        .select('id, report_date, awol_files, injury_files, appointments, bir_incidents, status')
+        .select('*')
         .eq('client_id', clientId)
-        .not('status', 'is', null); // Only get submitted reports
+        .not('status', 'is', null);
       
       if (error) {
         console.error('Error fetching reports:', error);
@@ -148,15 +373,43 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
           })));
         }
         
-        // General files (temporarily disabled until migration is run)
-        // if (report.general_files && Array.isArray(report.general_files) && report.general_files.length > 0) {
-        //   allFiles.general.push(...report.general_files.map(file => ({
-        //     ...file,
-        //     reportId: report.id,
-        //     reportDate: report.report_date,
-        //     category: 'general'
-        //   })));
-        // }
+        // AWOL files nested in awol_incidents (current daily report format)
+        if (report.awol_incidents && Array.isArray(report.awol_incidents)) {
+          report.awol_incidents.forEach(inc => {
+            if (inc.files && Array.isArray(inc.files) && inc.files.length > 0) {
+              allFiles.awol.push(...inc.files.map(file => ({
+                ...file,
+                reportId: report.id,
+                reportDate: report.report_date,
+                category: 'awol'
+              })));
+            }
+          });
+        }
+
+        // Injury files nested in injuries array
+        if (report.injuries && Array.isArray(report.injuries)) {
+          report.injuries.forEach(inc => {
+            if (inc.files && Array.isArray(inc.files) && inc.files.length > 0) {
+              allFiles.injury.push(...inc.files.map(file => ({
+                ...file,
+                reportId: report.id,
+                reportDate: report.report_date,
+                category: 'injury'
+              })));
+            }
+          });
+        }
+
+        // General documentation (add-general-files-column.sql)
+        if (report.general_files && Array.isArray(report.general_files) && report.general_files.length > 0) {
+          allFiles.general.push(...report.general_files.map(file => ({
+            ...file,
+            reportId: report.id,
+            reportDate: report.report_date,
+            category: 'general'
+          })));
+        }
       });
       
       console.log('🔍 ClientFileManager - Processed files:', allFiles);
@@ -184,18 +437,30 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
         : new Date().toISOString().split('T')[0];
       
       const fileData = await uploadFile(file, clientId, selectedCategory, dateToUse);
-      
-      // Update local state
-      setFiles(prev => ({
-        ...prev,
-        [selectedCategory]: [...(prev[selectedCategory] || []), fileData]
-      }));
-      
+      const fileMeta = {
+        ...fileData,
+        size: file.size,
+        category: selectedCategory
+      };
+
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) {
+        throw new Error('You must be signed in to attach files to a client record.');
+      }
+
+      await persistUploadedFileToDailyReport({
+        clientId,
+        reportDate: dateToUse,
+        category: selectedCategory,
+        fileMeta,
+        userId: user.id
+      });
+
+      event.target.value = '';
       setOpenUploadDialog(false);
       setSelectedFile(null);
-      setSelectedDate(new Date()); // Reset date for next upload
-      // Refresh files list
-      fetchAllFiles();
+      setSelectedDate(new Date());
+      await fetchAllFiles();
     } catch (error) {
       console.error('File upload error:', error);
       setUploadError(`Failed to upload file: ${error.message}`);

@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Grid,
   CircularProgress,
-  Grow,
   TextField as Input,
   Typography,
   IconButton,
   InputAdornment,
+  Alert,
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
@@ -31,7 +31,7 @@ function Login(props) {
   // const tab = new URLSearchParams(props.location.search).get('tab');
 
   // global
-  const { signIn, supabase } = useSupabase();
+  const { signIn } = useSupabase();
 
   useEffect(() => {
     // Handle any URL parameters if needed
@@ -63,7 +63,7 @@ function Login(props) {
 
   const handleLogin = async () => {
     setIsLoading(true);
-    setError('');
+    setError(null);
     
     // Trim email and password to avoid whitespace issues
     const email = loginValue.trim();
@@ -83,13 +83,15 @@ function Login(props) {
         const msg = (error.message || '').toLowerCase();
         if (
           msg.includes('invalid login credentials') ||
-          msg.includes('invalid_grant')
+          msg.includes('invalid_grant') ||
+          msg.includes('email not found') ||
+          msg.includes('user not found')
         ) {
           setError('Incorrect password or username.');
-        } else if (error.message.includes('Email not confirmed')) {
+        } else if ((error.message || '').includes('Email not confirmed')) {
           setError('Please confirm your email address before logging in.');
         } else {
-          setError(error.message);
+          setError(error.message || 'Sign in failed. Please try again.');
         }
       } else {
         // Login successful, redirect to dashboard
@@ -162,16 +164,15 @@ function Login(props) {
                       Sign in to your account
                     </Typography>
                   </div>
-                  <Grow
-                    in={!!error}
-                    style={
-                      !error ? { display: 'none' } : { display: 'inline-block' }
-                    }
-                  >
-                    <Typography className={classes.errorMessage} component='p'>
+                  {error ? (
+                    <Alert
+                      severity="error"
+                      sx={{ mt: 2, mb: 1, width: '100%', alignItems: 'center' }}
+                      onClose={() => setError(null)}
+                    >
                       {error}
-                    </Typography>
-                  </Grow>
+                    </Alert>
+                  ) : null}
                   <Input
                     id='email'
                     InputProps={{
