@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 import {
   Box,
   Card,
@@ -83,6 +84,35 @@ function StaffManagement() {
     console.log('🔄 Loading state changed to:', loading);
   }, [loading]);
   const [renderKey, setRenderKey] = useState(0);
+
+  const STAFF_CREATE_DRAFT_KEY = 'staff_user_create';
+
+  // Restore new-user form draft (password never stored)
+  useEffect(() => {
+    if (!openDialog || editingStaff) return;
+    const saved = loadSessionDraft(STAFF_CREATE_DRAFT_KEY);
+    if (!saved || typeof saved !== 'object') return;
+    setFormData((prev) => ({
+      ...prev,
+      firstName: saved.firstName ?? '',
+      lastName: saved.lastName ?? '',
+      email: saved.email ?? '',
+      username: saved.username ?? '',
+      role: saved.role ?? 'employee',
+      phone: saved.phone ?? '',
+      password: ''
+    }));
+  }, [openDialog, editingStaff]);
+
+  // Persist new-user form (debounced); omit password
+  useEffect(() => {
+    if (!openDialog || editingStaff) return;
+    const t = window.setTimeout(() => {
+      const { password: _p, ...rest } = formData;
+      saveSessionDraft(STAFF_CREATE_DRAFT_KEY, { ...rest, password: '' });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [formData, openDialog, editingStaff]);
 
   // Debug: Log when staff state changes
   useEffect(() => {
@@ -600,6 +630,7 @@ function StaffManagement() {
         console.log('✅ User profile created successfully:', profileData);
 
         console.log('🎉 Staff member created successfully!');
+        clearSessionDraft(STAFF_CREATE_DRAFT_KEY);
         // Close dialog and show success modal
         setOpenDialog(false);
         setSubmitting(false);

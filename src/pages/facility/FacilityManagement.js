@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 import {
   Grid,
   Card,
@@ -89,6 +90,7 @@ function FacilityManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [facilityToDelete, setFacilityToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const facilityDraftRestoreRef = useRef(null);
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -97,6 +99,42 @@ function FacilityManagement() {
     facility && facility.name && facility.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (facility && facility.address && facility.address.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const getFacilityDraftScope = () =>
+    isNewFacility ? 'facility_create' : `facility_edit_${editingFacility?.id || ''}`;
+
+  // Restore facility + geofencing fields once per dialog open
+  useEffect(() => {
+    if (!editDialogOpen) {
+      facilityDraftRestoreRef.current = null;
+      return;
+    }
+    const scope = getFacilityDraftScope();
+    if (!scope || scope === 'facility_edit_') return;
+    if (facilityDraftRestoreRef.current === scope) return;
+    facilityDraftRestoreRef.current = scope;
+
+    const saved = loadSessionDraft(scope);
+    if (!saved || typeof saved !== 'object' || !saved.formData) return;
+
+    setFormData({
+      ...initialFormData,
+      ...saved.formData,
+      geofence_radius_meters: saved.formData.geofence_radius_meters ?? 100
+    });
+    setGeofencingAddress(typeof saved.geofencingAddress === 'string' ? saved.geofencingAddress : '');
+  }, [editDialogOpen, isNewFacility, editingFacility?.id]);
+
+  // Persist facility form + geofencing address (debounced)
+  useEffect(() => {
+    if (!editDialogOpen) return;
+    const scope = getFacilityDraftScope();
+    if (!scope || scope === 'facility_edit_') return;
+    const t = window.setTimeout(() => {
+      saveSessionDraft(scope, { formData, geofencingAddress });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [formData, geofencingAddress, editDialogOpen, isNewFacility, editingFacility?.id]);
 
   const handleEditFacility = (facility) => {
     setEditingFacility(facility);
@@ -214,6 +252,7 @@ function FacilityManagement() {
         setSubmitting(false);
         setSuccessMessage(`Facility "${formData.name}" has been created successfully.`);
         setSuccessModalOpen(true);
+        clearSessionDraft('facility_create');
       } else {
         // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
         // Update existing facility
@@ -256,6 +295,9 @@ function FacilityManagement() {
         setSubmitting(false);
         setSuccessMessage(`Facility "${formData.name}" has been updated successfully.`);
         setSuccessModalOpen(true);
+        if (editingFacility?.id) {
+          clearSessionDraft(`facility_edit_${editingFacility.id}`);
+        }
       }
     } catch (error) {
       console.error('💥 Error saving facility:', error);

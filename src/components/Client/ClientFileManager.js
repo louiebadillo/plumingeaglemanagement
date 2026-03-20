@@ -47,6 +47,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { uploadFile, deleteFile, getFileUrl } from '../../utils/fileUpload';
+import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -299,6 +300,37 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
     }
   }, [clientId]);
 
+  const clientFilesUploadDraftKey = clientId ? `client_files_upload_${clientId}` : '';
+
+  // Restore upload dialog: category + report date
+  useEffect(() => {
+    if (!openUploadDialog || !clientFilesUploadDraftKey) return;
+    const saved = loadSessionDraft(clientFilesUploadDraftKey);
+    if (!saved || typeof saved !== 'object') return;
+    if (saved.selectedCategory && FILE_CATEGORIES[saved.selectedCategory]) {
+      setSelectedCategory(saved.selectedCategory);
+    }
+    if (saved.selectedDateIso) {
+      const d = new Date(saved.selectedDateIso);
+      if (!isNaN(d.getTime())) setSelectedDate(d);
+    }
+  }, [openUploadDialog, clientFilesUploadDraftKey]);
+
+  useEffect(() => {
+    if (!openUploadDialog || !clientFilesUploadDraftKey) return;
+    const t = window.setTimeout(() => {
+      const iso =
+        selectedDate instanceof Date && !isNaN(selectedDate.getTime())
+          ? selectedDate.toISOString()
+          : new Date().toISOString();
+      saveSessionDraft(clientFilesUploadDraftKey, {
+        selectedCategory,
+        selectedDateIso: iso
+      });
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [selectedCategory, selectedDate, openUploadDialog, clientFilesUploadDraftKey]);
+
   const fetchAllFiles = async () => {
     try {
       setLoading(true);
@@ -455,6 +487,8 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
         fileMeta,
         userId: user.id
       });
+
+      if (clientFilesUploadDraftKey) clearSessionDraft(clientFilesUploadDraftKey);
 
       event.target.value = '';
       setOpenUploadDialog(false);
@@ -861,12 +895,12 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
                   <input
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                     style={{ display: 'none' }}
-                    id="file-upload"
+                    id={`client-masterlist-file-upload-${clientId || 'unknown'}`}
                     type="file"
                     onChange={handleFileUpload}
                     disabled={uploading}
                   />
-                  <label htmlFor="file-upload">
+                  <label htmlFor={`client-masterlist-file-upload-${clientId || 'unknown'}`}>
                     <Button
                       variant="outlined"
                       component="span"
