@@ -89,26 +89,46 @@ export const SupabaseProvider = ({ children }) => {
         return;
       }
       
-      // Handle SIGNED_OUT event explicitly
-      if (event === 'SIGNED_OUT' || !session) {
+      // Always trust explicit sign-out from the auth server
+      if (event === 'SIGNED_OUT') {
         isLoggingOutRef.current = false; // Reset logout flag
         setUser(null);
         setUserProfile(null);
         setLoading(false);
-        // Clear any remaining storage
         localStorage.removeItem('devUser');
         localStorage.removeItem('devUserProfile');
         return;
       }
-      
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchUserProfile(session.user.id, session.user.email);
-      } else {
-        console.log('🔄 No session, clearing profile');
-        setUserProfile(null);
-        setLoading(false);
+
+      // Session can be briefly null during edge cases (tab resume, refresh races).
+      // Wiping user on "!session" alone caused blank / logged-out flashes. Confirm with getSession().
+      if (!session?.user) {
+        try {
+          const { data: { session: verified }, error: verifyErr } = await supabase.auth.getSession();
+          if (!mounted) return;
+          if (verifyErr) {
+            console.warn('Auth session verify error:', verifyErr);
+          }
+          if (!verified?.user) {
+            isLoggingOutRef.current = false;
+            setUser(null);
+            setUserProfile(null);
+            setLoading(false);
+            localStorage.removeItem('devUser');
+            localStorage.removeItem('devUserProfile');
+          } else {
+            setUser(verified.user);
+            await fetchUserProfile(verified.user.id, verified.user.email);
+          }
+        } catch (e) {
+          console.error('Auth session recovery failed:', e);
+          if (mounted) setLoading(false);
+        }
+        return;
       }
+
+      setUser(session.user);
+      await fetchUserProfile(session.user.id, session.user.email);
     });
 
     return () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -87,6 +87,11 @@ function ClientProfile() {
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+
+  /** Prevents re-running "new client" empty template init when the effect fires again with the same URL (e.g. tab focus). */
+  const newClientDraftKeyRef = useRef(null);
+  /** Ignores stale Supabase responses so async completion after a re-run does not wipe in-progress edits. */
+  const existingClientLoadGenRef = useRef(0);
   
   const { userProfile } = useSupabase();
   const userRole = userProfile?.role || 'employee';
@@ -174,6 +179,10 @@ function ClientProfile() {
                                  currentPath.endsWith('/client/new') || 
                                  clientSlug === 'new' || 
                                  !clientSlug;
+
+    if (!isCreatingNewClient) {
+      newClientDraftKeyRef.current = null;
+    }
     
     if (isCreatingNewClient) {
       console.log('✅ Creating new client - pathname:', currentPath, 'clientSlug:', clientSlug);
@@ -203,6 +212,14 @@ function ClientProfile() {
       if (facilityParam) {
         loadFacilityInfo(facilityParam);
       }
+
+      const draftKey = `${currentPath}|${facilityParam || ''}`;
+      if (newClientDraftKeyRef.current === draftKey) {
+        // Already initialized this draft; keep local form state
+        return;
+      }
+      newClientDraftKeyRef.current = draftKey;
+
       // Initialize empty client for new client creation
       const newClient = {
         id: null,
@@ -296,6 +313,7 @@ function ClientProfile() {
     
     if (shouldLoadExistingClient) {
       console.log('📂 Loading existing client:', clientSlug);
+      const loadGeneration = ++existingClientLoadGenRef.current;
       // Load existing client from Supabase
       const loadClient = async () => {
         try {
@@ -313,6 +331,8 @@ function ClientProfile() {
               .select('*')
               .eq('id', clientSlug)
               .maybeSingle();
+
+            if (loadGeneration !== existingClientLoadGenRef.current) return;
             
             if (error) {
               throw new Error(`Failed to fetch client: ${error.message}`);
@@ -342,6 +362,8 @@ function ClientProfile() {
               .eq('first_name', firstName)
               .eq('last_name', lastName)
               .maybeSingle();
+
+            if (loadGeneration !== existingClientLoadGenRef.current) return;
             
             if (error) {
               throw new Error(`Failed to fetch client: ${error.message}`);
@@ -357,6 +379,8 @@ function ClientProfile() {
               supabaseClient = foundClient;
             }
           }
+
+          if (loadGeneration !== existingClientLoadGenRef.current) return;
           
           if (supabaseClient) {
             
@@ -444,6 +468,8 @@ function ClientProfile() {
               lastUpdated: supabaseClient.updated_at
             };
             
+            if (loadGeneration !== existingClientLoadGenRef.current) return;
+
             setClient(transformedClient);
             setEditingClient(transformedClient);
             
@@ -451,6 +477,7 @@ function ClientProfile() {
             if (supabaseClient.profile_photo_url) {
               try {
                 const signedUrl = await getProfilePhotoUrl(supabaseClient.profile_photo_url, 3600);
+                if (loadGeneration !== existingClientLoadGenRef.current) return;
                 setProfilePhotoUrl(signedUrl);
               } catch (error) {
                 console.error('Error loading profile photo URL:', error);
@@ -458,6 +485,7 @@ function ClientProfile() {
             }
           } else {
             // Only redirect if we're not trying to create a new client
+            if (loadGeneration !== existingClientLoadGenRef.current) return;
             if (clientSlug !== 'new' && !isNewClient) {
             // Redirect to facility management if client not found
             history.push('/app/facility/management');
@@ -465,6 +493,7 @@ function ClientProfile() {
           }
         } catch (error) {
           console.error('💥 Error loading client from Supabase:', error);
+          if (loadGeneration !== existingClientLoadGenRef.current) return;
           // Only redirect if we're not trying to create a new client
           if (clientSlug !== 'new' && !isNewClient) {
           // Redirect to facility management on error

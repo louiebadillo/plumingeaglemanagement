@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Card,
@@ -187,25 +187,35 @@ function DailyReportForm() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [existingReport, setExistingReport] = useState(null);
+
+  /** Bumps when client/date/reportId change; stale async loads must not overwrite in-progress forms (e.g. after alt-tab). */
+  const dataLoadGenerationRef = useRef(0);
   
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
   const currentUserId = userProfile?.id;
 
-  // Load client and facility data
+  // Load client, facility, and existing report once per URL identity — ignore stale async completions (tab switch / slow network)
   useEffect(() => {
-    if (clientId) {
-      loadClientAndFacility();
-    }
-  }, [clientId, facilityId]);
+    if (!clientId) return;
 
-  // Load existing report if it exists
-  useEffect(() => {
-    if (clientId && effectiveReportDate) {
-      loadClientAndFacility();
-      loadExistingReport();
-    }
-  }, [clientId, effectiveReportDate, location.search]);
+    const gen = ++dataLoadGenerationRef.current;
+
+    (async () => {
+      setLoading(true);
+      try {
+        await loadClientAndFacility(gen);
+        if (gen !== dataLoadGenerationRef.current) return;
+        if (effectiveReportDate) {
+          await loadExistingReport(gen);
+        }
+      } finally {
+        if (gen === dataLoadGenerationRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+  }, [clientId, facilityId, effectiveReportDate, reportId]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
@@ -246,9 +256,8 @@ function DailyReportForm() {
     }
   }, [client?.facility_id, facility]);
 
-  const loadClientAndFacility = async () => {
+  const loadClientAndFacility = async (loadGeneration) => {
     try {
-      setLoading(true);
       // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
       // Load client with facility information
       const { data: clientData, error: clientError } = await supabase
@@ -256,6 +265,8 @@ function DailyReportForm() {
         .select('*, facilities(*)')
         .eq('id', clientId)
         .maybeSingle();
+
+      if (loadGeneration !== dataLoadGenerationRef.current) return;
       
       if (clientError) {
         console.error('Error loading client:', clientError);
@@ -307,6 +318,8 @@ function DailyReportForm() {
             .select('*')
             .eq('id', client.facility_id)
             .maybeSingle();
+
+          if (loadGeneration !== dataLoadGenerationRef.current) return;
           
           if (!facilityError && facilityData) {
             setFacility(facilityData);
@@ -331,6 +344,7 @@ function DailyReportForm() {
             } catch (error) {
               console.error('❌ Failed to update report facility_id:', error);
             }
+            if (loadGeneration !== dataLoadGenerationRef.current) return;
           }
         } else {
           console.error('❌ CRITICAL: No facility_id available from URL or client. RLS will block insert!');
@@ -345,6 +359,8 @@ function DailyReportForm() {
           .select('*')
           .eq('id', facilityId)
           .maybeSingle();
+
+        if (loadGeneration !== dataLoadGenerationRef.current) return;
         
         if (!facilityError && facilityData) {
           setFacility(facilityData);
@@ -357,6 +373,8 @@ function DailyReportForm() {
               .select('*')
               .eq('id', client.facility_id)
               .maybeSingle();
+
+            if (loadGeneration !== dataLoadGenerationRef.current) return;
             
             if (!fallbackError && fallbackFacilityData) {
               setFacility(fallbackFacilityData);
@@ -368,13 +386,15 @@ function DailyReportForm() {
       }
     } catch (error) {
       console.error('Error loading client and facility:', error);
-      setError('Failed to load client and facility data');
-    } finally {
-      setLoading(false);
+      if (loadGeneration === dataLoadGenerationRef.current) {
+        setError('Failed to load client and facility data');
+      }
     }
   };
 
-  const loadExistingReport = async () => {
+  const loadExistingReport = async (loadGeneration) => {
+    const stale = () => loadGeneration !== dataLoadGenerationRef.current;
+
     try {
       const dateToUse = effectiveReportDate;
       console.log('🔍 Loading existing report for:', { clientId, dateToUse });
@@ -383,6 +403,7 @@ function DailyReportForm() {
       // Validate dateToUse is present and valid
       if (!dateToUse) {
         console.log('⚠️ No reportDate in URL - starting with empty form');
+        if (stale()) return;
         setExistingReport(null);
         setFormData(initialFormData);
         setFieldTracking(initialFieldTracking);
@@ -397,6 +418,8 @@ function DailyReportForm() {
         .select('*')
         .eq('client_id', clientId)
         .eq('report_date', dateToUse);
+
+      if (stale()) return;
       
       if (reportsError) {
         console.error('❌ Error fetching existing report:', reportsError);
@@ -421,6 +444,7 @@ function DailyReportForm() {
         if (!matchingReport) {
           console.log('⚠️ No report found with exact date match. URL date:', dateToUse, 'Found dates:', reports.map(r => r.report_date));
           console.log('⚠️ Starting with empty form for new report');
+          if (stale()) return;
           setExistingReport(null);
           setFormData(initialFormData);
           setFieldTracking(initialFieldTracking);
@@ -436,6 +460,7 @@ function DailyReportForm() {
         if (normalizedReportDate !== dateToUse) {
           console.log('⚠️ Report date mismatch after find! URL date:', dateToUse, 'Report date (normalized):', normalizedReportDate, 'Report date (raw):', report.report_date);
           console.log('⚠️ Not loading this report - dates do not match. Starting with empty form.');
+          if (stale()) return;
           setExistingReport(null);
           setFormData(initialFormData);
           setFieldTracking(initialFieldTracking);
@@ -445,6 +470,7 @@ function DailyReportForm() {
         // Only set as existing report if it's not a null_report
         // null_reports should not block new report creation
         if (report.status !== 'null_report') {
+            if (stale()) return;
             console.log('✅ Setting existing report with matching date:', {
               reportDate: report.report_date,
               normalizedReportDate: normalizedReportDate,
@@ -573,6 +599,7 @@ function DailyReportForm() {
         } else {
           // Found null_report - ignore it and allow new report creation
           console.log('🔍 Found null_report, ignoring for form loading');
+          if (stale()) return;
           setExistingReport(null);
           setFormData(initialFormData);
           setFieldTracking(initialFieldTracking);
@@ -580,17 +607,17 @@ function DailyReportForm() {
       } else {
         // No reports found for this date - start with empty form
         console.log('🔍 No existing reports found for date:', dateToUse);
+        if (stale()) return;
         setExistingReport(null);
         setFormData(initialFormData);
         setFieldTracking(initialFieldTracking);
       }
     } catch (error) {
       console.error('Error loading existing report:', error);
+      if (stale()) return;
       setExistingReport(null);
       setFormData(initialFormData);
       setFieldTracking(initialFieldTracking);
-    } finally {
-      setLoading(false);
     }
   };
 
