@@ -65,6 +65,49 @@ import { uploadProfilePhoto, deleteProfilePhoto, getProfilePhotoUrl } from '../.
 import ImageCropDialog from '../../components/ImageCrop/ImageCropDialog';
 import { blobToFile } from '../../utils/imageUtils';
 
+const NEW_CLIENT_DRAFT_STORAGE_PREFIX = 'pem_new_client_draft_v1::';
+
+function newClientDraftStorageKey(pathname, facilityId) {
+  return `${NEW_CLIENT_DRAFT_STORAGE_PREFIX}${pathname}::${facilityId || ''}`;
+}
+
+function readNewClientDraft(pathname, facilityId) {
+  if (!facilityId) return null;
+  try {
+    const raw = sessionStorage.getItem(newClientDraftStorageKey(pathname, facilityId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.id !== null) return null;
+    if (String(parsed.facility || '') !== String(facilityId)) return null;
+    return parsed;
+  } catch (e) {
+    console.warn('Could not read new client draft:', e);
+    return null;
+  }
+}
+
+function writeNewClientDraft(pathname, facilityId, draft) {
+  if (!facilityId || !draft) return;
+  try {
+    sessionStorage.setItem(
+      newClientDraftStorageKey(pathname, facilityId),
+      JSON.stringify(draft)
+    );
+  } catch (e) {
+    console.warn('Could not save new client draft:', e);
+  }
+}
+
+function clearNewClientDraft(pathname, facilityId) {
+  if (!facilityId) return;
+  try {
+    sessionStorage.removeItem(newClientDraftStorageKey(pathname, facilityId));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 function ClientProfile() {
   const { clientSlug } = useParams();
   const history = useHistory();
@@ -214,8 +257,21 @@ function ClientProfile() {
       }
 
       const draftKey = `${currentPath}|${facilityParam || ''}`;
+
+      // Restore from sessionStorage first (survives tab switches / full remount where refs reset)
+      if (facilityParam) {
+        const stored = readNewClientDraft(currentPath, facilityParam);
+        if (stored) {
+          setClient(stored);
+          setEditingClient(stored);
+          newClientDraftKeyRef.current = draftKey;
+          setTimeout(() => setEditDialogOpen(true), 100);
+          return;
+        }
+      }
+
       if (newClientDraftKeyRef.current === draftKey) {
-        // Already initialized this draft; keep local form state
+        // Already initialized this draft in-memory; keep local form state
         return;
       }
       newClientDraftKeyRef.current = draftKey;
@@ -296,6 +352,9 @@ function ClientProfile() {
       // Set client and editing client immediately
       setClient(newClient);
       setEditingClient(newClient);
+      if (facilityParam) {
+        writeNewClientDraft(currentPath, facilityParam, newClient);
+      }
       // Open edit dialog immediately for new client
       setTimeout(() => {
         setEditDialogOpen(true);
@@ -506,6 +565,22 @@ function ClientProfile() {
     }
   }, [clientSlug, history, isNewClient, location.search]);
 
+  // Persist unsaved new-client form to sessionStorage (debounced) so tab changes / remounts don't lose work
+  useEffect(() => {
+    if (!isNewClient) return;
+    const path = location.pathname;
+    if (path !== '/app/client/new' && !path.endsWith('/client/new')) return;
+    const params = new URLSearchParams(location.search);
+    const fac = params.get('facility');
+    if (!fac) return;
+    if (!client || client.id !== null) return;
+
+    const t = window.setTimeout(() => {
+      writeNewClientDraft(path, fac, editingClient);
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [editingClient, client, isNewClient, location.pathname, location.search]);
+
   // Handle tab parameter to scroll to files section
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -611,6 +686,9 @@ function ClientProfile() {
         
         console.log('✅ Client created successfully:', newClient);
         queryClient.invalidateQueries(['clients']);
+
+        clearNewClientDraft(window.location.pathname, facilityFromUrl || editingClient.facility);
+        newClientDraftKeyRef.current = null;
         
         // If there's a profile photo to upload (stored temporarily), upload it now
         if (editingClient.profilePhoto && editingClient.profilePhoto.startsWith('blob:')) {
