@@ -48,6 +48,41 @@ import { useHistory } from 'react-router-dom';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { getProfilePhotoUrl } from '../../utils/fileUpload';
+import { calculateAge } from '../../utils/dateHelpers';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
+
+/** Lowercase canonical status for DB/UI (handles casing/whitespace from API). */
+function normalizeClientStatus(raw) {
+  if (raw == null || raw === '') return 'active';
+  const s = String(raw).toLowerCase().trim();
+  if (s === 'active' || s === 'inactive' || s === 'discharged') return s;
+  return s;
+}
+
+function buildClientTablePayload(form) {
+  return {
+    first_name: form.first_name,
+    last_name: form.last_name,
+    date_of_birth: form.date_of_birth || null,
+    gender: form.gender || null,
+    client_id_no: form.client_id_no || null,
+    band_no: form.band_no || null,
+    facility_id: form.facility_id || null,
+    room: form.room || null,
+    phone: form.phone || null,
+    email: form.email || null,
+    address: form.address || null,
+    status: normalizeClientStatus(form.status) || 'active',
+    medical_notes: form.medical_notes || null,
+    dietary_restrictions: form.dietary_restrictions || null,
+    activity_preferences: form.activity_preferences || null,
+    other_preferences: form.other_preferences || null,
+    emergency_contact_name: form.emergency_contact_name || null,
+    emergency_contact_relationship: form.emergency_contact_relationship || null,
+    emergency_contact_phone: form.emergency_contact_phone || null,
+    emergency_contact_email: form.emergency_contact_email || null,
+  };
+}
 
 function ClientMasterlist() {
   const { userProfile } = useSupabase();
@@ -141,9 +176,9 @@ function ClientMasterlist() {
   const clients = useMemo(() => {
     if (!clientsData) return [];
     
-    let filtered = clientsData.map(client => ({
+    let filtered = clientsData.map((client) => ({
       ...client,
-      status: client.status || 'active' // Normalize null status to 'active' for display
+      status: normalizeClientStatus(client.status),
     }));
     
     // Apply search filter (name, address)
@@ -268,18 +303,6 @@ function ClientMasterlist() {
   const facilities = facilitiesData || [];
   const loading = clientsLoading || facilitiesLoading;
 
-  const calculateAge = (dateOfBirth) => {
-    if (!dateOfBirth) return 'N/A';
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
   const handleAddClient = () => {
     // Navigate to the comprehensive client creation form
     // The form will show a facility selection questionnaire first
@@ -297,17 +320,17 @@ function ClientMasterlist() {
       band_no: client.band_no || '',
       facility_id: client.facility_id,
       room: client.room,
-      phone: client.phone,
+      phone: formatNorthAmericanPhoneInput(client.phone || ''),
       email: client.email,
       address: client.address,
-      status: client.status || 'active',
+      status: normalizeClientStatus(client.status),
       medical_notes: client.medical_notes,
       dietary_restrictions: client.dietary_restrictions,
       activity_preferences: client.activity_preferences,
       other_preferences: client.other_preferences,
       emergency_contact_name: client.emergency_contact_name,
       emergency_contact_relationship: client.emergency_contact_relationship,
-      emergency_contact_phone: client.emergency_contact_phone,
+      emergency_contact_phone: formatNorthAmericanPhoneInput(client.emergency_contact_phone || ''),
       emergency_contact_email: client.emergency_contact_email
     });
     setOpenDialog(true);
@@ -315,26 +338,51 @@ function ClientMasterlist() {
 
   const handleSaveClient = async () => {
     try {
+      const payload = buildClientTablePayload(clientForm);
+
       if (editingClient) {
-        // Update existing client
-        const { error } = await supabase
+        const { data: updatedRow, error } = await supabase
           .from('clients')
-          .update(clientForm)
-          .eq('id', editingClient.id);
+          .update(payload)
+          .eq('id', editingClient.id)
+          .select()
+          .maybeSingle();
 
         if (error) throw error;
+
+        queryClient.setQueryData(['clients'], (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map((c) =>
+            c.id === editingClient.id
+              ? {
+                  ...c,
+                  ...payload,
+                  ...(updatedRow || {}),
+                  facilities: c.facilities,
+                  status: normalizeClientStatus(
+                    updatedRow?.status ?? payload.status
+                  ),
+                }
+              : c
+          );
+        });
       } else {
-        // Create new client
-        const { error } = await supabase
+        const { data: insertedRows, error } = await supabase
           .from('clients')
-          .insert([clientForm]);
+          .insert([payload])
+          .select();
 
         if (error) throw error;
+        if (insertedRows?.length) {
+          queryClient.setQueryData(['clients'], (old) => {
+            const list = Array.isArray(old) ? old : [];
+            return [...insertedRows.map((row) => ({ ...row, status: normalizeClientStatus(row.status) })), ...list];
+          });
+        }
       }
 
       setOpenDialog(false);
-      // ✅ FIX #4: Invalidate cache to refetch fresh data
-      queryClient.invalidateQueries(['clients']);
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
       setSuccessMessage(`Client has been ${editingClient ? 'updated' : 'created'} successfully.`);
       setSuccessModalOpen(true);
     } catch (err) {
@@ -368,8 +416,7 @@ function ClientMasterlist() {
       setSuccessMessage(`Client "${clientName}" has been deleted successfully.`);
       setSuccessModalOpen(true);
       
-      // ✅ FIX #4: Invalidate cache to refetch fresh data
-      queryClient.invalidateQueries(['clients']);
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
     } catch (err) {
       console.error('Error deleting client:', err);
       setError(err.message);
@@ -408,8 +455,7 @@ function ClientMasterlist() {
 
       const clientName = `${transferringClient.first_name} ${transferringClient.last_name}`;
       
-      // ✅ FIX: Invalidate cache to refetch fresh data (using React Query)
-      queryClient.invalidateQueries(['clients']);
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
       
       setOpenTransferDialog(false);
       setTransferringClient(null);
@@ -423,11 +469,24 @@ function ClientMasterlist() {
 
 
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'active': return 'success';
-      case 'discharged': return 'warning';
-      default: return 'success'; // Default to active
+    switch (normalizeClientStatus(status)) {
+      case 'active':
+        return 'success';
+      case 'discharged':
+        return 'warning';
+      case 'inactive':
+        return 'default';
+      default:
+        return 'default';
     }
+  };
+
+  const getStatusChipLabel = (status) => {
+    const n = normalizeClientStatus(status);
+    if (n === 'active') return 'Active';
+    if (n === 'discharged') return 'Discharged';
+    if (n === 'inactive') return 'Inactive';
+    return status ? String(status) : 'Active';
   };
 
   const getGenderIcon = (gender) => {
@@ -607,8 +666,8 @@ function ClientMasterlist() {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={client.status === 'active' ? 'Active' : client.status === 'discharged' ? 'Discharged' : 'Active'}
-                        color={getStatusColor(client.status || 'active')}
+                        label={getStatusChipLabel(client.status)}
+                        color={getStatusColor(client.status)}
                         size="small"
                       />
                     </TableCell>
@@ -771,8 +830,15 @@ function ClientMasterlist() {
                 <TextField
                   fullWidth
                   label="Phone"
+                  type="tel"
+                  placeholder="000-000-0000"
                   value={clientForm.phone}
-                  onChange={(e) => setClientForm(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) =>
+                    setClientForm((prev) => ({
+                      ...prev,
+                      phone: formatNorthAmericanPhoneInput(e.target.value),
+                    }))
+                  }
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -819,8 +885,15 @@ function ClientMasterlist() {
                 <TextField
                   fullWidth
                   label="Emergency Contact Phone"
+                  type="tel"
+                  placeholder="000-000-0000"
                   value={clientForm.emergency_contact_phone}
-                  onChange={(e) => setClientForm(prev => ({ ...prev, emergency_contact_phone: e.target.value }))}
+                  onChange={(e) =>
+                    setClientForm((prev) => ({
+                      ...prev,
+                      emergency_contact_phone: formatNorthAmericanPhoneInput(e.target.value),
+                    }))
+                  }
                 />
               </Grid>
               <Grid item xs={12}>

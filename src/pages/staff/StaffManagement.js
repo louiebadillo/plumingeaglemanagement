@@ -44,8 +44,42 @@ import { supabaseAdmin } from '../../lib/supabaseAdmin';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 
 // Staff data is now loaded from Supabase
+
+/** Supabase stores emails lowercased; match case-insensitively. */
+function normalizeAuthEmail(email) {
+  return (email || '').trim().toLowerCase();
+}
+
+/** Auth requires an email-shaped identifier; company may use non-routable domains (e.g. name@staff.pel.local). */
+function isStaffLoginEmailFormat(value) {
+  const s = normalizeAuthEmail(value);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+/**
+ * listUsers() is paginated; default first page misses accounts on later pages.
+ * Scan pages until we find the email or run out (fixes "already registered" recovery).
+ */
+async function findAuthUserByEmail(admin, email) {
+  const target = normalizeAuthEmail(email);
+  let page = 1;
+  const perPage = 200;
+  const maxPages = 50;
+
+  while (page <= maxPages) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) return { user: null, error };
+    const list = data?.users ?? [];
+    const found = list.find((u) => normalizeAuthEmail(u.email) === target);
+    if (found) return { user: found, error: null };
+    if (list.length < perPage) break;
+    page += 1;
+  }
+  return { user: null, error: null };
+}
 
 function StaffManagement() {
   const [staff, setStaff] = useState([]);
@@ -99,7 +133,7 @@ function StaffManagement() {
       email: saved.email ?? '',
       username: saved.username ?? '',
       role: saved.role ?? 'employee',
-      phone: saved.phone ?? '',
+      phone: formatNorthAmericanPhoneInput(saved.phone ?? ''),
       password: ''
     }));
   }, [openDialog, editingStaff]);
@@ -163,6 +197,7 @@ function StaffManagement() {
                  firstName: user.first_name || '',
                  lastName: user.last_name || '',
                  email: user.email,
+                 username: user.username || '',
                  role: user.role,
                  phone: user.phone || '',
                  password: '***' // Don't show actual passwords
@@ -200,7 +235,8 @@ function StaffManagement() {
     const fullName = `${member.firstName || ''} ${member.lastName || ''}`.toLowerCase();
     const matchesSearch = searchTerm === '' || 
                          fullName.includes(searchTerm.toLowerCase()) ||
-                         (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+                         (member.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (member.username || '').toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesRole = roleFilter === 'all' || member.role === roleFilter;
     
@@ -229,9 +265,10 @@ function StaffManagement() {
       firstName: staffMember.firstName,
       lastName: staffMember.lastName,
       email: staffMember.email,
+      username: staffMember.username || '',
       password: '', // Don't show existing password
       role: staffMember.role,
-      phone: staffMember.phone
+      phone: formatNorthAmericanPhoneInput(staffMember.phone || '')
     });
     setOpenDialog(true);
   };
@@ -359,6 +396,7 @@ function StaffManagement() {
           firstName: user.first_name || '',
           lastName: user.last_name || '',
           email: user.email,
+          username: user.username || '',
           role: user.role,
           phone: user.phone || '',
           password: '***'
@@ -401,7 +439,13 @@ function StaffManagement() {
         return;
       }
       if (!formData.email.trim()) {
-        alert('Please enter an email address');
+        alert('Please enter a login email address');
+        return;
+      }
+      if (!isStaffLoginEmailFormat(formData.email)) {
+        alert(
+          'Use a login address with @ and a domain (e.g. jane.doe@staff.pel.local). No real inbox is required.'
+        );
         return;
       }
       if (!formData.password || !formData.password.trim()) {
@@ -440,10 +484,13 @@ function StaffManagement() {
         const updateUrl = `${supabaseUrl}/rest/v1/users?id=eq.${editingStaff.id}`;
         console.log('🌐 Update URL:', updateUrl);
         
+        const normalizedUsername = (formData.username || '').trim().toLowerCase() || null;
+        const loginEmail = normalizeAuthEmail(formData.email);
         const requestBody = {
           first_name: formData.firstName,
           last_name: formData.lastName,
-          email: formData.email,
+          email: loginEmail,
+          username: normalizedUsername,
           phone: formData.phone,
           role: formData.role
         };
@@ -472,6 +519,21 @@ function StaffManagement() {
         const updateData = await response.json();
         console.log('📥 Response data:', updateData);
         console.log('✅ Staff member updated in Supabase successfully!', updateData);
+
+        const newLoginEmail = normalizeAuthEmail(formData.email);
+        const prevLoginEmail = normalizeAuthEmail(editingStaff.email);
+        if (newLoginEmail !== prevLoginEmail) {
+          const { error: authEmailErr } = await supabaseAdmin.auth.admin.updateUserById(
+            editingStaff.id,
+            { email: newLoginEmail }
+          );
+          if (authEmailErr) {
+            console.error('❌ Auth email sync failed:', authEmailErr);
+            alert(
+              `Profile saved, but the login email could not be updated in authentication: ${authEmailErr.message}`
+            );
+          }
+        }
         
         // Update local state immediately
         console.log('🔍 Current staff state:', staff);
@@ -485,7 +547,8 @@ function StaffManagement() {
                 ...member, 
                 firstName: formData.firstName,
                 lastName: formData.lastName,
-                email: formData.email,
+                email: normalizeAuthEmail(formData.email),
+                username: (formData.username || '').trim().toLowerCase() || '',
                 phone: formData.phone,
                 role: formData.role,
                 password: formData.password || member.password // Keep existing password if not changed
@@ -522,6 +585,7 @@ function StaffManagement() {
             firstName: user.first_name || '',
             lastName: user.last_name || '',
             email: user.email,
+            username: user.username || '',
             role: user.role,
             phone: user.phone || '',
             password: '***'
@@ -540,7 +604,8 @@ function StaffManagement() {
         console.log('📦 Using SupabaseAdmin (already imported)');
         
         // Try to create user with Supabase Admin API
-        console.log('👤 Creating auth user with email:', formData.email);
+        const loginEmail = normalizeAuthEmail(formData.email);
+        console.log('👤 Creating auth user with login email:', loginEmail);
         
         // Ensure password is provided and valid (validation should have caught this, but double-check)
         const password = formData.password?.trim();
@@ -551,8 +616,9 @@ function StaffManagement() {
         }
         
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: formData.email.trim(),
+          email: loginEmail,
           password: password,
+          // Mark confirmed at creation — no inbox or confirmation link required (use with staff-only domains).
           email_confirm: true,
           user_metadata: {
             first_name: formData.firstName || '',
@@ -566,27 +632,23 @@ function StaffManagement() {
         if (authError) {
           if (authError.message.includes('already been registered')) {
             console.log('⚠️ User already exists in auth, attempting to create profile only');
-            // User exists in auth but not in public.users, try to find their ID
-            try {
-              const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-              if (listError) {
-                console.error('❌ Failed to list users:', listError);
-                alert('A user with this email already exists. Please use a different email address.');
-                return;
-              }
-              
-              const existingUser = existingUsers.users.find(u => u.email === formData.email);
-              if (existingUser) {
-                console.log('✅ Found existing user in auth:', existingUser.id);
-                userId = existingUser.id;
-              } else {
-                console.error('❌ User not found in auth list');
-                alert('A user with this email already exists. Please use a different email address.');
-                return;
-              }
-            } catch (error) {
-              console.error('❌ Error finding existing user:', error);
+            const { user: existingUser, error: findErr } = await findAuthUserByEmail(
+              supabaseAdmin,
+              loginEmail
+            );
+            if (findErr) {
+              console.error('❌ Failed to find existing auth user:', findErr);
               alert('A user with this email already exists. Please use a different email address.');
+              return;
+            }
+            if (existingUser) {
+              console.log('✅ Found existing user in auth:', existingUser.id);
+              userId = existingUser.id;
+            } else {
+              console.error('❌ User not found in auth (paginated search exhausted)');
+              alert(
+                'A user with this email already exists, but the account could not be loaded. Try again or contact support.'
+              );
               return;
             }
           } else {
@@ -602,11 +664,13 @@ function StaffManagement() {
         // Create the user profile manually (in case trigger failed)
         console.log('🔄 Creating user profile in public.users table...');
         const profileUrl = `${supabaseUrl}/rest/v1/users`;
+        const newUsername = (formData.username || '').trim().toLowerCase() || null;
         const profileBody = {
           id: userId,
-          email: formData.email || '',
+          email: loginEmail,
           first_name: formData.firstName || '',
           last_name: formData.lastName || '',
+          username: newUsername,
           phone: formData.phone || '',
           role: formData.role || 'employee'
         };
@@ -657,6 +721,7 @@ function StaffManagement() {
             firstName: user.first_name || '',
             lastName: user.last_name || '',
             email: user.email,
+            username: user.username || '',
             role: user.role,
             phone: user.phone || '',
             password: '***'
@@ -799,12 +864,12 @@ function StaffManagement() {
                     .select('*');
                   
                   if (!fetchError && users) {
-                    const users = await response.json();
                     const transformedUsers = users.map(user => ({
                       id: user.id,
                       firstName: user.first_name || '',
                       lastName: user.last_name || '',
                       email: user.email,
+                      username: user.username || '',
                       role: user.role,
                       phone: user.phone || '',
                       password: '***'
@@ -834,6 +899,7 @@ function StaffManagement() {
                 <TableRow>
                   <TableCell>Name</TableCell>
                   <TableCell>Email</TableCell>
+                  <TableCell>Username</TableCell>
                   <TableCell>Phone</TableCell>
                   <TableCell>Role</TableCell>
                   <TableCell>Actions</TableCell>
@@ -842,7 +908,7 @@ function StaffManagement() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       <Box display="flex" justifyContent="center" alignItems="center" p={2}>
                         <CircularProgress size={24} />
                         <Typography variant="body2" sx={{ ml: 2 }}>
@@ -867,6 +933,11 @@ function StaffManagement() {
                       <TableCell>
                         <Typography variant="body2">
                           {member.email || 'No email'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {member.username || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -916,7 +987,7 @@ function StaffManagement() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       <Typography variant="body2" color="textSecondary">
                         No staff members found
                       </Typography>
@@ -979,11 +1050,29 @@ function StaffManagement() {
                 id="email"
                 name="email"
                 fullWidth
-                label="Email"
-                type="email"
+                label="Login email (auth identifier)"
+                type="text"
+                autoComplete="username"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
+                helperText="Staff-only domain is OK (e.g. name@staff.pel.local). No real mailbox or confirmation email needed when created here."
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                id="username"
+                name="username"
+                fullWidth
+                label="Username (optional)"
+                value={formData.username}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    username: e.target.value.replace(/\s/g, '').toLowerCase(),
+                  })
+                }
+                helperText="Sign-in alias; letters, numbers, . _ - (stored lowercase). Must be unique."
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -992,8 +1081,15 @@ function StaffManagement() {
                 name="phone"
                 fullWidth
                 label="Phone"
+                type="tel"
+                placeholder="000-000-0000"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    phone: formatNorthAmericanPhoneInput(e.target.value),
+                  })
+                }
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1038,8 +1134,9 @@ function StaffManagement() {
               <Grid item xs={12}>
                 <Alert severity="info">
                   <Typography variant="body2">
-                    <strong>Login Credentials:</strong> Email: {formData.email} | 
-                    Password: {formData.password || 'Will be generated'}
+                    <strong>Login:</strong> staff can use email <strong>or</strong> username (
+                    {formData.username || '—'}) with this password:{' '}
+                    {formData.password || 'Will be generated'}
                   </Typography>
                 </Alert>
               </Grid>

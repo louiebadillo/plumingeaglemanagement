@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearGeofencingCache } from '../utils/geofencing';
 
 const SupabaseContext = createContext({});
 
@@ -21,13 +22,17 @@ export const SupabaseProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
 
-    // Set a timeout to prevent infinite loading
+    // Safety valve only if getSession() never resolves (network hang). Do not use a short
+    // timeout — it fired while profile was still loading and cleared `loading` early, which
+    // made `user` null and caused login flashes / blank routes on slow networks.
     loadingTimeoutRef.current = setTimeout(() => {
       if (mounted) {
-        console.log('Auth loading timeout reached, setting loading to false');
+        console.warn(
+          'Auth: getSession() is taking unusually long; clearing loading to avoid an infinite spinner.'
+        );
         setLoading(false);
       }
-    }, 2000); // 2 second timeout (reduced from 5s for faster perceived performance)
+    }, 30000);
 
     // Get initial session with timeout
     const initAuth = async () => {
@@ -35,6 +40,7 @@ export const SupabaseProvider = ({ children }) => {
         // Don't restore session if we're in the process of logging out
         if (isLoggingOutRef.current) {
           console.log('⚠️ Skipping session restore - logout in progress');
+          clearTimeout(loadingTimeoutRef.current);
           setLoading(false);
           return;
         }
@@ -42,6 +48,10 @@ export const SupabaseProvider = ({ children }) => {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!mounted) return;
+
+        // Session state is known — cancel the safety timeout so it does not fire during
+        // fetchUserProfile() (previously a 2s timer caused premature loading=false).
+        clearTimeout(loadingTimeoutRef.current);
         
         // Don't restore session if logout is in progress
         if (isLoggingOutRef.current) {
@@ -60,12 +70,12 @@ export const SupabaseProvider = ({ children }) => {
         if (session?.user) {
           await fetchUserProfile(session.user.id, session.user.email);
         } else {
-          clearTimeout(loadingTimeoutRef.current);
           setLoading(false);
         }
       } catch (error) {
         console.error('Error in initAuth:', error);
         if (mounted) {
+          clearTimeout(loadingTimeoutRef.current);
           setLoading(false);
         }
       }
@@ -78,6 +88,13 @@ export const SupabaseProvider = ({ children }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
+
+      // initAuth() already calls getSession() + fetchUserProfile. The listener also emits
+      // INITIAL_SESSION with the same data — handling both caused duplicate fetches and
+      // routing/auth races on refresh (especially on heavy pages like daily report).
+      if (event === 'INITIAL_SESSION') {
+        return;
+      }
       
       // If logout is in progress, ignore all auth state changes except SIGNED_OUT
       if (isLoggingOutRef.current && event !== 'SIGNED_OUT') {
@@ -338,8 +355,55 @@ export const SupabaseProvider = ({ children }) => {
 
   // Do not toggle global `loading` here — AppContent shows a full-screen spinner when loading,
   // which unmounts the Login page and loses inline error state on failed sign-in.
-  const signIn = async (email, password) => {
+  const looksLikeEmail = (value) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((value || '').trim());
+
+  /**
+   * Login accepts the real auth email OR a username stored on public.users.username.
+   * Supabase Auth still signs in with email; we resolve username → email via RPC when needed.
+   */
+  const signIn = async (loginIdentifier, password) => {
+    const trimmed = (loginIdentifier || '').trim();
+    const invalidCreds = () => ({
+      data: null,
+      error: Object.assign(new Error('Invalid login credentials'), {
+        message: 'Invalid login credentials',
+      }),
+    });
+
     try {
+      let email = trimmed;
+
+      if (!looksLikeEmail(trimmed)) {
+        const { data: resolved, error: rpcError } = await supabase.rpc('resolve_login_email', {
+          p_login: trimmed,
+        });
+
+        const rpcMissing =
+          rpcError &&
+          ((rpcError.code || '').startsWith('PGRST') &&
+            ((rpcError.message || '').toLowerCase().includes('function') ||
+              (rpcError.message || '').includes('resolve_login_email')));
+
+        if (rpcError && !rpcMissing) {
+          console.error('resolve_login_email:', rpcError);
+          return invalidCreds();
+        }
+
+        if (rpcMissing) {
+          console.warn(
+            'Username login unavailable (run supabase/sql/add_username_login.sql in Supabase SQL Editor).'
+          );
+          return invalidCreds();
+        }
+
+        if (resolved && typeof resolved === 'string') {
+          email = resolved;
+        } else {
+          return invalidCreds();
+        }
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -359,7 +423,8 @@ export const SupabaseProvider = ({ children }) => {
   const signOut = async () => {
     try {
       console.log('🔄 Starting logout process...');
-      
+      clearGeofencingCache();
+
       // Set logout flag to prevent session restoration
       isLoggingOutRef.current = true;
       
@@ -444,6 +509,7 @@ export const SupabaseProvider = ({ children }) => {
     }
   };
 
+  // Public self-signup only — for no confirmation, disable "Confirm email" (Supabase Dashboard → Authentication → Providers → Email).
   const signUp = async (email, password, userData = {}) => {
     try {
       setLoading(true);

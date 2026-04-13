@@ -1,5 +1,5 @@
 import React from 'react';
-import { Router, Route, Switch, Redirect } from 'react-router-dom';
+import { Route, Switch, Redirect } from 'react-router-dom';
 import { ConnectedRouter } from 'connected-react-router';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { SnackbarProvider } from './Snackbar';
@@ -46,28 +46,28 @@ function AppContent() {
     <>
       <SnackbarProvider>
         <AutoLogout>
+          {/* ConnectedRouter already renders react-router's Router; nesting a second Router
+              caused duplicate context and broken refreshes on deep links (e.g. daily report). */}
           <ConnectedRouter history={getHistory()}>
-            <Router history={getHistory()}>
-              <Switch>
-                <Route
-                  exact
-                  path='/'
-                  render={() => <Redirect to='/app/dashboard' />}
-                />
+            <Switch>
+              <Route
+                exact
+                path='/'
+                render={() => <Redirect to='/app/dashboard' />}
+              />
 
-                <Route
-                  exact
-                  path='/app'
-                  render={() => <Redirect to='/app/dashboard' />}
-                />
+              <Route
+                exact
+                path='/app'
+                render={() => <Redirect to='/app/dashboard' />}
+              />
 
-                       <PrivateRoute path='/app' component={Layout} />
-                       <PublicRoute path='/login' component={Login} />
-                       <PublicRoute path='/logout' component={Logout} />
-                       <Redirect from='*' to='/app/dashboard' />
-                <Route component={Error} />
-              </Switch>
-            </Router>
+              <PrivateRoute path='/app' component={Layout} />
+              <PublicRoute path='/login' component={Login} />
+              <PublicRoute path='/logout' component={Logout} />
+              <Redirect from='*' to='/app/dashboard' />
+              <Route component={Error} />
+            </Switch>
           </ConnectedRouter>
         </AutoLogout>
       </SnackbarProvider>

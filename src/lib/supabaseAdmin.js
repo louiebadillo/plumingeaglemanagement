@@ -15,15 +15,24 @@ let supabaseAdminInstance = null;
 // Get project ref for unique storage key
 const projectRef = supabaseUrl?.split('//')[1]?.split('.')[0] || 'default';
 
+// In-memory auth storage so this client never shares localStorage with the anon `supabase`
+// client — avoids "Multiple GoTrueClient instances" / undefined concurrent behavior.
+const noopAuthStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
 // Create Supabase admin client (singleton, no session persistence)
-// Admin client doesn't persist sessions, so no storage conflicts
 export const supabaseAdmin = (() => {
   if (!supabaseAdminInstance) {
     supabaseAdminInstance = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
-        persistSession: false
-      }
+        persistSession: false,
+        storage: typeof window !== 'undefined' ? noopAuthStorage : undefined,
+        storageKey: `sb-${projectRef}-admin-service`,
+      },
     });
     if (process.env.NODE_ENV === 'development') {
       console.log('Supabase admin client initialized');

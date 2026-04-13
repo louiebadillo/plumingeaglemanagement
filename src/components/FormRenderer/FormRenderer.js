@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Box,
   Typography,
-  TextField,
+  TextField as MuiTextField,
   FormControl,
   InputLabel,
   Select,
@@ -23,6 +23,7 @@ import { DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { FIELD_TYPES } from '../../config/formTemplates';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 
 // Individual field renderer components
 const ScaleField = ({ field, value, onChange, error }) => (
@@ -30,7 +31,7 @@ const ScaleField = ({ field, value, onChange, error }) => (
     <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
       {field.description}
     </Typography>
-    <TextField
+    <MuiTextField
       type="number"
       value={value || field.defaultValue || ''}
       onChange={(e) => onChange(field.key, parseInt(e.target.value))}
@@ -43,24 +44,38 @@ const ScaleField = ({ field, value, onChange, error }) => (
   </Box>
 );
 
-const TextField = ({ field, value, onChange, error }) => (
-  <TextField
-    label={field.label}
-    value={value || ''}
-    onChange={(e) => onChange(field.key, e.target.value)}
-    error={!!error}
-    helperText={error || field.description}
-    placeholder={field.placeholder}
-    fullWidth
-    variant="outlined"
-    type={field.type === FIELD_TYPES.EMAIL ? 'email' : 
-          field.type === FIELD_TYPES.PHONE ? 'tel' : 
-          field.type === FIELD_TYPES.NUMBER ? 'number' : 'text'}
-  />
-);
+const StringField = ({ field, value, onChange, error }) => {
+  const isPhone = field.type === FIELD_TYPES.PHONE;
+  const displayValue = isPhone ? formatNorthAmericanPhoneInput(value || '') : value || '';
+  const handleChange = (e) => {
+    const next = isPhone ? formatNorthAmericanPhoneInput(e.target.value) : e.target.value;
+    onChange(field.key, next);
+  };
+  return (
+    <MuiTextField
+      label={field.label}
+      value={displayValue}
+      onChange={handleChange}
+      error={!!error}
+      helperText={error || field.description}
+      placeholder={field.placeholder}
+      fullWidth
+      variant="outlined"
+      type={
+        field.type === FIELD_TYPES.EMAIL
+          ? 'email'
+          : field.type === FIELD_TYPES.PHONE
+            ? 'tel'
+            : field.type === FIELD_TYPES.NUMBER
+              ? 'number'
+              : 'text'
+      }
+    />
+  );
+};
 
 const TextAreaField = ({ field, value, onChange, error }) => (
-  <TextField
+  <MuiTextField
     label={field.label}
     value={value || ''}
     onChange={(e) => onChange(field.key, e.target.value)}
@@ -193,7 +208,7 @@ const DateField = ({ field, value, onChange, error }) => (
       value={value ? new Date(value) : null}
       onChange={(date) => onChange(field.key, date ? date.toISOString().split('T')[0] : '')}
       renderInput={(params) => (
-        <TextField
+        <MuiTextField
           {...params}
           fullWidth
           error={!!error}
@@ -211,7 +226,7 @@ const TimeField = ({ field, value, onChange, error }) => (
       value={value ? new Date(`2000-01-01T${value}`) : null}
       onChange={(time) => onChange(field.key, time ? time.toTimeString().slice(0, 5) : '')}
       renderInput={(params) => (
-        <TextField
+        <MuiTextField
           {...params}
           fullWidth
           error={!!error}
@@ -278,7 +293,7 @@ const FormRenderer = ({
       case FIELD_TYPES.EMAIL:
       case FIELD_TYPES.PHONE:
       case FIELD_TYPES.NUMBER:
-        return <TextField field={field} value={data[field.key]} onChange={onChange} error={fieldError} />;
+        return <StringField field={field} value={data[field.key]} onChange={onChange} error={fieldError} />;
       case FIELD_TYPES.TEXTAREA:
         return <TextAreaField field={field} value={data[field.key]} onChange={onChange} error={fieldError} />;
       case FIELD_TYPES.YES_NO:

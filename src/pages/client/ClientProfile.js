@@ -63,6 +63,7 @@ import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { uploadProfilePhoto, deleteProfilePhoto, getProfilePhotoUrl } from '../../utils/fileUpload';
 import ImageCropDialog from '../../components/ImageCrop/ImageCropDialog';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 import { blobToFile } from '../../utils/imageUtils';
 
 const NEW_CLIENT_DRAFT_STORAGE_PREFIX = 'pem_new_client_draft_v1::';
@@ -1699,8 +1700,12 @@ function ClientProfile() {
               <TextField
                 fullWidth
                 label="Phone"
-                value={editingClient.phone || ''}
-                onChange={(e) => handleInputChange('phone', e.target.value)}
+                type="tel"
+                placeholder="000-000-0000"
+                value={formatNorthAmericanPhoneInput(editingClient.phone || '')}
+                onChange={(e) =>
+                  handleInputChange('phone', formatNorthAmericanPhoneInput(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1808,11 +1813,18 @@ function ClientProfile() {
               <TextField
                 fullWidth
                 label="Case Worker Phone"
-                value={editingClient.caseWorker?.phone || ''}
-                onChange={(e) => setEditingClient(prev => ({
-                  ...prev,
-                  caseWorker: { ...prev.caseWorker, phone: e.target.value }
-                }))}
+                type="tel"
+                placeholder="000-000-0000"
+                value={formatNorthAmericanPhoneInput(editingClient.caseWorker?.phone || '')}
+                onChange={(e) =>
+                  setEditingClient((prev) => ({
+                    ...prev,
+                    caseWorker: {
+                      ...prev.caseWorker,
+                      phone: formatNorthAmericanPhoneInput(e.target.value),
+                    },
+                  }))
+                }
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -1830,22 +1842,36 @@ function ClientProfile() {
               <TextField
                 fullWidth
                 label="Agency Office Number"
-                value={editingClient.caseWorker?.agencyOfficeNumber || ''}
-                onChange={(e) => setEditingClient(prev => ({
-                  ...prev,
-                  caseWorker: { ...prev.caseWorker, agencyOfficeNumber: e.target.value }
-                }))}
+                type="tel"
+                placeholder="000-000-0000"
+                value={formatNorthAmericanPhoneInput(editingClient.caseWorker?.agencyOfficeNumber || '')}
+                onChange={(e) =>
+                  setEditingClient((prev) => ({
+                    ...prev,
+                    caseWorker: {
+                      ...prev.caseWorker,
+                      agencyOfficeNumber: formatNorthAmericanPhoneInput(e.target.value),
+                    },
+                  }))
+                }
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="On-Call Number"
-                value={editingClient.caseWorker?.onCallNumber || ''}
-                onChange={(e) => setEditingClient(prev => ({
-                  ...prev,
-                  caseWorker: { ...prev.caseWorker, onCallNumber: e.target.value }
-                }))}
+                type="tel"
+                placeholder="000-000-0000"
+                value={formatNorthAmericanPhoneInput(editingClient.caseWorker?.onCallNumber || '')}
+                onChange={(e) =>
+                  setEditingClient((prev) => ({
+                    ...prev,
+                    caseWorker: {
+                      ...prev.caseWorker,
+                      onCallNumber: formatNorthAmericanPhoneInput(e.target.value),
+                    },
+                  }))
+                }
               />
             </Grid>
 
@@ -1989,11 +2015,18 @@ function ClientProfile() {
               <TextField
                 fullWidth
                 label="School Phone"
-                value={editingClient.schoolInfo?.schoolPhone || ''}
-                onChange={(e) => setEditingClient(prev => ({
-                  ...prev,
-                  schoolInfo: { ...prev.schoolInfo, schoolPhone: e.target.value }
-                }))}
+                type="tel"
+                placeholder="000-000-0000"
+                value={formatNorthAmericanPhoneInput(editingClient.schoolInfo?.schoolPhone || '')}
+                onChange={(e) =>
+                  setEditingClient((prev) => ({
+                    ...prev,
+                    schoolInfo: {
+                      ...prev.schoolInfo,
+                      schoolPhone: formatNorthAmericanPhoneInput(e.target.value),
+                    },
+                  }))
+                }
               />
             </Grid>
             

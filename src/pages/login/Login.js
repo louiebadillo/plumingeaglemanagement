@@ -65,18 +65,18 @@ function Login(props) {
     setIsLoading(true);
     setError(null);
     
-    // Trim email and password to avoid whitespace issues
-    const email = loginValue.trim();
+    // Trim login identifier and password (identifier = email or username)
+    const loginId = loginValue.trim();
     const password = passwordValue.trim();
     
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    if (!loginId || !password) {
+      setError('Please enter both login and password');
       setIsLoading(false);
       return;
     }
     
     try {
-      const { error } = await signIn(email, password);
+      const { error } = await signIn(loginId, password);
       
       if (error) {
         // Provide more helpful error messages
@@ -174,7 +174,8 @@ function Login(props) {
                     </Alert>
                   ) : null}
                   <Input
-                    id='email'
+                    id='login'
+                    name='login'
                     InputProps={{
                       classes: {
                         underline: classes.InputUnderline,
@@ -187,8 +188,10 @@ function Login(props) {
                       if (error) setError(null);
                     }}
                     margin='normal'
-                    placeholder='Email Address'
-                    type='email'
+                    placeholder='Email or username'
+                    type='text'
+                    autoComplete='username'
+                    inputProps={{ 'aria-label': 'Email or username' }}
                     fullWidth
                     disabled={isLoading}
                     onKeyDown={(e) => loginOnEnterKey(e)}

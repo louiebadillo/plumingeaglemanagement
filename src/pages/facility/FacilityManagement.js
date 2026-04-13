@@ -46,6 +46,7 @@ import { Divider, Chip } from '@mui/material';
 import GeofencingMap from '../../components/Facility/GeofencingMap';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 
 // Initial form data for creating/editing facilities
 const initialFormData = {
@@ -120,7 +121,8 @@ function FacilityManagement() {
     setFormData({
       ...initialFormData,
       ...saved.formData,
-      geofence_radius_meters: saved.formData.geofence_radius_meters ?? 100
+      geofence_radius_meters: saved.formData.geofence_radius_meters ?? 100,
+      phone: formatNorthAmericanPhoneInput(saved.formData.phone || ''),
     });
     setGeofencingAddress(typeof saved.geofencingAddress === 'string' ? saved.geofencingAddress : '');
   }, [editDialogOpen, isNewFacility, editingFacility?.id]);
@@ -141,7 +143,7 @@ function FacilityManagement() {
     setFormData({
       name: facility.name || '',
       address: facility.address || '',
-      phone: facility.phone || '',
+      phone: formatNorthAmericanPhoneInput(facility.phone || ''),
       description: facility.description || '',
       geofence_latitude: facility.geofence_latitude || null,
       geofence_longitude: facility.geofence_longitude || null,
@@ -553,7 +555,11 @@ function FacilityManagement() {
                 fullWidth
                 label="Phone"
                 value={formData.phone}
-                onChange={(e) => handleInputChange('phone', e.target.value)}
+                onChange={(e) =>
+                  handleInputChange('phone', formatNorthAmericanPhoneInput(e.target.value))
+                }
+                type="tel"
+                placeholder="000-000-0000"
               />
             </Grid>
             <Grid item xs={12}>

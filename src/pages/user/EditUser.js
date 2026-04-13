@@ -30,6 +30,7 @@ import config from '../../config';
 
 import { actions } from '../../context/ManagementContext';
 import { showSnackbar } from '../../components/Snackbar';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 
 const EditUser = () => {
   const classes = useStyles();
@@ -136,9 +137,12 @@ const EditUser = () => {
   }
 
   function handleChange(e) {
+    const { name, value } = e.target;
+    const next =
+      name === 'phone' ? formatNorthAmericanPhoneInput(value) : value;
     setData({
       ...data,
-      [e.target.name]: e.target.value,
+      [name]: next,
     });
   }
 
@@ -287,8 +291,9 @@ const EditUser = () => {
                     label='Phone'
                     variant='outlined'
                     style={{ marginBottom: 35 }}
-                    defaultValue={'1-555-666-7070'}
-                    value={data && data.phone}
+                    type='tel'
+                    placeholder='000-000-0000'
+                    value={data ? formatNorthAmericanPhoneInput(data.phone || '') : ''}
                     name='phone'
                     onChange={handleChange}
                   />

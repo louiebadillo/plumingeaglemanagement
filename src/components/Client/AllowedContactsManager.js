@@ -18,6 +18,7 @@ import {
   Tooltip
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, ContactPhone as ContactPhoneIcon } from '@mui/icons-material';
+import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 
 function AllowedContactsManager({ allowedContacts = [], onUpdate, canEdit = true }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +39,7 @@ function AllowedContactsManager({ allowedContacts = [], onUpdate, canEdit = true
     setEditingContact(index);
     setFormData({
       name: contact.name || '',
-      phone: contact.phone || '',
+      phone: formatNorthAmericanPhoneInput(contact.phone || ''),
       relationship: contact.relationship || ''
     });
     setOpen(true);
@@ -135,8 +136,15 @@ function AllowedContactsManager({ allowedContacts = [], onUpdate, canEdit = true
               <TextField
                 fullWidth
                 label="Phone Number"
+                type="tel"
+                placeholder="000-000-0000"
                 value={formData.phone}
-                onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    phone: formatNorthAmericanPhoneInput(e.target.value),
+                  }))
+                }
               />
             </Grid>
             <Grid item xs={12}>

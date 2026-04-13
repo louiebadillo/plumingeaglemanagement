@@ -26,7 +26,7 @@ import {
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
-import { getCurrentFacilityFromGeofencing } from '../../utils/geofencing';
+import { getCurrentFacilityFromGeofencing, clearGeofencingCache } from '../../utils/geofencing';
 import { supabase } from '../../lib/supabase';
 import { getOperationalDate } from '../../utils/dateHelpers';
 
@@ -39,128 +39,101 @@ function MyReports() {
   const [error, setError] = useState(null);
   const [currentFacilityId, setCurrentFacilityId] = useState(null);
 
-  const currentUserId = userProfile?.id;
   const isAdmin = userProfile?.role === 'admin';
-  const employeeFacilityId = userProfile?.facility_id; // Fallback facility from user profile
 
-  // Get current facility from geofencing (for employees)
+  // Load reports: admins see all drafts; employees only when inside a facility geofence (no profile fallback)
   useEffect(() => {
-    const detectFacility = async () => {
-      if (isAdmin || !userProfile) {
-        setCurrentFacilityId(null);
-        return;
-      }
+    if (!userProfile) {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        // Get facility from geofencing (location-based detection)
-        let facilityId = await getCurrentFacilityFromGeofencing();
-        
-        // Fallback: If geofencing not implemented or employee not at a facility,
-        // use facility_id from user profile (temporary until geofencing is fully implemented)
-        if (!facilityId) {
-          facilityId = employeeFacilityId;
-        }
-        
-        setCurrentFacilityId(facilityId);
-        
-        if (!facilityId) {
-          console.warn('📍 No facility detected for employee');
-        } else {
-          console.log('📍 MyReports - Detected facility:', facilityId);
-        }
-      } catch (err) {
-        console.error('Error detecting facility:', err);
-        // Fallback to user profile facility
-        setCurrentFacilityId(employeeFacilityId);
-      }
-    };
+    let cancelled = false;
 
-    detectFacility();
-  }, [userProfile, isAdmin, employeeFacilityId]);
-
-  // Fetch reports based on facility (for employees) or all reports (for admins)
-  useEffect(() => {
-    const fetchReports = async () => {
-      if (!userProfile) return;
-      
-      // For employees, wait for facility detection
-      if (!isAdmin && !currentFacilityId) {
-        return; // Wait for facility to be detected
-      }
-
+    const load = async () => {
       setLoading(true);
       setError(null);
+
       try {
-        // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
-        // Get the current operational date (6 AM - 6 AM logic)
+        if (isAdmin) {
+          const { data, error: qError } = await supabase
+            .from('daily_reports_v2')
+            .select(`
+              *,
+              clients(first_name, last_name, room, facility_id),
+              facilities(name)
+            `)
+            .eq('status', 'draft')
+            .order('report_date', { ascending: false })
+            .order('created_at', { ascending: false });
+
+          if (cancelled) return;
+          if (qError) {
+            throw new Error(`Failed to fetch reports: ${qError.message}`);
+          }
+          setCurrentFacilityId(null);
+          setReports(data || []);
+          return;
+        }
+
+        clearGeofencingCache();
+        const facilityId = await getCurrentFacilityFromGeofencing();
+        if (cancelled) return;
+        setCurrentFacilityId(facilityId);
+
+        if (!facilityId) {
+          setReports([]);
+          return;
+        }
+
         const operationalDate = getOperationalDate();
-        
-        let query = supabase
+        const { data, error: qError } = await supabase
           .from('daily_reports_v2')
           .select(`
             *,
             clients(first_name, last_name, room, facility_id),
             facilities(name)
           `)
-          .eq('status', 'draft');
-        
-        // For employees: filter by facility_id (geofenced facility) and operational date
-        // For admins: Show ALL draft reports (no date or facility filter)
-        if (!isAdmin && currentFacilityId) {
-          // Employee view: Filter by facility_id and operational date
-          query = query
-            .eq('facility_id', currentFacilityId)
-            .eq('report_date', operationalDate)
-            .order('report_date', { ascending: false });
-        } else {
-          // Admin view: Show ALL draft reports across all dates and facilities
-          query = query
-            .order('report_date', { ascending: false })
-            .order('created_at', { ascending: false });
+          .eq('status', 'draft')
+          .eq('facility_id', facilityId)
+          .eq('report_date', operationalDate)
+          .order('report_date', { ascending: false });
+
+        if (cancelled) return;
+        if (qError) {
+          throw new Error(`Failed to fetch reports: ${qError.message}`);
         }
 
-        const { data, error } = await query;
-
-        if (error) {
-          throw new Error(`Failed to fetch reports: ${error.message}`);
-        }
-        console.log('🔍 MyReports fetched data:', data);
-        console.log('🔍 Operational date filter:', operationalDate);
-        
-        // For employees: Additional filter to ensure only clients in the geofenced facility are shown
-        // Also ensure report_date matches operational date (double-check)
-        // For admins: No filtering - show all draft reports
-        let filteredData = data || [];
-        if (!isAdmin && currentFacilityId) {
-          filteredData = filteredData.filter(report => {
-            // Filter by client's facility_id to ensure only clients in the detected facility
-            const clientFacilityId = report.clients?.facility_id;
-            // Also ensure report_date matches operational date
-            const reportDate = report.report_date?.split('T')[0]; // Normalize date format
-            return clientFacilityId === currentFacilityId && reportDate === operationalDate;
-          });
-        }
-        // For admins: No filtering needed - show all draft reports
-        
-        setReports(filteredData);
+        const filtered = (data || []).filter((report) => {
+          const clientFacilityId = report.clients?.facility_id;
+          const reportDate = report.report_date?.split('T')[0];
+          return clientFacilityId === facilityId && reportDate === operationalDate;
+        });
+        setReports(filtered);
       } catch (err) {
-        console.error('Error fetching reports:', err);
-        setError('Failed to load reports.');
+        if (!cancelled) {
+          console.error('Error fetching reports:', err);
+          setError('Failed to load reports.');
+          setReports([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchReports();
-  }, [userProfile, isAdmin, currentFacilityId]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [userProfile, isAdmin, supabase]);
 
-  // Show all draft reports without filtering
   const draftReports = reports;
 
   const handleViewEditReport = (report) => {
     const clientName = `${report.clients?.first_name || ''}-${report.clients?.last_name || ''}`.toLowerCase();
     
-    // Use facility_id from report, or fallback to client's facility_id
     const facilityId = report.facility_id || report.clients?.facility_id;
     
     if (!facilityId) {
@@ -182,9 +155,8 @@ function MyReports() {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
-      // Parse date string (YYYY-MM-DD) without timezone conversion
       const [year, month, day] = dateString.split('T')[0].split('-');
-      if (!year || !month || !day) return dateString; // Fallback if format is unexpected
+      if (!year || !month || !day) return dateString;
       const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
@@ -193,7 +165,7 @@ function MyReports() {
       });
     } catch (error) {
       console.error('Error formatting date:', dateString, error);
-      return dateString; // Fallback to original string
+      return dateString;
     }
   };
 
@@ -207,22 +179,18 @@ function MyReports() {
     });
   };
 
-  // Determine if report is "In Progress" (today's operational date) or "Past Due" (past operational date)
   const getReportStatus = (report) => {
     if (report.status !== 'draft') {
       return { label: 'Submitted', color: 'success', icon: <ReportIcon /> };
     }
     
     const operationalDate = getOperationalDate();
-    const reportDate = report.report_date?.split('T')[0]; // Normalize date format
+    const reportDate = report.report_date?.split('T')[0];
     
     if (reportDate === operationalDate) {
-      // In Progress - today's operational date
       return { label: 'In Progress', color: 'warning', icon: <SaveIcon /> };
-    } else {
-      // Past Due - from past operational dates
-      return { label: 'Past Due', color: 'error', icon: <SaveIcon /> };
     }
+    return { label: 'Past Due', color: 'error', icon: <SaveIcon /> };
   };
 
   const getStatusColor = (status) => {
@@ -266,18 +234,16 @@ function MyReports() {
         {isAdmin 
           ? 'View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.'
           : currentFacilityId
-            ? 'Continue editing in-progress reports for clients in your current facility. If you are an evening shift staff, complete and submit these reports.'
-            : 'Loading facility information...'}
+            ? 'Continue editing in-progress reports for clients at your current facility (detected by geofence). Evening shift staff should complete and submit before end of shift.'
+            : 'You must be inside a facility geofence to see in-progress reports for that site.'}
       </Typography>
       
-      {!isAdmin && !currentFacilityId && !loading && (
+      {!isAdmin && !currentFacilityId && (
         <Alert severity="warning" sx={{ mb: 3 }}>
-          Unable to detect your current facility. Please ensure you are at a facility location and that geofencing is configured. 
-          Reports will be shown once your facility is detected.
+          No facility detected from your location. Open this page on a facility device on-site, allow location access, and ensure geofencing is configured for the building.
         </Alert>
       )}
 
-      {/* Create New Report Button - Only for employees */}
       {!isAdmin && (
         <Box sx={{ mb: 3 }}>
           <Button
@@ -291,7 +257,6 @@ function MyReports() {
         </Box>
       )}
 
-      {/* Draft Reports Table */}
       <Card>
         <CardContent>
           {draftReports.length > 0 ? (
@@ -368,8 +333,8 @@ function MyReports() {
                 {isAdmin 
                   ? 'There are no draft reports across all facilities.'
                   : currentFacilityId
-                    ? 'There are no in-progress reports for clients in your current facility. Create a new report to get started.'
-                    : 'No reports available.'}
+                    ? 'There are no in-progress reports for clients in your current facility. Create a new report from the dashboard to get started.'
+                    : 'Reports for today will appear here when you are on-site inside a facility geofence.'}
               </Typography>
               {!isAdmin && (
                 <Button

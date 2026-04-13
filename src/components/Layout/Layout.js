@@ -158,6 +158,8 @@ function Layout(props) {
           <Route exact path="/app/client/new" component={ClientProfile} />
           <Route path="/app/client/:clientSlug" component={ClientProfile} />
 
+          {/* Unknown /app/* paths used to render nothing (blank content with shell still visible) */}
+          <Route render={() => <RouterRedirect to="/app/dashboard" />} />
         </Switch>
       </div>
     </div>

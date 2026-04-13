@@ -62,14 +62,42 @@ export const isReportLocked = (reportDate) => {
 };
 
 /**
- * Calculate age from date of birth
+ * Parse a date-of-birth value as local calendar date.
+ * `new Date('YYYY-MM-DD')` is UTC midnight, which shifts the day in western timezones
+ * and breaks age vs. birthday comparisons — use year/month/day in local time instead.
+ * @param {string|Date|null|undefined} dateOfBirth
+ * @returns {Date|null}
+ */
+export const parseDateOfBirthLocal = (dateOfBirth) => {
+  if (dateOfBirth == null || dateOfBirth === '') return null;
+  if (dateOfBirth instanceof Date) {
+    if (Number.isNaN(dateOfBirth.getTime())) return null;
+    return new Date(
+      dateOfBirth.getFullYear(),
+      dateOfBirth.getMonth(),
+      dateOfBirth.getDate()
+    );
+  }
+  const str = String(dateOfBirth).trim();
+  const datePart = str.split('T')[0];
+  const parts = datePart.split('-').map(Number);
+  if (parts.length < 3) return null;
+  const [y, m, d] = parts;
+  if ([y, m, d].some((n) => Number.isNaN(n))) return null;
+  const birthDate = new Date(y, m - 1, d);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  return birthDate;
+};
+
+/**
+ * Calculate age from date of birth (completed full years, local calendar).
  * @param {string|Date} dateOfBirth - Date of birth
  * @returns {number|string} Age in years or 'N/A' if invalid
  */
 export const calculateAge = (dateOfBirth) => {
-  if (!dateOfBirth) return 'N/A';
+  const birthDate = parseDateOfBirthLocal(dateOfBirth);
+  if (!birthDate) return 'N/A';
   const today = new Date();
-  const birthDate = new Date(dateOfBirth);
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
