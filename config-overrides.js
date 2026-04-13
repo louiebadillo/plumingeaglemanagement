@@ -1,6 +1,12 @@
 const webpack = require('webpack');
 const path = require('path');
+
 module.exports = function override(config) {
+  // Force root-absolute asset URLs in production so deep links like /app/reports/my-reports
+  // do not resolve ./static/js to /app/reports/static/js (HTML 404 → "Unexpected token '<'").
+  if (process.env.NODE_ENV === 'production' && config.output) {
+    config.output.publicPath = '/';
+  }
   const fallback = config.resolve.fallback || {};
   Object.assign(fallback, {
     crypto: require.resolve('crypto-browserify'),

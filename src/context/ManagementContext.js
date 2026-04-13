@@ -2,9 +2,8 @@ import React from 'react';
 import { mockUser } from './mock';
 import config from '../../src/config';
 import { showSnackbar } from '../components/Snackbar';
-// Static imports to prevent multiple Supabase client instances
 import { supabase } from '../lib/supabase';
-import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { getSupabaseAdmin } from '../lib/getSupabaseAdminLazy';
 
 
 let ManagementStateContext = React.createContext();
@@ -253,8 +252,8 @@ const actions = {
         type: 'USERS_FORM_CREATE_STARTED',
       });
       
-      // Use Supabase Admin API to create user (using static import to prevent multiple instances)
-      console.log('📦 Using SupabaseAdmin (static import)');
+      const supabaseAdmin = await getSupabaseAdmin();
+      console.log('📦 Using SupabaseAdmin (lazy-loaded)');
       
       // Create user with Supabase Admin API
       console.log('👤 Creating auth user with email:', values.email);

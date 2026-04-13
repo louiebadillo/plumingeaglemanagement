@@ -157,21 +157,17 @@ export const SupabaseProvider = ({ children }) => {
 
   // Helper function to fetch fresh profile with retry
   const fetchFreshProfile = async (userId, userEmail, cacheKey) => {
-    // Add a timeout to prevent hanging (increased to 15 seconds for slower connections)
+    const fetchProfileOnce = () =>
+      supabase.from('users').select('*').eq('id', userId).single();
+
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Profile fetch timeout')), 15000);
+      timeoutId = setTimeout(() => reject(new Error('Profile fetch timeout')), 20000);
     });
-    
-    const fetchPromise = supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
 
     let result;
     try {
-      result = await Promise.race([fetchPromise, timeoutPromise]);
+      result = await Promise.race([fetchProfileOnce(), timeoutPromise]);
       clearTimeout(timeoutId);
     } catch (raceError) {
       clearTimeout(timeoutId);
@@ -193,14 +189,15 @@ export const SupabaseProvider = ({ children }) => {
           }
         }
         
-        // Try one more time with shorter timeout
-        console.log('🔄 Retrying profile fetch with shorter timeout...');
+        // New request (do not reuse the first promise — it may still be pending)
+        console.log('🔄 Retrying profile fetch...');
         try {
+          let retryTimeoutId;
           const retryTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
+            retryTimeoutId = setTimeout(() => reject(new Error('Profile fetch timeout')), 15000);
           });
-          const retryResult = await Promise.race([fetchPromise, retryTimeoutPromise]);
-          clearTimeout(timeoutId);
+          const retryResult = await Promise.race([fetchProfileOnce(), retryTimeoutPromise]);
+          clearTimeout(retryTimeoutId);
           const { data, error } = retryResult;
           if (error) throw error;
           // Cache the successful result

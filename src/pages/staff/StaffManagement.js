@@ -40,7 +40,7 @@ import {
   VisibilityOff as HideIcon,
   LockReset as LockResetIcon
 } from '@mui/icons-material';
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { getSupabaseAdmin } from '../../lib/getSupabaseAdminLazy';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
@@ -165,6 +165,7 @@ function StaffManagement() {
     const loadUsers = async () => {
       try {
         setLoading(true);
+        const supabaseAdmin = await getSupabaseAdmin();
         console.log('🔄 Loading users from Supabase...');
         
         // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
@@ -303,6 +304,7 @@ function StaffManagement() {
 
     try {
       setResettingPassword(true);
+      const supabaseAdmin = await getSupabaseAdmin();
       console.log('🔄 Resetting password for user:', staffToResetPassword.id);
       
       // Update user password using Admin API
@@ -337,9 +339,10 @@ function StaffManagement() {
 
     try {
       setDeleting(true);
+      const supabaseAdmin = await getSupabaseAdmin();
       console.log('🗑️ Deleting staff member:', staffToDelete.id);
       
-      // Using Supabase Admin (already imported at top)
+      // Using Supabase Admin (lazy-loaded)
       console.log('📦 Using SupabaseAdmin for deletion');
       
       // Delete from auth.users (this will cascade to public.users due to foreign key)
@@ -461,6 +464,7 @@ function StaffManagement() {
     
     try {
       setSubmitting(true);
+      const supabaseAdmin = await getSupabaseAdmin();
       console.log('🚀 Starting staff save operation...');
       
       // Get Supabase config once for the entire function
@@ -858,6 +862,7 @@ function StaffManagement() {
                 console.log('🔄 Manual refresh triggered');
                 setLoading(true);
                 try {
+                  const supabaseAdmin = await getSupabaseAdmin();
                   // ✅ FIX #1: Replaced fetch() with Supabase admin client (parameterized, secure)
                   const { data: users, error: fetchError } = await supabaseAdmin
                     .from('users')
