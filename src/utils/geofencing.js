@@ -62,6 +62,9 @@ export const getCurrentFacilityFromGeofencing = () => {
         return null;
       }
 
+      // If multiple facilities match (overlapping geofences), pick the closest one.
+      let bestMatch = null; // { id: string, distance: number }
+
       for (const facility of facilities) {
         const lat = facility.geofence_latitude;
         const lng = facility.geofence_longitude;
@@ -78,13 +81,19 @@ export const getCurrentFacilityFromGeofencing = () => {
         );
 
         if (distance <= Number(radius)) {
-          geofencingCache = {
-            facilityId: facility.id,
-            timestamp: Date.now(),
-            ttl: geofencingCache.ttl,
-          };
-          return facility.id;
+          if (!bestMatch || distance < bestMatch.distance) {
+            bestMatch = { id: facility.id, distance };
+          }
         }
+      }
+
+      if (bestMatch) {
+        geofencingCache = {
+          facilityId: bestMatch.id,
+          timestamp: Date.now(),
+          ttl: geofencingCache.ttl,
+        };
+        return bestMatch.id;
       }
 
       geofencingCache = {
