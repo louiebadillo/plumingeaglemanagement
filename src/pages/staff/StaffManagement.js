@@ -45,6 +45,8 @@ import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfi
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
+import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
+import { useDialogScrollThroughVisibility } from '../../hooks/useDialogScrollThroughVisibility';
 
 // Staff data is now loaded from Supabase
 
@@ -123,6 +125,9 @@ function StaffManagement() {
   const [renderKey, setRenderKey] = useState(0);
 
   const STAFF_CREATE_DRAFT_KEY = 'staff_user_create';
+  /** Survives tab switches / remounts (paired with restore effect below). */
+  const STAFF_EDIT_MODAL_SNAPSHOT = 'staff_edit_modal_v2';
+  const staffEditModalRestoreAttemptedRef = useRef(false);
 
   // Restore staff dialog scroll position after returning to the form
   useEffect(() => {
@@ -154,6 +159,25 @@ function StaffManagement() {
     };
   }, [openDialog, editingStaff?.id]);
 
+  useDialogScrollThroughVisibility(
+    openDialog,
+    staffDialogContentRef,
+    () => {
+      try {
+        return Number(sessionStorage.getItem(STAFF_DIALOG_SCROLL_KEY) || 0);
+      } catch (e) {
+        return 0;
+      }
+    },
+    (y) => {
+      try {
+        sessionStorage.setItem(STAFF_DIALOG_SCROLL_KEY, String(Math.max(0, y)));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  );
+
   // Restore new-user form draft (password never stored)
   useEffect(() => {
     if (!openDialog || editingStaff) return;
@@ -181,6 +205,89 @@ function StaffManagement() {
     }, 300);
     return () => window.clearTimeout(t);
   }, [formData, openDialog, editingStaff]);
+
+  // Persist open staff edit/create modal so it can restore after tab blur / remount
+  useEffect(() => {
+    if (!openDialog) return;
+    const t = window.setTimeout(() => {
+      try {
+        const { password: _p, ...rest } = formData;
+        saveSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          editingId: editingStaff?.id ?? null,
+          formData: { ...rest, password: '' },
+        });
+      } catch (e) {
+        /* sessionStorage quota */
+      }
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [openDialog, editingStaff?.id, formData]);
+
+  useEffect(() => {
+    if (!openDialog) return;
+    const flush = () => {
+      try {
+        const { password: _p, ...rest } = formData;
+        saveSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          editingId: editingStaff?.id ?? null,
+          formData: { ...rest, password: '' },
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [openDialog, editingStaff?.id, formData]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (staffEditModalRestoreAttemptedRef.current) return;
+
+    const snap = loadSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
+    if (!snap || snap.v !== 2 || !snap.wasOpen) {
+      staffEditModalRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    if (snap.editingId) {
+      const m = staff.find((s) => s.id === snap.editingId);
+      if (!m) {
+        clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
+        staffEditModalRestoreAttemptedRef.current = true;
+        return;
+      }
+      staffEditModalRestoreAttemptedRef.current = true;
+      setEditingStaff(m);
+      setFormData({
+        ...initialFormData,
+        ...snap.formData,
+        password: '',
+      });
+      setOpenDialog(true);
+      return;
+    }
+
+    staffEditModalRestoreAttemptedRef.current = true;
+    setEditingStaff(null);
+    setFormData({
+      ...initialFormData,
+      ...snap.formData,
+      password: '',
+    });
+    setOpenDialog(true);
+  }, [loading, staff]);
 
   // Debug: Log when staff state changes
   useEffect(() => {
@@ -609,6 +716,7 @@ function StaffManagement() {
         setRenderKey(prev => prev + 1); // Force table re-render
         console.log('⏰ Local state updated at:', new Date().toISOString());
         // Close dialog and show success modal
+        clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
         setOpenDialog(false);
         setSubmitting(false);
         setEditingStaff(null);
@@ -766,6 +874,7 @@ function StaffManagement() {
 
         console.log('🎉 Staff member created successfully!');
         clearSessionDraft(STAFF_CREATE_DRAFT_KEY);
+        clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
         // Close dialog and show success modal
         setOpenDialog(false);
         setSubmitting(false);
@@ -819,6 +928,7 @@ function StaffManagement() {
     } finally {
       // Always close form and reset data, regardless of success or failure
       // Note: setSubmitting(false) is handled in success paths to avoid race conditions
+      clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
       setOpenDialog(false);
       setFormData(initialFormData);
       setEditingStaff(null);
@@ -1081,18 +1191,32 @@ function StaffManagement() {
       </Card>
 
       {/* Add/Edit Staff Dialog */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={openDialog}
+        onClose={shieldEntityDialogClose(() => {
+          clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
+          setOpenDialog(false);
+        })}
+        maxWidth="md"
+        fullWidth
+        disableEnforceFocus
+        disableAutoFocus
+        disableEscapeKeyDown
+        PaperProps={{
+          sx: { overflowY: 'hidden' },
+        }}
+      >
         <DialogTitle>
           {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
         </DialogTitle>
         <DialogContent
           ref={staffDialogContentRef}
-          onScroll={() => {
-            const el = staffDialogContentRef.current;
-            if (!el) return;
+          sx={{ minHeight: 0 }}
+          onScroll={(e) => {
+            const el = e.currentTarget;
             try {
               sessionStorage.setItem(STAFF_DIALOG_SCROLL_KEY, String(el.scrollTop || 0));
-            } catch (e) {
+            } catch (err) {
               /* ignore */
             }
           }}
@@ -1258,7 +1382,12 @@ function StaffManagement() {
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>
+          <Button
+            onClick={() => {
+              clearSessionDraft(STAFF_EDIT_MODAL_SNAPSHOT);
+              setOpenDialog(false);
+            }}
+          >
             Cancel
           </Button>
           {!editingStaff && (
@@ -1312,16 +1441,18 @@ function StaffManagement() {
         {/* Reset Password Dialog */}
         <Dialog 
           open={resetPasswordDialogOpen} 
-          onClose={() => {
+          onClose={shieldEntityDialogClose(() => {
             if (!resettingPassword) {
               setResetPasswordDialogOpen(false);
               setNewPassword('');
               setConfirmPassword('');
               setStaffToResetPassword(null);
             }
-          }}
+          })}
           maxWidth="sm"
           fullWidth
+          disableEnforceFocus
+          disableEscapeKeyDown
         >
           <DialogTitle>
             Reset Password for {staffToResetPassword?.firstName} {staffToResetPassword?.lastName}

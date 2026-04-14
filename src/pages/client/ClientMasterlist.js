@@ -50,6 +50,9 @@ import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { getProfilePhotoUrl } from '../../utils/fileUpload';
 import { calculateAge } from '../../utils/dateHelpers';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
+import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
+import { useDialogScrollThroughVisibility } from '../../hooks/useDialogScrollThroughVisibility';
+import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 
 /** Lowercase canonical status for DB/UI (handles casing/whitespace from API). */
 function normalizeClientStatus(raw) {
@@ -101,6 +104,8 @@ function ClientMasterlist() {
   const [clientPhotoUrls, setClientPhotoUrls] = useState({});
   const editDialogContentRef = useRef(null);
   const EDIT_DIALOG_SCROLL_KEY = 'pem_client_masterlist_edit_scroll_v1';
+  const CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT = 'client_masterlist_edit_modal_v2';
+  const clientMasterlistEditModalRestoreAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (!openDialog || !editingClient) return;
@@ -130,6 +135,25 @@ function ClientMasterlist() {
       cancelled = true;
     };
   }, [openDialog, editingClient?.id]);
+
+  useDialogScrollThroughVisibility(
+    openDialog && !!editingClient,
+    editDialogContentRef,
+    () => {
+      try {
+        return Number(sessionStorage.getItem(EDIT_DIALOG_SCROLL_KEY) || 0);
+      } catch (e) {
+        return 0;
+      }
+    },
+    (y) => {
+      try {
+        sessionStorage.setItem(EDIT_DIALOG_SCROLL_KEY, String(Math.max(0, y)));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  );
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -334,6 +358,82 @@ function ClientMasterlist() {
   const facilities = facilitiesData || [];
   const loading = clientsLoading || facilitiesLoading;
 
+  useEffect(() => {
+    if (!openDialog || !editingClient) return;
+    const t = window.setTimeout(() => {
+      try {
+        saveSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          editingClientId: editingClient.id,
+          clientForm,
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [openDialog, editingClient?.id, clientForm]);
+
+  useEffect(() => {
+    if (!openDialog || !editingClient) return;
+    const flush = () => {
+      try {
+        saveSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          editingClientId: editingClient.id,
+          clientForm,
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [openDialog, editingClient?.id, clientForm]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (clientMasterlistEditModalRestoreAttemptedRef.current) return;
+
+    const snap = loadSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT);
+    if (!snap || snap.v !== 2 || !snap.wasOpen) {
+      clientMasterlistEditModalRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    if (clientsData === undefined) return;
+
+    const list = clientsData || [];
+    const row = list.find((c) => c.id === snap.editingClientId);
+    if (!row) {
+      clearSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT);
+      clientMasterlistEditModalRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    clientMasterlistEditModalRestoreAttemptedRef.current = true;
+    setEditingClient(row);
+    if (snap.clientForm && typeof snap.clientForm === 'object') {
+      const cf = snap.clientForm;
+      setClientForm((prev) => ({
+        ...prev,
+        ...cf,
+        phone: formatNorthAmericanPhoneInput(cf.phone || ''),
+        emergency_contact_phone: formatNorthAmericanPhoneInput(cf.emergency_contact_phone || ''),
+      }));
+    }
+    setOpenDialog(true);
+  }, [loading, clientsData]);
+
   const handleAddClient = () => {
     // Navigate to the comprehensive client creation form
     // The form will show a facility selection questionnaire first
@@ -412,6 +512,7 @@ function ClientMasterlist() {
         }
       }
 
+      clearSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT);
       setOpenDialog(false);
       await queryClient.invalidateQueries({ queryKey: ['clients'] });
       setSuccessMessage(`Client has been ${editingClient ? 'updated' : 'created'} successfully.`);
@@ -765,19 +866,31 @@ function ClientMasterlist() {
 
       {/* Client Edit Dialog - Only for editing existing clients */}
       {editingClient && (
-        <Dialog open={openDialog} onClose={() => {
-          setOpenDialog(false);
-          setEditingClient(null);
-        }} maxWidth="md" fullWidth>
+        <Dialog
+          open={openDialog}
+          onClose={shieldEntityDialogClose(() => {
+            clearSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT);
+            setOpenDialog(false);
+            setEditingClient(null);
+          })}
+          maxWidth="md"
+          fullWidth
+          disableEnforceFocus
+          disableAutoFocus
+          disableEscapeKeyDown
+          PaperProps={{
+            sx: { overflowY: 'hidden' },
+          }}
+        >
           <DialogTitle>Edit Client</DialogTitle>
           <DialogContent
             ref={editDialogContentRef}
-            onScroll={() => {
-              const el = editDialogContentRef.current;
-              if (!el) return;
+            sx={{ minHeight: 0 }}
+            onScroll={(e) => {
+              const el = e.currentTarget;
               try {
                 sessionStorage.setItem(EDIT_DIALOG_SCROLL_KEY, String(el.scrollTop || 0));
-              } catch (e) {
+              } catch (err) {
                 /* ignore */
               }
             }}
@@ -951,10 +1064,15 @@ function ClientMasterlist() {
             </Grid>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => {
-              setOpenDialog(false);
-              setEditingClient(null);
-            }}>Cancel</Button>
+            <Button
+              onClick={() => {
+                clearSessionDraft(CLIENT_MASTERLIST_EDIT_MODAL_SNAPSHOT);
+                setOpenDialog(false);
+                setEditingClient(null);
+              }}
+            >
+              Cancel
+            </Button>
             <Button onClick={handleSaveClient} variant="contained">
               Update Client
             </Button>
@@ -963,7 +1081,14 @@ function ClientMasterlist() {
       )}
 
       {/* Transfer Dialog */}
-      <Dialog open={openTransferDialog} onClose={() => setOpenTransferDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={openTransferDialog}
+        onClose={shieldEntityDialogClose(() => setOpenTransferDialog(false))}
+        maxWidth="sm"
+        fullWidth
+        disableEnforceFocus
+        disableEscapeKeyDown
+      >
         <DialogTitle>Transfer Client</DialogTitle>
         <DialogContent>
           {transferringClient && (

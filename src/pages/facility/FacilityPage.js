@@ -55,6 +55,7 @@ import { createClientUrl } from '../../utils/urlUtils';
 import { supabase } from '../../lib/supabase';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 import { getProfilePhotoUrl } from '../../utils/fileUpload';
+import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
 
 // Initial form data for creating/editing clients
 const initialClientFormData = {
@@ -263,7 +264,7 @@ function FacilityPage() {
       alert('Error: Facility ID is missing. Please try again.');
       return;
     }
-    history.push(`/app/client/new?facility=${facilityId}`);
+    history.push(`/app/client/new/edit?facility=${facilityId}`);
   };
 
   const handleOpenAddClientModal = async () => {
@@ -629,7 +630,14 @@ function FacilityPage() {
       </Grid>
 
       {/* Add Client (transfer) Modal */}
-      <Dialog open={addClientModalOpen} onClose={handleCloseAddClientModal} maxWidth="sm" fullWidth>
+      <Dialog
+        open={addClientModalOpen}
+        onClose={shieldEntityDialogClose(handleCloseAddClientModal)}
+        maxWidth="sm"
+        fullWidth
+        disableEnforceFocus
+        disableEscapeKeyDown
+      >
         <DialogTitle>Add Client – Transfer to facility</DialogTitle>
         <DialogContent>
           {transferModalLoading ? (
@@ -731,7 +739,14 @@ function FacilityPage() {
       </Dialog>
 
       {/* Transfer selected (clients in this facility) Modal */}
-      <Dialog open={transferSelectedModalOpen} onClose={handleCloseTransferSelectedModal} maxWidth="xs" fullWidth>
+      <Dialog
+        open={transferSelectedModalOpen}
+        onClose={shieldEntityDialogClose(handleCloseTransferSelectedModal)}
+        maxWidth="xs"
+        fullWidth
+        disableEnforceFocus
+        disableEscapeKeyDown
+      >
         <DialogTitle>Transfer selected clients</DialogTitle>
         <DialogContent>
           {transferSelectedError && (

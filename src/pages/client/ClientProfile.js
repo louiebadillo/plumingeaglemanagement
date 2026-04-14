@@ -65,9 +65,9 @@ import { uploadProfilePhoto, deleteProfilePhoto, getProfilePhotoUrl } from '../.
 import ImageCropDialog from '../../components/ImageCrop/ImageCropDialog';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 import { blobToFile } from '../../utils/imageUtils';
+import { clearSessionDraft } from '../../utils/sessionDraftStorage';
 
 const NEW_CLIENT_DRAFT_STORAGE_PREFIX = 'pem_new_client_draft_v1::';
-const EDIT_CLIENT_SCROLL_STORAGE_PREFIX = 'pem_edit_client_scroll_v1::';
 
 function newClientDraftStorageKey(pathname, facilityId) {
   return `${NEW_CLIENT_DRAFT_STORAGE_PREFIX}${pathname}::${facilityId || ''}`;
@@ -110,69 +110,15 @@ function clearNewClientDraft(pathname, facilityId) {
   }
 }
 
-function editClientScrollStorageKey(pathname, clientId) {
-  return `${EDIT_CLIENT_SCROLL_STORAGE_PREFIX}${pathname}::${clientId || ''}`;
-}
-
-function readEditClientScrollTop(pathname, clientId) {
-  if (!clientId) return 0;
-  try {
-    const raw = sessionStorage.getItem(editClientScrollStorageKey(pathname, clientId));
-    const parsed = raw ? Number(raw) : 0;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-  } catch (e) {
-    return 0;
-  }
-}
-
-function writeEditClientScrollTop(pathname, clientId, scrollTop) {
-  if (!clientId) return;
-  try {
-    sessionStorage.setItem(editClientScrollStorageKey(pathname, clientId), String(Math.max(0, scrollTop || 0)));
-  } catch (e) {
-    /* ignore */
-  }
-}
-
 function ClientProfile() {
   const { clientSlug } = useParams();
   const history = useHistory();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [client, setClient] = useState(null);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState({});
-  const editDialogContentRef = useRef(null);
 
-  // Restore scroll position in the edit/create client dialog when navigating away and back.
-  // Needs to run after the dialog has mounted and the draft has repopulated fields.
-  useEffect(() => {
-    if (!editDialogOpen) return;
-    const el = editDialogContentRef.current;
-    if (!el) return;
-
-    const target = readEditClientScrollTop(location.pathname, client?.id);
-    if (!target) return;
-
-    let cancelled = false;
-    const restore = async () => {
-      // Two frames helps when DialogContent height changes after draft data paints.
-      await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => requestAnimationFrame(r));
-      if (cancelled) return;
-      try {
-        el.scrollTop = target;
-      } catch (e) {
-        /* ignore */
-      }
-    };
-
-    restore();
-    return () => {
-      cancelled = true;
-    };
-  }, [editDialogOpen, location.pathname, client?.id]);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -191,13 +137,20 @@ function ClientProfile() {
   const newClientDraftKeyRef = useRef(null);
   /** Ignores stale Supabase responses so async completion after a re-run does not wipe in-progress edits. */
   const existingClientLoadGenRef = useRef(0);
-  
+
   const { userProfile } = useSupabase();
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
   // Check if this is a new client - check the URL path first (most reliable)
   // When using exact route, clientSlug might be undefined, so check pathname
-  const isNewClient = !clientSlug || clientSlug === 'new' || window.location.pathname === '/app/client/new' || window.location.pathname.endsWith('/client/new');
+  const isNewClient =
+    !clientSlug ||
+    clientSlug === 'new' ||
+    window.location.pathname === '/app/client/new' ||
+    window.location.pathname.endsWith('/client/new') ||
+    window.location.pathname.endsWith('/new/edit');
+
+  const profileEditModalRestoreScope = `client_profile_edit_modal_v2::${location.pathname}`;
 
   // Helper function to load facility information
   // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
@@ -255,7 +208,7 @@ function ClientProfile() {
     // Close dialog first
     setFacilitySelectionOpen(false);
     // Update URL with facility parameter - this will trigger useEffect to run again
-    const newUrl = `/app/client/new?facility=${selectedFacilityId}`;
+    const newUrl = `/app/client/new/edit?facility=${selectedFacilityId}`;
     console.log('🚀 Navigating to:', newUrl);
     history.push(newUrl);
     setFacilityFromUrl(selectedFacilityId);
@@ -274,21 +227,28 @@ function ClientProfile() {
     // Early return if this is a new client - don't try to load from database
     // Check both the slug and the pathname to be absolutely sure
     // When exact route matches, clientSlug is undefined, so check pathname
-    const isCreatingNewClient = currentPath === '/app/client/new' || 
-                                 currentPath.endsWith('/client/new') || 
-                                 clientSlug === 'new' || 
-                                 !clientSlug;
+    const isCreatingNewClient =
+      currentPath === '/app/client/new' ||
+      currentPath.endsWith('/client/new') ||
+      currentPath.endsWith('/new/edit') ||
+      clientSlug === 'new' ||
+      !clientSlug;
 
     if (!isCreatingNewClient) {
       newClientDraftKeyRef.current = null;
     }
     
     if (isCreatingNewClient) {
-      console.log('✅ Creating new client - pathname:', currentPath, 'clientSlug:', clientSlug);
-      
+      console.log('Creating new client - pathname:', currentPath, 'clientSlug:', clientSlug);
+
+      if (currentPath === '/app/client/new' && facilityParam) {
+        history.replace(`/app/client/new/edit?facility=${encodeURIComponent(facilityParam)}`);
+        return;
+      }
+
       // If no facility parameter, show facility selection dialog first
       if (!facilityParam) {
-        console.log('📋 No facility parameter - showing facility selection dialog');
+        console.log('No facility parameter - showing facility selection dialog');
         // Set dialog open immediately, then load facilities
         setFacilitySelectionOpen(true);
         // Load facilities list for selection
@@ -321,7 +281,6 @@ function ClientProfile() {
           setClient(stored);
           setEditingClient(stored);
           newClientDraftKeyRef.current = draftKey;
-          setTimeout(() => setEditDialogOpen(true), 100);
           return;
         }
       }
@@ -411,10 +370,6 @@ function ClientProfile() {
       if (facilityParam) {
         writeNewClientDraft(currentPath, facilityParam, newClient);
       }
-      // Open edit dialog immediately for new client
-      setTimeout(() => {
-        setEditDialogOpen(true);
-      }, 100);
       return; // Exit early, don't try to load from database
     }
     
@@ -619,13 +574,18 @@ function ClientProfile() {
       
       loadClient();
     }
-  }, [clientSlug, history, isNewClient, location.search]);
+  }, [clientSlug, history, isNewClient, location.search, location.pathname]);
 
   // Persist unsaved new-client form to sessionStorage (debounced) so tab changes / remounts don't lose work
   useEffect(() => {
     if (!isNewClient) return;
     const path = location.pathname;
-    if (path !== '/app/client/new' && !path.endsWith('/client/new')) return;
+    const onNewClientFormPath =
+      path === '/app/client/new' ||
+      path.endsWith('/client/new') ||
+      path === '/app/client/new/edit' ||
+      path.endsWith('/new/edit');
+    if (!onNewClientFormPath) return;
     const params = new URLSearchParams(location.search);
     const fac = params.get('facility');
     if (!fac) return;
@@ -653,11 +613,30 @@ function ClientProfile() {
   }, [client]);
 
   const handleEdit = () => {
-    setEditDialogOpen(true);
+    if (!clientSlug || clientSlug === 'new') return;
+    history.push(`/app/client/${clientSlug}/edit`);
   };
 
   const handleDelete = () => {
     setDeleteDialogOpen(true);
+  };
+
+  const navigateAfterSaveExisting = (updatedRow) => {
+    history.push('/app/client-masterlist');
+  };
+
+  const handleCancelClientForm = () => {
+    clearSessionDraft(profileEditModalRestoreScope);
+    if (isNewClient) {
+      const fac = facilityFromUrl || new URLSearchParams(window.location.search).get('facility');
+      if (fac) clearNewClientDraft(location.pathname, fac);
+      newClientDraftKeyRef.current = null;
+      history.push('/app/client-masterlist');
+    } else if (clientSlug) {
+      history.push(`/app/client/${clientSlug}`);
+    } else {
+      history.push('/app/dashboard');
+    }
   };
 
   // Helper function to convert empty strings to null for date fields
@@ -752,14 +731,13 @@ function ClientProfile() {
           // For now, we'll skip this and let the user upload after creation
         }
         
-        setEditDialogOpen(false);
+        clearSessionDraft(profileEditModalRestoreScope);
         // Show success modal before redirecting
         setSuccessMessage(`Client "${editingClient.firstName} ${editingClient.lastName}" has been created successfully.`);
         setSuccessModalOpen(true);
-        // Redirect to the new client's profile page after a short delay
+        // Redirect to the client masterlist after a short delay
         setTimeout(() => {
-          const clientUrl = createClientUrl(newClient);
-        history.push(clientUrl);
+          history.push('/app/client-masterlist');
         }, 1500);
       } else {
         // Update existing client in Supabase
@@ -832,9 +810,12 @@ function ClientProfile() {
         console.log('✅ Client updated successfully');
         queryClient.invalidateQueries(['clients']);
         setClient(editingClient);
-        setEditDialogOpen(false);
+        clearSessionDraft(profileEditModalRestoreScope);
         setSuccessMessage(`Client "${editingClient.firstName} ${editingClient.lastName}" information has been updated successfully.`);
         setSuccessModalOpen(true);
+        setTimeout(() => {
+          navigateAfterSaveExisting(updatedClient);
+        }, 800);
       }
     } catch (error) {
       console.error('💥 Error saving client:', error);
@@ -1028,649 +1009,7 @@ function ClientProfile() {
   };
 
 
-  // Check if we're creating a new client - use pathname as the most reliable check
-  const pathname = window.location.pathname;
-  const isCreatingNew = pathname === '/app/client/new' || pathname.endsWith('/client/new') || clientSlug === 'new' || !clientSlug;
-  
-  // Check if we're waiting for facility selection
-  const urlParams = new URLSearchParams(window.location.search);
-  const facilityParam = urlParams.get('facility');
-  const waitingForFacility = isCreatingNew && !facilityParam && !client;
-  
-  // Show loading only if we're not creating a new client and not waiting for facility selection
-  if (!client && !isCreatingNew) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Typography variant="h5">Loading client information...</Typography>
-      </Box>
-    );
-  }
-  
-  // For new clients waiting for facility selection, show nothing (dialog will handle it)
-  // For new clients with facility, show loading briefly
-  if (isCreatingNew && !client && !waitingForFacility) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <CircularProgress />
-        <Typography variant="h6" sx={{ mt: 2 }}>Preparing client form...</Typography>
-      </Box>
-    );
-  }
-  
-  // If waiting for facility selection, show loading while facilities are being loaded
-  // The dialog will be shown once facilities are loaded and state is set
-  if (waitingForFacility && !facilitySelectionOpen) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <CircularProgress />
-        <Typography variant="h6" sx={{ mt: 2 }}>Loading facilities...</Typography>
-      </Box>
-    );
-  }
-
-  // If facility selection dialog is open, render only the dialog
-  // Don't render the main component content
-  if (facilitySelectionOpen) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Dialog open={facilitySelectionOpen} onClose={() => {
-          setFacilitySelectionOpen(false);
-          // Navigate back if user cancels
-          history.push('/app/client/masterlist');
-        }} maxWidth="sm" fullWidth>
-          <DialogTitle>Select Facility</DialogTitle>
-          <DialogContent>
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body1" gutterBottom>
-                Please select which facility this client will be assigned to:
-              </Typography>
-              <FormControl fullWidth sx={{ mt: 3 }}>
-                <InputLabel>Facility</InputLabel>
-                <Select
-                  value={selectedFacilityId || ''}
-                  label="Facility"
-                  onChange={(e) => setSelectedFacilityId(e.target.value)}
-                >
-                  {facilities.map((facility) => (
-                    <MenuItem key={facility.id} value={facility.id}>
-                      {facility.name}
-                      {facility.address && (
-                        <Typography variant="caption" color="textSecondary" sx={{ ml: 1 }}>
-                          - {facility.address}
-                        </Typography>
-                      )}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => {
-              setFacilitySelectionOpen(false);
-              history.push('/app/client/masterlist');
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleFacilitySelection} 
-              variant="contained"
-              disabled={!selectedFacilityId}
-            >
-              Proceed
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
-    );
-  }
-
-  // Don't render main component if client is null (unless it's a new client with facility)
-  if (!client && !isCreatingNew) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Typography variant="h5">Loading client information...</Typography>
-      </Box>
-    );
-  }
-
-  return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Paper sx={{ p: 3, mb: 3, display: 'flex', overflow: 'hidden' }}>
-        <Box
-          sx={{
-            width: 150,
-            minWidth: 150,
-            bgcolor: 'primary.main',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-            overflow: 'hidden',
-            mr: 3
-          }}
-        >
-          {profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null) ? (
-            <Box
-              component="img"
-              src={profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null)}
-              alt={`${client?.firstName} ${client?.lastName}`}
-              sx={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center'
-              }}
-            />
-          ) : (
-            <Typography 
-              variant="h2" 
-              sx={{ 
-                color: 'white', 
-                fontWeight: 'bold',
-                textAlign: 'center'
-              }}
-            >
-              {client?.firstName?.[0]}{client?.lastName?.[0]}
-            </Typography>
-          )}
-        </Box>
-        <Box sx={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box>
-            <Typography variant="h4" gutterBottom>
-              {client?.firstName} {client?.lastName}
-            </Typography>
-            <Box display="flex" alignItems="center" gap={2}>
-              <Typography variant="body2" color="textSecondary">
-                Room {client?.room || 'Not assigned'} • {facility?.name || 'Facility not found'}
-              </Typography>
-              <Chip
-                label={client?.status === 'active' ? 'Active' : client?.status === 'discharged' ? 'Discharged' : 'Active'}
-                color={client?.status === 'active' ? 'success' : client?.status === 'discharged' ? 'warning' : 'success'}
-                size="small"
-              />
-            </Box>
-          </Box>
-          
-          {isAdmin && (
-            <Box>
-              <IconButton onClick={handleEdit} color="primary" sx={{ mr: 1 }}>
-                <EditIcon />
-              </IconButton>
-              {!isNewClient && (
-                <IconButton onClick={handleDelete} color="error">
-                  <DeleteIcon />
-                </IconButton>
-              )}
-            </Box>
-          )}
-        </Box>
-      </Paper>
-
-      <Grid container spacing={3}>
-        {/* Basic Information */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <PersonIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Basic Information
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                <ListItem>
-                  <ListItemIcon><CalendarIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Age" 
-                    secondary={`${calculateAge(client.dateOfBirth)} years old`} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><CalendarIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Date of Birth" 
-                    secondary={formatDate(client.dateOfBirth)} 
-                  />
-                </ListItem>
-                {client.pronouns && (
-                  <ListItem>
-                    <ListItemIcon><PersonIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="Pronouns" 
-                      secondary={client.pronouns} 
-                    />
-                  </ListItem>
-                )}
-                <ListItem>
-                  <ListItemIcon><PhoneIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Phone" 
-                    secondary={client.phone || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><EmailIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Email" 
-                    secondary={client.email || 'Not provided'} 
-                  />
-                </ListItem>
-                {client.albertaHealthCardNumber && (
-                <ListItem>
-                    <ListItemIcon><MedicalIcon /></ListItemIcon>
-                  <ListItemText 
-                      primary="Alberta Health Number" 
-                      secondary={client.albertaHealthCardNumber} 
-                  />
-                </ListItem>
-                )}
-                {client.client_id_no && (
-                  <ListItem>
-                    <ListItemIcon><PersonIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="Client ID No" 
-                      secondary={client.client_id_no} 
-                    />
-                  </ListItem>
-                )}
-                {client.band_no && (
-                  <ListItem>
-                    <ListItemIcon><PersonIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="Band No" 
-                      secondary={client.band_no} 
-                    />
-                  </ListItem>
-                )}
-                <ListItem>
-                  <ListItemIcon><RoomIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Admission Date" 
-                    secondary={formatDate(client.admissionDate)} 
-                  />
-                </ListItem>
-                {client.socialMediaLinks && client.socialMediaLinks.length > 0 && (
-                  <ListItem>
-                    <ListItemIcon><LinkIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="Social Media Links" 
-                      secondary={`${client.socialMediaLinks.length} link(s)`} 
-                    />
-                  </ListItem>
-                )}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Case Worker Information */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <WorkIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Case Worker Information
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                <ListItem>
-                  <ListItemIcon><PersonIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Name" 
-                    secondary={client.caseWorker?.name || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><PhoneIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Phone" 
-                    secondary={client.caseWorker?.phone || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemIcon><HomeIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="Agency" 
-                    secondary={client.caseWorker?.agency || 'Not provided'} 
-                  />
-                </ListItem>
-                    <ListItem>
-                  <ListItemIcon><PhoneIcon /></ListItemIcon>
-                      <ListItemText 
-                    primary="Agency Office Number" 
-                    secondary={client.caseWorker?.agencyOfficeNumber || 'Not provided'} 
-                      />
-                    </ListItem>
-                    <ListItem>
-                      <ListItemIcon><PhoneIcon /></ListItemIcon>
-                  <ListItemText 
-                    primary="On-Call Number" 
-                    secondary={client.caseWorker?.onCallNumber || 'Not provided'} 
-                  />
-                    </ListItem>
-                  </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Physical Attributes */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <PersonOutlineIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Physical Attributes
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                <ListItem>
-                  <ListItemText 
-                    primary="Hair Colour" 
-                    secondary={client.physicalAttributes?.hairColour || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Eye Colour" 
-                    secondary={client.physicalAttributes?.eyeColour || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Height" 
-                    secondary={client.physicalAttributes?.height || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Weight" 
-                    secondary={client.physicalAttributes?.weight || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Build" 
-                    secondary={client.physicalAttributes?.build || 'Not provided'} 
-                  />
-                </ListItem>
-                {client.physicalAttributes?.bodyMarks && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Body Marks" 
-                      secondary={client.physicalAttributes.bodyMarks} 
-                    />
-                  </ListItem>
-                )}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* School Information */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <SchoolIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                School Information
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                {client.schoolInfo?.albertaStudentNumber && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Alberta Student Number" 
-                      secondary={client.schoolInfo.albertaStudentNumber} 
-                    />
-                    </ListItem>
-                )}
-                <ListItem>
-                  <ListItemText 
-                    primary="School Name" 
-                    secondary={client.schoolInfo?.schoolName || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Grade" 
-                    secondary={client.schoolInfo?.grade || 'Not provided'} 
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Teacher" 
-                    secondary={client.schoolInfo?.teacher || 'Not provided'} 
-                  />
-                </ListItem>
-                {client.schoolInfo?.schoolAddress && (
-                  <ListItem>
-                    <ListItemIcon><RoomIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="School Address" 
-                      secondary={client.schoolInfo.schoolAddress} 
-                    />
-                  </ListItem>
-                )}
-                {client.schoolInfo?.schoolPhone && (
-                  <ListItem>
-                    <ListItemIcon><PhoneIcon /></ListItemIcon>
-                    <ListItemText 
-                      primary="School Phone" 
-                      secondary={client.schoolInfo.schoolPhone} 
-                    />
-                  </ListItem>
-                )}
-              </List>
-            </CardContent>
-          </Card>
-      </Grid>
-
-        {/* Medical Information */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <MedicalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Medical Information
-          </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List dense>
-                {client.allergies && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Allergies" 
-                      secondary={client.allergies} 
-                    />
-                  </ListItem>
-                )}
-                {client.diagnosis && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Diagnosis" 
-                      secondary={client.diagnosis} 
-                    />
-                  </ListItem>
-                )}
-                {client.familyDoctor && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Family Doctor" 
-                      secondary={
-                        <Box>
-                          <Typography variant="body2">{client.familyDoctor}</Typography>
-                          {client.familyDoctorCheckup && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Recent Annual Checkup: {formatDate(client.familyDoctorCheckup)}
-                            </Typography>
-                          )}
-                        </Box>
-                      } 
-                    />
-                  </ListItem>
-                )}
-                {client.dentist && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Dentist" 
-                      secondary={
-                        <Box>
-                          <Typography variant="body2">{client.dentist}</Typography>
-                          {client.dentistCheckup && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Recent Annual Checkup: {formatDate(client.dentistCheckup)}
-                            </Typography>
-                          )}
-                        </Box>
-                      } 
-                    />
-                  </ListItem>
-                )}
-                {client.optometrist && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Optometrist" 
-                      secondary={
-                        <Box>
-                          <Typography variant="body2">{client.optometrist}</Typography>
-                          {client.optometristCheckup && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Recent Annual Checkup: {formatDate(client.optometristCheckup)}
-                            </Typography>
-                          )}
-                        </Box>
-                      } 
-                    />
-                  </ListItem>
-                )}
-                {client.specialist && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Specialist" 
-                      secondary={
-                        <Box>
-                          <Typography variant="body2">{client.specialist}</Typography>
-                          {client.specialistCheckup && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Recent Annual Checkup: {formatDate(client.specialistCheckup)}
-                            </Typography>
-                          )}
-                        </Box>
-                      } 
-                    />
-                  </ListItem>
-                )}
-                {client.pediatrician && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Pediatrician" 
-                      secondary={
-                        <Box>
-                          <Typography variant="body2">{client.pediatrician}</Typography>
-                          {client.pediatricianCheckup && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              Recent Annual Checkup: {formatDate(client.pediatricianCheckup)}
-                            </Typography>
-                          )}
-                        </Box>
-                      } 
-                    />
-                  </ListItem>
-                )}
-                {client.medicalNotes && (
-                  <ListItem>
-                    <ListItemText 
-                      primary="Medical Notes" 
-                      secondary={client.medicalNotes} 
-                    />
-                  </ListItem>
-                )}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Allowed Contacts */}
-        <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Allowed Contacts
-                    </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <AllowedContactsManager
-                allowedContacts={client.allowedContacts || []}
-                onUpdate={(contacts) => {
-                  setEditingClient(prev => ({ ...prev, allowedContacts: contacts }));
-                }}
-                canEdit={isAdmin}
-              />
-                  </CardContent>
-                </Card>
-              </Grid>
-
-        {/* Social Media Links */}
-        {client.socialMediaLinks && client.socialMediaLinks.length > 0 && (
-          <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                  <LinkIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Social Media Links
-                    </Typography>
-                <Divider sx={{ mb: 2 }} />
-                <SocialMediaManager
-                  socialMediaLinks={client.socialMediaLinks || []}
-                  onUpdate={(links) => {
-                    setEditingClient(prev => ({ ...prev, socialMediaLinks: links }));
-                  }}
-                  canEdit={isAdmin}
-                />
-                  </CardContent>
-                </Card>
-            </Grid>
-          )}
-
-        {/* Risks and Preferences */}
-        {client.risksAndPreferences && (
-          <Grid item xs={12}>
-                      <Card>
-                        <CardContent>
-                          <Typography variant="h6" gutterBottom>
-                  <NotesIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                  Risks and Preferences
-                          </Typography>
-                <Divider sx={{ mb: 2 }} />
-                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
-                  <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>
-                    {client.risksAndPreferences}
-                </Typography>
-                </Paper>
-              </CardContent>
-            </Card>
-            </Grid>
-          )}
-      </Grid>
-
-      {/* Edit Dialog */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {isNewClient ? `Add New Client - ${facility?.name || 'Facility'}` : 'Edit Client Information'}
-        </DialogTitle>
-        <DialogContent
-          ref={editDialogContentRef}
-          onScroll={() => {
-            const el = editDialogContentRef.current;
-            if (!el) return;
-            writeEditClientScrollTop(location.pathname, client?.id, el.scrollTop);
-          }}
-        >
+  const renderClientEditForm = () => (
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {/* Profile Photo Upload */}
             <Grid item xs={12}>
@@ -2242,14 +1581,696 @@ function ClientProfile() {
               />
             </Grid>
           </Grid>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSaveEdit} variant="contained">
-            {isNewClient ? 'Create Client' : 'Save Changes'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+
+  );
+
+  // Check if we're creating a new client - use pathname as the most reliable check
+  const pathname = window.location.pathname;
+  const isClientFormRoute = pathname.endsWith('/edit');
+  const isCreatingNew =
+    pathname === '/app/client/new' ||
+    pathname.endsWith('/client/new') ||
+    pathname.endsWith('/new/edit') ||
+    clientSlug === 'new' ||
+    !clientSlug;
+  
+  // Check if we're waiting for facility selection
+  const urlParams = new URLSearchParams(window.location.search);
+  const facilityParam = urlParams.get('facility');
+  const waitingForFacility = isCreatingNew && !facilityParam && !client;
+  
+  // Show loading only if we're not creating a new client and not waiting for facility selection
+  if (!client && !isCreatingNew) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography variant="h5">Loading client information...</Typography>
+      </Box>
+    );
+  }
+  
+  // For new clients waiting for facility selection, show nothing (dialog will handle it)
+  // For new clients with facility, show loading briefly
+  if (isCreatingNew && !client && !waitingForFacility) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <CircularProgress />
+        <Typography variant="h6" sx={{ mt: 2 }}>Preparing client form...</Typography>
+      </Box>
+    );
+  }
+  
+  // If waiting for facility selection, show loading while facilities are being loaded
+  // The dialog will be shown once facilities are loaded and state is set
+  if (waitingForFacility && !facilitySelectionOpen) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <CircularProgress />
+        <Typography variant="h6" sx={{ mt: 2 }}>Loading facilities...</Typography>
+      </Box>
+    );
+  }
+
+  // If facility selection dialog is open, render only the dialog
+  // Don't render the main component content
+  if (facilitySelectionOpen) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Dialog open={facilitySelectionOpen} onClose={() => {
+          setFacilitySelectionOpen(false);
+          // Navigate back if user cancels
+          history.push('/app/client-masterlist');
+        }} maxWidth="sm" fullWidth>
+          <DialogTitle>Select Facility</DialogTitle>
+          <DialogContent>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                Please select which facility this client will be assigned to:
+              </Typography>
+              <FormControl fullWidth sx={{ mt: 3 }}>
+                <InputLabel>Facility</InputLabel>
+                <Select
+                  value={selectedFacilityId || ''}
+                  label="Facility"
+                  onChange={(e) => setSelectedFacilityId(e.target.value)}
+                >
+                  {facilities.map((facility) => (
+                    <MenuItem key={facility.id} value={facility.id}>
+                      {facility.name}
+                      {facility.address && (
+                        <Typography variant="caption" color="textSecondary" sx={{ ml: 1 }}>
+                          - {facility.address}
+                        </Typography>
+                      )}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => {
+              setFacilitySelectionOpen(false);
+              history.push('/app/client-masterlist');
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleFacilitySelection} 
+              variant="contained"
+              disabled={!selectedFacilityId}
+            >
+              Proceed
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    );
+  }
+
+  if (isClientFormRoute && client) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 }, pb: 6, maxWidth: 1000, mx: 'auto' }}>
+        <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
+          {isNewClient ? `Add New Client — ${facility?.name || 'Facility'}` : 'Edit Client Information'}
+        </Typography>
+
+        <Paper
+          elevation={2}
+          sx={{
+            bgcolor: 'common.white',
+            p: { xs: 2, sm: 3 },
+            borderRadius: 2,
+          }}
+        >
+          {renderClientEditForm()}
+
+          <Box
+            sx={{
+              mt: 3,
+              pt: 2,
+              borderTop: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Button onClick={handleCancelClientForm}>Cancel</Button>
+            <Button onClick={handleSaveEdit} variant="contained">
+              {isNewClient ? 'Create Client' : 'Save Changes'}
+            </Button>
+          </Box>
+        </Paper>
+
+        <ImageCropDialog
+          open={cropDialogOpen}
+          onClose={() => {
+            setCropDialogOpen(false);
+            setImageToCrop(null);
+          }}
+          imageSrc={imageToCrop}
+          onCropComplete={handleCropComplete}
+          aspect={1}
+        />
+        <SuccessModal
+          open={successModalOpen}
+          onClose={() => setSuccessModalOpen(false)}
+          title="Success!"
+          message={successMessage}
+        />
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Paper sx={{ p: 3, mb: 3, display: 'flex', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            width: 150,
+            minWidth: 150,
+            bgcolor: 'primary.main',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            mr: 3
+          }}
+        >
+          {profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null) ? (
+            <Box
+              component="img"
+              src={profilePhotoUrl || (client?.profilePhoto && !client.profilePhoto.startsWith('client-') ? client.profilePhoto : null)}
+              alt={`${client?.firstName} ${client?.lastName}`}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center'
+              }}
+            />
+          ) : (
+            <Typography 
+              variant="h2" 
+              sx={{ 
+                color: 'white', 
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}
+            >
+              {client?.firstName?.[0]}{client?.lastName?.[0]}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h4" gutterBottom>
+              {client?.firstName} {client?.lastName}
+            </Typography>
+            <Box display="flex" alignItems="center" gap={2}>
+              <Typography variant="body2" color="textSecondary">
+                Room {client?.room || 'Not assigned'} • {facility?.name || 'Facility not found'}
+              </Typography>
+              <Chip
+                label={client?.status === 'active' ? 'Active' : client?.status === 'discharged' ? 'Discharged' : 'Active'}
+                color={client?.status === 'active' ? 'success' : client?.status === 'discharged' ? 'warning' : 'success'}
+                size="small"
+              />
+            </Box>
+          </Box>
+          
+          {isAdmin && (
+            <Box>
+              <IconButton onClick={handleEdit} color="primary" sx={{ mr: 1 }}>
+                <EditIcon />
+              </IconButton>
+              {!isNewClient && (
+                <IconButton onClick={handleDelete} color="error">
+                  <DeleteIcon />
+                </IconButton>
+              )}
+            </Box>
+          )}
+        </Box>
+      </Paper>
+
+      <Grid container spacing={3}>
+        {/* Basic Information */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <PersonIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Basic Information
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              <List dense>
+                <ListItem>
+                  <ListItemIcon><CalendarIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Age" 
+                    secondary={`${calculateAge(client.dateOfBirth)} years old`} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><CalendarIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Date of Birth" 
+                    secondary={formatDate(client.dateOfBirth)} 
+                  />
+                </ListItem>
+                {client.pronouns && (
+                  <ListItem>
+                    <ListItemIcon><PersonIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="Pronouns" 
+                      secondary={client.pronouns} 
+                    />
+                  </ListItem>
+                )}
+                <ListItem>
+                  <ListItemIcon><PhoneIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Phone" 
+                    secondary={client.phone || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><EmailIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Email" 
+                    secondary={client.email || 'Not provided'} 
+                  />
+                </ListItem>
+                {client.albertaHealthCardNumber && (
+                <ListItem>
+                    <ListItemIcon><MedicalIcon /></ListItemIcon>
+                  <ListItemText 
+                      primary="Alberta Health Number" 
+                      secondary={client.albertaHealthCardNumber} 
+                  />
+                </ListItem>
+                )}
+                {client.client_id_no && (
+                  <ListItem>
+                    <ListItemIcon><PersonIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="Client ID No" 
+                      secondary={client.client_id_no} 
+                    />
+                  </ListItem>
+                )}
+                {client.band_no && (
+                  <ListItem>
+                    <ListItemIcon><PersonIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="Band No" 
+                      secondary={client.band_no} 
+                    />
+                  </ListItem>
+                )}
+                <ListItem>
+                  <ListItemIcon><RoomIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Admission Date" 
+                    secondary={formatDate(client.admissionDate)} 
+                  />
+                </ListItem>
+                {client.socialMediaLinks && client.socialMediaLinks.length > 0 && (
+                  <ListItem>
+                    <ListItemIcon><LinkIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="Social Media Links" 
+                      secondary={`${client.socialMediaLinks.length} link(s)`} 
+                    />
+                  </ListItem>
+                )}
+              </List>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Case Worker Information */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <WorkIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Case Worker Information
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              <List dense>
+                <ListItem>
+                  <ListItemIcon><PersonIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Name" 
+                    secondary={client.caseWorker?.name || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><PhoneIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Phone" 
+                    secondary={client.caseWorker?.phone || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon><HomeIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="Agency" 
+                    secondary={client.caseWorker?.agency || 'Not provided'} 
+                  />
+                </ListItem>
+                    <ListItem>
+                  <ListItemIcon><PhoneIcon /></ListItemIcon>
+                      <ListItemText 
+                    primary="Agency Office Number" 
+                    secondary={client.caseWorker?.agencyOfficeNumber || 'Not provided'} 
+                      />
+                    </ListItem>
+                    <ListItem>
+                      <ListItemIcon><PhoneIcon /></ListItemIcon>
+                  <ListItemText 
+                    primary="On-Call Number" 
+                    secondary={client.caseWorker?.onCallNumber || 'Not provided'} 
+                  />
+                    </ListItem>
+                  </List>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Physical Attributes */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <PersonOutlineIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Physical Attributes
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              <List dense>
+                <ListItem>
+                  <ListItemText 
+                    primary="Hair Colour" 
+                    secondary={client.physicalAttributes?.hairColour || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Eye Colour" 
+                    secondary={client.physicalAttributes?.eyeColour || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Height" 
+                    secondary={client.physicalAttributes?.height || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Weight" 
+                    secondary={client.physicalAttributes?.weight || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Build" 
+                    secondary={client.physicalAttributes?.build || 'Not provided'} 
+                  />
+                </ListItem>
+                {client.physicalAttributes?.bodyMarks && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Body Marks" 
+                      secondary={client.physicalAttributes.bodyMarks} 
+                    />
+                  </ListItem>
+                )}
+              </List>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* School Information */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <SchoolIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                School Information
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              <List dense>
+                {client.schoolInfo?.albertaStudentNumber && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Alberta Student Number" 
+                      secondary={client.schoolInfo.albertaStudentNumber} 
+                    />
+                    </ListItem>
+                )}
+                <ListItem>
+                  <ListItemText 
+                    primary="School Name" 
+                    secondary={client.schoolInfo?.schoolName || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Grade" 
+                    secondary={client.schoolInfo?.grade || 'Not provided'} 
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Teacher" 
+                    secondary={client.schoolInfo?.teacher || 'Not provided'} 
+                  />
+                </ListItem>
+                {client.schoolInfo?.schoolAddress && (
+                  <ListItem>
+                    <ListItemIcon><RoomIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="School Address" 
+                      secondary={client.schoolInfo.schoolAddress} 
+                    />
+                  </ListItem>
+                )}
+                {client.schoolInfo?.schoolPhone && (
+                  <ListItem>
+                    <ListItemIcon><PhoneIcon /></ListItemIcon>
+                    <ListItemText 
+                      primary="School Phone" 
+                      secondary={client.schoolInfo.schoolPhone} 
+                    />
+                  </ListItem>
+                )}
+              </List>
+            </CardContent>
+          </Card>
+      </Grid>
+
+        {/* Medical Information */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                <MedicalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Medical Information
+          </Typography>
+              <Divider sx={{ mb: 2 }} />
+              
+              <List dense>
+                {client.allergies && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Allergies" 
+                      secondary={client.allergies} 
+                    />
+                  </ListItem>
+                )}
+                {client.diagnosis && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Diagnosis" 
+                      secondary={client.diagnosis} 
+                    />
+                  </ListItem>
+                )}
+                {client.familyDoctor && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Family Doctor" 
+                      secondaryTypographyProps={{ component: 'div' }}
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.familyDoctor}</Typography>
+                          {client.familyDoctorCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.familyDoctorCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
+                    />
+                  </ListItem>
+                )}
+                {client.dentist && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Dentist" 
+                      secondaryTypographyProps={{ component: 'div' }}
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.dentist}</Typography>
+                          {client.dentistCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.dentistCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
+                    />
+                  </ListItem>
+                )}
+                {client.optometrist && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Optometrist" 
+                      secondaryTypographyProps={{ component: 'div' }}
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.optometrist}</Typography>
+                          {client.optometristCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.optometristCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
+                    />
+                  </ListItem>
+                )}
+                {client.specialist && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Specialist" 
+                      secondaryTypographyProps={{ component: 'div' }}
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.specialist}</Typography>
+                          {client.specialistCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.specialistCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
+                    />
+                  </ListItem>
+                )}
+                {client.pediatrician && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Pediatrician" 
+                      secondaryTypographyProps={{ component: 'div' }}
+                      secondary={
+                        <Box>
+                          <Typography variant="body2">{client.pediatrician}</Typography>
+                          {client.pediatricianCheckup && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              Recent Annual Checkup: {formatDate(client.pediatricianCheckup)}
+                            </Typography>
+                          )}
+                        </Box>
+                      } 
+                    />
+                  </ListItem>
+                )}
+                {client.medicalNotes && (
+                  <ListItem>
+                    <ListItemText 
+                      primary="Medical Notes" 
+                      secondary={client.medicalNotes} 
+                    />
+                  </ListItem>
+                )}
+              </List>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Allowed Contacts */}
+        <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                <EmergencyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Allowed Contacts
+                    </Typography>
+              <Divider sx={{ mb: 2 }} />
+              <AllowedContactsManager
+                allowedContacts={client.allowedContacts || []}
+                onUpdate={(contacts) => {
+                  setEditingClient(prev => ({ ...prev, allowedContacts: contacts }));
+                }}
+                canEdit={isAdmin}
+              />
+                  </CardContent>
+                </Card>
+              </Grid>
+
+        {/* Social Media Links */}
+        {client.socialMediaLinks && client.socialMediaLinks.length > 0 && (
+          <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                  <LinkIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  Social Media Links
+                    </Typography>
+                <Divider sx={{ mb: 2 }} />
+                <SocialMediaManager
+                  socialMediaLinks={client.socialMediaLinks || []}
+                  onUpdate={(links) => {
+                    setEditingClient(prev => ({ ...prev, socialMediaLinks: links }));
+                  }}
+                  canEdit={isAdmin}
+                />
+                  </CardContent>
+                </Card>
+            </Grid>
+          )}
+
+        {/* Risks and Preferences */}
+        {client.risksAndPreferences && (
+          <Grid item xs={12}>
+                      <Card>
+                        <CardContent>
+                          <Typography variant="h6" gutterBottom>
+                  <NotesIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  Risks and Preferences
+                          </Typography>
+                <Divider sx={{ mb: 2 }} />
+                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                  <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>
+                    {client.risksAndPreferences}
+                </Typography>
+                </Paper>
+              </CardContent>
+            </Card>
+            </Grid>
+          )}
+      </Grid>
 
       {/* Image Crop Dialog */}
       <ImageCropDialog
@@ -2262,56 +2283,6 @@ function ClientProfile() {
         onCropComplete={handleCropComplete}
         aspect={1}
       />
-
-      {/* Facility Selection Dialog - shown when creating new client without facility parameter */}
-      <Dialog open={facilitySelectionOpen} onClose={() => {
-        setFacilitySelectionOpen(false);
-        // Navigate back if user cancels
-        history.push('/app/client/masterlist');
-      }} maxWidth="sm" fullWidth>
-        <DialogTitle>Select Facility</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body1" gutterBottom>
-              Please select which facility this client will be assigned to:
-          </Typography>
-            <FormControl fullWidth sx={{ mt: 3 }}>
-              <InputLabel>Facility</InputLabel>
-              <Select
-                value={selectedFacilityId || ''}
-                label="Facility"
-                onChange={(e) => setSelectedFacilityId(e.target.value)}
-              >
-                {facilities.map((facility) => (
-                  <MenuItem key={facility.id} value={facility.id}>
-                    {facility.name}
-                    {facility.address && (
-                      <Typography variant="caption" color="textSecondary" sx={{ ml: 1 }}>
-                        - {facility.address}
-                      </Typography>
-                    )}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setFacilitySelectionOpen(false);
-            history.push('/app/client/masterlist');
-          }}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleFacilitySelection} 
-            variant="contained"
-            disabled={!selectedFacilityId}
-          >
-            Proceed
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Success Modal */}
       <SuccessModal

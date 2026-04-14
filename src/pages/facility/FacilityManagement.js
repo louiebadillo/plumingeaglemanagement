@@ -47,6 +47,8 @@ import GeofencingMap from '../../components/Facility/GeofencingMap';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
+import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
+import { useDialogScrollThroughVisibility } from '../../hooks/useDialogScrollThroughVisibility';
 
 // Initial form data for creating/editing facilities
 const initialFormData = {
@@ -93,6 +95,8 @@ function FacilityManagement() {
   const [deleting, setDeleting] = useState(false);
   const facilityDraftRestoreRef = useRef(null);
   const facilityDialogContentRef = useRef(null);
+  const FACILITY_EDIT_MODAL_SNAPSHOT = 'facility_edit_modal_v2';
+  const facilityEditModalRestoreAttemptedRef = useRef(false);
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -158,6 +162,23 @@ function FacilityManagement() {
     };
   }, [editDialogOpen, isNewFacility, editingFacility?.id]);
 
+  useDialogScrollThroughVisibility(
+    editDialogOpen,
+    facilityDialogContentRef,
+    () => {
+      const scope = getFacilityScrollScope();
+      if (!scope || scope === 'facility_edit_') return 0;
+      const raw = loadSessionDraft(scope);
+      const n = typeof raw === 'number' ? raw : Number(raw || 0);
+      return Number.isFinite(n) ? n : 0;
+    },
+    (y) => {
+      const scope = getFacilityScrollScope();
+      if (!scope || scope === 'facility_edit_') return;
+      saveSessionDraft(scope, Math.max(0, y));
+    }
+  );
+
   // Persist facility form + geofencing address (debounced)
   useEffect(() => {
     if (!editDialogOpen) return;
@@ -168,6 +189,89 @@ function FacilityManagement() {
     }, 300);
     return () => window.clearTimeout(t);
   }, [formData, geofencingAddress, editDialogOpen, isNewFacility, editingFacility?.id]);
+
+  useEffect(() => {
+    if (!editDialogOpen) return;
+    const t = window.setTimeout(() => {
+      try {
+        saveSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          isNewFacility,
+          editingFacilityId: editingFacility?.id ?? null,
+          formData,
+          geofencingAddress,
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [editDialogOpen, isNewFacility, editingFacility?.id, formData, geofencingAddress]);
+
+  useEffect(() => {
+    if (!editDialogOpen) return;
+    const flush = () => {
+      try {
+        saveSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT, {
+          v: 2,
+          wasOpen: true,
+          isNewFacility,
+          editingFacilityId: editingFacility?.id ?? null,
+          formData,
+          geofencingAddress,
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [editDialogOpen, isNewFacility, editingFacility?.id, formData, geofencingAddress]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (facilityEditModalRestoreAttemptedRef.current) return;
+
+    const snap = loadSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
+    if (!snap || snap.v !== 2 || !snap.wasOpen) {
+      facilityEditModalRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    if (!snap.isNewFacility && snap.editingFacilityId) {
+      const f = facilities.find((x) => x.id === snap.editingFacilityId);
+      if (!f) {
+        clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
+        facilityEditModalRestoreAttemptedRef.current = true;
+        return;
+      }
+      setEditingFacility(f);
+      setIsNewFacility(false);
+    } else {
+      setEditingFacility(null);
+      setIsNewFacility(true);
+    }
+
+    if (snap.formData && typeof snap.formData === 'object') {
+      setFormData({
+        ...initialFormData,
+        ...snap.formData,
+        phone: formatNorthAmericanPhoneInput(snap.formData.phone || ''),
+      });
+    }
+    setGeofencingAddress(typeof snap.geofencingAddress === 'string' ? snap.geofencingAddress : '');
+    facilityDraftRestoreRef.current = null;
+    setEditDialogOpen(true);
+    facilityEditModalRestoreAttemptedRef.current = true;
+  }, [loading, facilities]);
 
   const handleEditFacility = (facility) => {
     setEditingFacility(facility);
@@ -277,6 +381,7 @@ function FacilityManagement() {
         window.dispatchEvent(new CustomEvent('facilitiesChanged'));
         
         // Close dialog and show success modal
+        clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
         setEditDialogOpen(false);
         setEditingFacility(null);
         setFormData(initialFormData);
@@ -320,6 +425,7 @@ function FacilityManagement() {
         window.dispatchEvent(new CustomEvent('facilitiesChanged'));
         
         // Close dialog and show success modal
+        clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
         setEditDialogOpen(false);
         setEditingFacility(null);
         setFormData(initialFormData);
@@ -545,27 +651,34 @@ function FacilityManagement() {
       {/* Edit/Add Facility Dialog */}
       <Dialog 
         open={editDialogOpen} 
-        onClose={() => {
+        onClose={shieldEntityDialogClose(() => {
           if (!submitting) {
+            clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
             setEditDialogOpen(false);
             setGeofencingAddress('');
             setGeocodingError(null);
           }
-        }} 
+        })} 
         maxWidth="md" 
         fullWidth
         disableEnforceFocus
+        disableAutoFocus
+        disableEscapeKeyDown
         aria-labelledby="facility-dialog-title"
+        PaperProps={{
+          sx: { overflowY: 'hidden' },
+        }}
       >
         <DialogTitle id="facility-dialog-title">
           {isNewFacility ? 'Add New Facility' : 'Edit Facility'}
         </DialogTitle>
         <DialogContent
           ref={facilityDialogContentRef}
-          onScroll={() => {
+          sx={{ minHeight: 0 }}
+          onScroll={(e) => {
             const scope = getFacilityScrollScope();
-            const el = facilityDialogContentRef.current;
-            if (!scope || !el) return;
+            const el = e.currentTarget;
+            if (!scope || scope === 'facility_edit_') return;
             saveSessionDraft(scope, el.scrollTop || 0);
           }}
         >
@@ -713,6 +826,7 @@ function FacilityManagement() {
         <DialogActions>
           <Button 
             onClick={() => {
+              clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
               setEditDialogOpen(false);
               setGeofencingAddress('');
               setGeocodingError(null);
