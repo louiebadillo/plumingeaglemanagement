@@ -27,6 +27,10 @@ import {
 import { useHistory, useLocation } from 'react-router-dom';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getCurrentFacilityFromGeofencing, clearGeofencingCache } from '../../utils/geofencing';
+import {
+  resolveEmployeeDashboardFacilityId,
+  FACILITY_RESOLUTION,
+} from '../../utils/employeeFacility';
 import { supabase } from '../../lib/supabase';
 import { getOperationalDate } from '../../utils/dateHelpers';
 
@@ -38,6 +42,7 @@ function MyReports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentFacilityId, setCurrentFacilityId] = useState(null);
+  const [facilityResolutionSource, setFacilityResolutionSource] = useState(null);
 
   const isAdmin = userProfile?.role === 'admin';
 
@@ -72,14 +77,22 @@ function MyReports() {
             throw new Error(`Failed to fetch reports: ${qError.message}`);
           }
           setCurrentFacilityId(null);
+          setFacilityResolutionSource(null);
           setReports(data || []);
           return;
         }
 
         clearGeofencingCache();
-        const facilityId = await getCurrentFacilityFromGeofencing();
+        const geofenceFacilityId = await getCurrentFacilityFromGeofencing();
+        const { facilityId, source } = await resolveEmployeeDashboardFacilityId({
+          supabase,
+          userId: userProfile.id,
+          geofenceFacilityId,
+          profileFacilityId: userProfile.facility_id,
+        });
         if (cancelled) return;
         setCurrentFacilityId(facilityId);
+        setFacilityResolutionSource(source);
 
         if (!facilityId) {
           setReports([]);
@@ -234,13 +247,22 @@ function MyReports() {
         {isAdmin 
           ? 'View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.'
           : currentFacilityId
-            ? 'Continue editing in-progress reports for clients at your current facility (detected by geofence). Evening shift staff should complete and submit before end of shift.'
-            : 'You must be inside a facility geofence to see in-progress reports for that site.'}
+            ? facilityResolutionSource === FACILITY_RESOLUTION.GEOFENCE
+              ? 'Continue editing in-progress reports for clients at your current facility (detected by geofence). Evening shift staff should complete and submit before end of shift.'
+              : 'Continue editing in-progress reports for clients at your assigned facility. Allow location on-site for automatic site detection by geofence.'
+            : 'You need a facility assignment and/or to be inside a facility geofence to see in-progress reports for that site.'}
       </Typography>
       
       {!isAdmin && !currentFacilityId && (
         <Alert severity="warning" sx={{ mb: 3 }}>
-          No facility detected from your location. Open this page on a facility device on-site, allow location access, and ensure geofencing is configured for the building.
+          No facility could be determined. Ask an administrator to set your facility assignment, or open this page on-site, allow location access, and ensure geofencing is configured for the building.
+        </Alert>
+      )}
+      {!isAdmin && currentFacilityId && facilityResolutionSource && facilityResolutionSource !== FACILITY_RESOLUTION.GEOFENCE && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          {facilityResolutionSource === FACILITY_RESOLUTION.USER_FACILITIES_MULTI
+            ? 'Multiple facilities are assigned; showing drafts for the first assigned site until location selects a site via geofence.'
+            : 'Using your assigned facility because location did not resolve a geofence.'}
         </Alert>
       )}
 
@@ -334,7 +356,7 @@ function MyReports() {
                   ? 'There are no draft reports across all facilities.'
                   : currentFacilityId
                     ? 'There are no in-progress reports for clients in your current facility. Create a new report from the dashboard to get started.'
-                    : 'Reports for today will appear here when you are on-site inside a facility geofence.'}
+                    : 'Reports for today will appear when you have a facility assignment and/or are on-site inside a geofence.'}
               </Typography>
               {!isAdmin && (
                 <Button
