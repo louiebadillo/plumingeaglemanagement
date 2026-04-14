@@ -30,6 +30,10 @@ export const getCurrentFacilityFromGeofencing = () => {
 
   inFlightRead = (async () => {
     try {
+      const isDebug =
+        typeof window !== 'undefined' &&
+        window?.localStorage?.getItem('GEOFENCE_DEBUG') === '1';
+
       const now = Date.now();
       if (
         geofencingCache.timestamp > 0 &&
@@ -41,6 +45,15 @@ export const getCurrentFacilityFromGeofencing = () => {
       const position = await requestLocationPermission();
       const employeeLat = position.coords.latitude;
       const employeeLng = position.coords.longitude;
+      const accuracyMeters = Number(position.coords.accuracy || 0);
+
+      if (isDebug) {
+        console.log('🧭 Geofencing debug: device coords', {
+          lat: employeeLat,
+          lng: employeeLng,
+          accuracyMeters,
+        });
+      }
 
       const { supabase } = await import('../lib/supabase');
 
@@ -64,6 +77,7 @@ export const getCurrentFacilityFromGeofencing = () => {
 
       // If multiple facilities match (overlapping geofences), pick the closest one.
       let bestMatch = null; // { id: string, distance: number }
+      let nearest = null; // { id: string, distance: number, radius: number }
 
       for (const facility of facilities) {
         const lat = facility.geofence_latitude;
@@ -80,6 +94,10 @@ export const getCurrentFacilityFromGeofencing = () => {
           Number(lng)
         );
 
+        if (!nearest || distance < nearest.distance) {
+          nearest = { id: facility.id, distance, radius: Number(radius) };
+        }
+
         if (distance <= Number(radius)) {
           if (!bestMatch || distance < bestMatch.distance) {
             bestMatch = { id: facility.id, distance };
@@ -88,12 +106,19 @@ export const getCurrentFacilityFromGeofencing = () => {
       }
 
       if (bestMatch) {
+        if (isDebug) {
+          console.log('🧭 Geofencing debug: matched facility', bestMatch);
+        }
         geofencingCache = {
           facilityId: bestMatch.id,
           timestamp: Date.now(),
           ttl: geofencingCache.ttl,
         };
         return bestMatch.id;
+      }
+
+      if (isDebug) {
+        console.log('🧭 Geofencing debug: no match; nearest facility', nearest);
       }
 
       geofencingCache = {
