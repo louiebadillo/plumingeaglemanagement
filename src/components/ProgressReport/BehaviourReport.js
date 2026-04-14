@@ -34,6 +34,7 @@ function BehaviourReport({
   indicator, 
   pieChartData, 
   summaryTables,
+  birSummary,
   fillableData,
   onFillableDataChange 
 }) {
@@ -294,6 +295,25 @@ function BehaviourReport({
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* BIR score average (matches behaviour BIR component: 100% per day with no BIR, 0% with BIR) */}
+        <Box mb={2} id="bir-score-summary" className="pdf-avoid-break">
+          <Typography variant="subtitle1" gutterBottom>
+            BIR score average
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            {birSummary && birSummary.totalDays > 0 ? (
+              <>
+                <strong>{birSummary.averagePercent}%</strong>
+                {' — '}
+                {birSummary.trueDays} BIR day{birSummary.trueDays === 1 ? '' : 's'} out of{' '}
+                {birSummary.totalDays} filtered report day{birSummary.totalDays === 1 ? '' : 's'}
+              </>
+            ) : (
+              'No filtered report days in this range.'
+            )}
+          </Typography>
+        </Box>
 
         {/* BIR Bar Chart */}
         <Box mb={3} id="bir-charts" className="pdf-avoid-break">

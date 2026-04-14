@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -99,6 +99,37 @@ function ClientMasterlist() {
   const [clientToDelete, setClientToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [clientPhotoUrls, setClientPhotoUrls] = useState({});
+  const editDialogContentRef = useRef(null);
+  const EDIT_DIALOG_SCROLL_KEY = 'pem_client_masterlist_edit_scroll_v1';
+
+  useEffect(() => {
+    if (!openDialog || !editingClient) return;
+    const el = editDialogContentRef.current;
+    if (!el) return;
+    let target = 0;
+    try {
+      target = Number(sessionStorage.getItem(EDIT_DIALOG_SCROLL_KEY) || 0);
+    } catch (e) {
+      target = 0;
+    }
+    if (!Number.isFinite(target) || target <= 0) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled) return;
+      try {
+        el.scrollTop = target;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [openDialog, editingClient?.id]);
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -739,7 +770,18 @@ function ClientMasterlist() {
           setEditingClient(null);
         }} maxWidth="md" fullWidth>
           <DialogTitle>Edit Client</DialogTitle>
-          <DialogContent>
+          <DialogContent
+            ref={editDialogContentRef}
+            onScroll={() => {
+              const el = editDialogContentRef.current;
+              if (!el) return;
+              try {
+                sessionStorage.setItem(EDIT_DIALOG_SCROLL_KEY, String(el.scrollTop || 0));
+              } catch (e) {
+                /* ignore */
+              }
+            }}
+          >
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} sm={6}>
                 <TextField

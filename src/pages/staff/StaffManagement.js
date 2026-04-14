@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 import {
   Box,
@@ -95,7 +95,8 @@ function StaffManagement() {
     password: '',
     role: 'employee',
     phone: '',
-    username: ''
+    username: '',
+    initials: '',
   };
 
   const [formData, setFormData] = useState(initialFormData);
@@ -112,6 +113,8 @@ function StaffManagement() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resettingPassword, setResettingPassword] = useState(false);
+  const staffDialogContentRef = useRef(null);
+  const STAFF_DIALOG_SCROLL_KEY = 'staff_user_create_scroll_v1';
   
   // Debug: Log loading state changes
   useEffect(() => {
@@ -120,6 +123,36 @@ function StaffManagement() {
   const [renderKey, setRenderKey] = useState(0);
 
   const STAFF_CREATE_DRAFT_KEY = 'staff_user_create';
+
+  // Restore staff dialog scroll position after returning to the form
+  useEffect(() => {
+    if (!openDialog) return;
+    const el = staffDialogContentRef.current;
+    if (!el) return;
+    let target = 0;
+    try {
+      target = Number(sessionStorage.getItem(STAFF_DIALOG_SCROLL_KEY) || 0);
+    } catch (e) {
+      target = 0;
+    }
+    if (!Number.isFinite(target) || target <= 0) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled) return;
+      try {
+        el.scrollTop = target;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [openDialog, editingStaff?.id]);
 
   // Restore new-user form draft (password never stored)
   useEffect(() => {
@@ -132,9 +165,10 @@ function StaffManagement() {
       lastName: saved.lastName ?? '',
       email: saved.email ?? '',
       username: saved.username ?? '',
+      initials: saved.initials ?? '',
       role: saved.role ?? 'employee',
       phone: formatNorthAmericanPhoneInput(saved.phone ?? ''),
-      password: ''
+      password: '',
     }));
   }, [openDialog, editingStaff]);
 
@@ -197,6 +231,7 @@ function StaffManagement() {
                  id: user.id,
                  firstName: user.first_name || '',
                  lastName: user.last_name || '',
+                 initials: user.initials || '',
                  email: user.email,
                  username: user.username || '',
                  role: user.role,
@@ -253,7 +288,8 @@ function StaffManagement() {
       username: '',
       password: '',
       role: 'employee',
-      phone: ''
+      phone: '',
+      initials: '',
     });
     setOpenDialog(true);
   };
@@ -269,7 +305,8 @@ function StaffManagement() {
       username: staffMember.username || '',
       password: '', // Don't show existing password
       role: staffMember.role,
-      phone: formatNorthAmericanPhoneInput(staffMember.phone || '')
+      phone: formatNorthAmericanPhoneInput(staffMember.phone || ''),
+      initials: staffMember.initials || '',
     });
     setOpenDialog(true);
   };
@@ -398,6 +435,7 @@ function StaffManagement() {
           id: user.id,
           firstName: user.first_name || '',
           lastName: user.last_name || '',
+          initials: user.initials || '',
           email: user.email,
           username: user.username || '',
           role: user.role,
@@ -461,7 +499,7 @@ function StaffManagement() {
         return;
       }
     }
-    
+
     try {
       setSubmitting(true);
       const supabaseAdmin = await getSupabaseAdmin();
@@ -490,13 +528,16 @@ function StaffManagement() {
         
         const normalizedUsername = (formData.username || '').trim().toLowerCase() || null;
         const loginEmail = normalizeAuthEmail(formData.email);
+        const initialsTrimmed = (formData.initials || '').trim();
+        const initialsForDb = initialsTrimmed ? initialsTrimmed.toUpperCase() : null;
         const requestBody = {
           first_name: formData.firstName,
           last_name: formData.lastName,
           email: loginEmail,
           username: normalizedUsername,
           phone: formData.phone,
-          role: formData.role
+          role: formData.role,
+          initials: initialsForDb,
         };
         
         console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
@@ -523,6 +564,9 @@ function StaffManagement() {
         const updateData = await response.json();
         console.log('📥 Response data:', updateData);
         console.log('✅ Staff member updated in Supabase successfully!', updateData);
+
+        const savedProfileRow = Array.isArray(updateData) ? updateData[0] : updateData;
+        const resolvedInitials = savedProfileRow?.initials ?? '';
 
         const newLoginEmail = normalizeAuthEmail(formData.email);
         const prevLoginEmail = normalizeAuthEmail(editingStaff.email);
@@ -551,6 +595,7 @@ function StaffManagement() {
                 ...member, 
                 firstName: formData.firstName,
                 lastName: formData.lastName,
+                initials: resolvedInitials,
                 email: normalizeAuthEmail(formData.email),
                 username: (formData.username || '').trim().toLowerCase() || '',
                 phone: formData.phone,
@@ -588,6 +633,7 @@ function StaffManagement() {
             id: user.id,
             firstName: user.first_name || '',
             lastName: user.last_name || '',
+            initials: user.initials || '',
             email: user.email,
             username: user.username || '',
             role: user.role,
@@ -676,7 +722,7 @@ function StaffManagement() {
           last_name: formData.lastName || '',
           username: newUsername,
           phone: formData.phone || '',
-          role: formData.role || 'employee'
+          role: formData.role || 'employee',
         };
         console.log('📤 Profile upsert body:', JSON.stringify(profileBody, null, 2));
         const profileResp = await fetch(profileUrl, {
@@ -696,6 +742,27 @@ function StaffManagement() {
         }
         const profileData = await profileResp.json();
         console.log('✅ User profile created successfully:', profileData);
+
+        const customInitials = (formData.initials || '').trim();
+        if (customInitials) {
+          const initialsUrl = `${supabaseUrl}/rest/v1/users?id=eq.${userId}`;
+          const initialsResp = await fetch(initialsUrl, {
+            method: 'PATCH',
+            headers: {
+              ...getSupabaseHeaders(),
+              'Prefer': 'return=representation',
+            },
+            body: JSON.stringify({ initials: customInitials.toUpperCase() }),
+          });
+          if (!initialsResp.ok) {
+            const errText = await initialsResp.text();
+            console.error('❌ Initials update failed:', initialsResp.status, errText);
+            alert(
+              'Staff was created, but initials could not be saved (they may already be in use). ' +
+                errText
+            );
+          }
+        }
 
         console.log('🎉 Staff member created successfully!');
         clearSessionDraft(STAFF_CREATE_DRAFT_KEY);
@@ -724,6 +791,7 @@ function StaffManagement() {
             id: user.id,
             firstName: user.first_name || '',
             lastName: user.last_name || '',
+            initials: user.initials || '',
             email: user.email,
             username: user.username || '',
             role: user.role,
@@ -873,6 +941,7 @@ function StaffManagement() {
                       id: user.id,
                       firstName: user.first_name || '',
                       lastName: user.last_name || '',
+                      initials: user.initials || '',
                       email: user.email,
                       username: user.username || '',
                       role: user.role,
@@ -903,6 +972,7 @@ function StaffManagement() {
               <TableHead>
                 <TableRow>
                   <TableCell>Name</TableCell>
+                  <TableCell>Initials</TableCell>
                   <TableCell>Email</TableCell>
                   <TableCell>Username</TableCell>
                   <TableCell>Phone</TableCell>
@@ -913,7 +983,7 @@ function StaffManagement() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={7} align="center">
                       <Box display="flex" justifyContent="center" alignItems="center" p={2}>
                         <CircularProgress size={24} />
                         <Typography variant="body2" sx={{ ml: 2 }}>
@@ -934,6 +1004,11 @@ function StaffManagement() {
                             {member.firstName || 'Unknown'} {member.lastName || 'User'}
                           </Typography>
                         </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {member.initials || '—'}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
@@ -992,7 +1067,7 @@ function StaffManagement() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={7} align="center">
                       <Typography variant="body2" color="textSecondary">
                         No staff members found
                       </Typography>
@@ -1010,7 +1085,18 @@ function StaffManagement() {
         <DialogTitle>
           {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent
+          ref={staffDialogContentRef}
+          onScroll={() => {
+            const el = staffDialogContentRef.current;
+            if (!el) return;
+            try {
+              sessionStorage.setItem(STAFF_DIALOG_SCROLL_KEY, String(el.scrollTop || 0));
+            } catch (e) {
+              /* ignore */
+            }
+          }}
+        >
           <Grid container spacing={2} sx={{ mt: 1 }}>
             
             <Grid item xs={12} sm={6}>
@@ -1047,6 +1133,29 @@ function StaffManagement() {
                   });
                 }}
                 required
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField
+                id="initials"
+                name="initials"
+                fullWidth
+                label="Initials"
+                value={formData.initials}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    initials: e.target.value.replace(/\s/g, '').toUpperCase(),
+                  })
+                }
+                placeholder={editingStaff ? '' : 'Leave blank to auto-generate'}
+                helperText={
+                  editingStaff
+                    ? 'Shown on daily reports; must be unique. Leave blank for autogeneration.'
+                    : 'Leave blank to auto-generate from name after the account is created.'
+                }
+                inputProps={{ maxLength: 24 }}
               />
             </Grid>
             

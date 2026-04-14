@@ -92,6 +92,7 @@ function FacilityManagement() {
   const [facilityToDelete, setFacilityToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const facilityDraftRestoreRef = useRef(null);
+  const facilityDialogContentRef = useRef(null);
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -103,6 +104,9 @@ function FacilityManagement() {
 
   const getFacilityDraftScope = () =>
     isNewFacility ? 'facility_create' : `facility_edit_${editingFacility?.id || ''}`;
+
+  const getFacilityScrollScope = () =>
+    isNewFacility ? 'facility_create_scroll' : `facility_edit_scroll_${editingFacility?.id || ''}`;
 
   // Restore facility + geofencing fields once per dialog open
   useEffect(() => {
@@ -125,6 +129,33 @@ function FacilityManagement() {
       phone: formatNorthAmericanPhoneInput(saved.formData.phone || ''),
     });
     setGeofencingAddress(typeof saved.geofencingAddress === 'string' ? saved.geofencingAddress : '');
+  }, [editDialogOpen, isNewFacility, editingFacility?.id]);
+
+  // Restore dialog scroll position on re-open (after draft content paints)
+  useEffect(() => {
+    if (!editDialogOpen) return;
+    const scope = getFacilityScrollScope();
+    const el = facilityDialogContentRef.current;
+    if (!scope || !el) return;
+    const targetRaw = loadSessionDraft(scope);
+    const target = typeof targetRaw === 'number' ? targetRaw : Number(targetRaw || 0);
+    if (!Number.isFinite(target) || target <= 0) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled) return;
+      try {
+        el.scrollTop = target;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
   }, [editDialogOpen, isNewFacility, editingFacility?.id]);
 
   // Persist facility form + geofencing address (debounced)
@@ -529,7 +560,15 @@ function FacilityManagement() {
         <DialogTitle id="facility-dialog-title">
           {isNewFacility ? 'Add New Facility' : 'Edit Facility'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent
+          ref={facilityDialogContentRef}
+          onScroll={() => {
+            const scope = getFacilityScrollScope();
+            const el = facilityDialogContentRef.current;
+            if (!scope || !el) return;
+            saveSessionDraft(scope, el.scrollTop || 0);
+          }}
+        >
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12}>
               <TextField

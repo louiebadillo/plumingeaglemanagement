@@ -8,6 +8,8 @@
  * @returns {Object} Aggregated data with scores and metrics
  */
 export const aggregateReportsData = (reports, dateRange) => {
+  const emptyBirSummary = { trueDays: 0, totalDays: 0, averagePercent: 0 };
+
   if (!reports || reports.length === 0) {
     return {
       healthScore: 0,
@@ -18,7 +20,9 @@ export const aggregateReportsData = (reports, dateRange) => {
       indicator: 'Needs Improvement',
       pieChartData: {},
       trendData: [],
-      summaryTables: {}
+      summaryTables: {},
+      birSummary: emptyBirSummary,
+      routineChores: []
     };
   }
 
@@ -35,7 +39,9 @@ export const aggregateReportsData = (reports, dateRange) => {
       indicator: 'Needs Improvement',
       pieChartData: {},
       trendData: [],
-      summaryTables: {}
+      summaryTables: {},
+      birSummary: emptyBirSummary,
+      routineChores: []
     };
   }
 
@@ -56,6 +62,15 @@ export const aggregateReportsData = (reports, dateRange) => {
   const overallScore = Math.round((healthScore + routineScore + wellbeingScore + behaviourScore) / 4);
   const indicator = getIndicatorValue(overallScore);
 
+  const birTrueDays = validReports.filter(
+    (r) => r.bir_incidents && r.bir_incidents.hasBIR
+  ).length;
+  const birTotalDays = validReports.length;
+  const birAveragePercent =
+    birTotalDays > 0
+      ? Math.round(((birTotalDays - birTrueDays) / birTotalDays) * 100)
+      : 0;
+
   return {
     healthScore,
     routineScore,
@@ -65,9 +80,61 @@ export const aggregateReportsData = (reports, dateRange) => {
     indicator,
     pieChartData: generatePieChartData(validReports),
     trendData: generateTrendData(validReports, sectionScores),
-    summaryTables: generateSummaryTables(validReports)
+    summaryTables: generateSummaryTables(validReports),
+    birSummary: {
+      trueDays: birTrueDays,
+      totalDays: birTotalDays,
+      averagePercent: birAveragePercent
+    },
+    routineChores: computeRoutineChoreAverages(validReports)
   };
 };
+
+/**
+ * Per-chore average star rating (1–5) across filtered reports; only answered cells count.
+ * @param {Array} reports
+ * @returns {{ key: string, name: string, average: number|null }[]}
+ */
+export const computeRoutineChoreAverages = (reports) => {
+  if (!reports || reports.length === 0) return [];
+
+  return ROUTINE_CHORE_FIELDS.map(({ key, name, morning, afternoon }) => {
+    let sum = 0;
+    let n = 0;
+    reports.forEach((r) => {
+      [morning, afternoon].forEach((field) => {
+        const v = r[field];
+        if (routineRatingAnswered(v)) {
+          sum += Number(v);
+          n += 1;
+        }
+      });
+    });
+    return { key, name, average: n > 0 ? sum / n : null };
+  });
+};
+
+const ROUTINE_CHORE_FIELDS = [
+  { key: 'madeBed', name: 'Made Bed', morning: 'routine_made_bed', afternoon: 'afternoon_routine_made_bed' },
+  {
+    key: 'putClothesAway',
+    name: 'Put Dirty Clothes Away',
+    morning: 'routine_put_clothes_away',
+    afternoon: 'afternoon_routine_put_clothes_away'
+  },
+  {
+    key: 'clearedFloor',
+    name: 'Cleared Bedroom Floor',
+    morning: 'routine_cleared_floor',
+    afternoon: 'afternoon_routine_cleared_floor'
+  },
+  {
+    key: 'washedDishes',
+    name: 'Washed Dishes',
+    morning: 'routine_washed_dishes',
+    afternoon: 'afternoon_routine_washed_dishes'
+  }
+];
 
 /**
  * Generate pie chart data for various metrics
@@ -77,11 +144,15 @@ export const aggregateReportsData = (reports, dateRange) => {
 export const generatePieChartData = (reports) => {
   const pieChartData = {};
 
-  // Medication adherence pie chart
+  // Medication adherence pie — only shifts where medication was required
   const medicationData = reports.reduce((acc, report) => {
-    const status = report.medication_status || report.afternoon_medication_status || report.evening_medication_status;
-    if (status === 'Taken') acc.taken++;
-    else acc.notTaken++;
+    MEDICATION_ADHERENCE_SHIFTS.forEach(([reqKey, statusKey]) => {
+      if (report[reqKey] !== true) return;
+      const status = report[statusKey];
+      if (!questionnaireStringAnswered(status)) return;
+      if (status === 'Taken') acc.taken++;
+      else acc.notTaken++;
+    });
     return acc;
   }, { taken: 0, notTaken: 0 });
   pieChartData.medication = [
@@ -89,10 +160,16 @@ export const generatePieChartData = (reports) => {
     { name: 'Not Taken', value: medicationData.notTaken, color: '#f44336' }
   ];
 
-  // Sleep score pie chart
+  // Sleep score pie chart (each answered shift; omit null)
   const sleepData = reports.reduce((acc, report) => {
-    if (report.sleep_woke_on_time) acc.onTime++;
-    else acc.late++;
+    if (questionnaireBoolAnswered(report.sleep_woke_on_time)) {
+      if (report.sleep_woke_on_time) acc.onTime++;
+      else acc.late++;
+    }
+    if (questionnaireBoolAnswered(report.afternoon_slept_on_time)) {
+      if (report.afternoon_slept_on_time) acc.onTime++;
+      else acc.late++;
+    }
     return acc;
   }, { onTime: 0, late: 0 });
   pieChartData.sleep = [
@@ -102,8 +179,14 @@ export const generatePieChartData = (reports) => {
 
   // Diet score pie chart
   const dietData = reports.reduce((acc, report) => {
-    if (report.diet_ate_well) acc.ateWell++;
-    else acc.skipped++;
+    if (questionnaireBoolAnswered(report.diet_ate_well)) {
+      if (report.diet_ate_well) acc.ateWell++;
+      else acc.skipped++;
+    }
+    if (questionnaireBoolAnswered(report.afternoon_diet_ate_well)) {
+      if (report.afternoon_diet_ate_well) acc.ateWell++;
+      else acc.skipped++;
+    }
     return acc;
   }, { ateWell: 0, skipped: 0 });
   pieChartData.diet = [
@@ -113,8 +196,14 @@ export const generatePieChartData = (reports) => {
 
   // Dental hygiene pie chart
   const dentalData = reports.reduce((acc, report) => {
-    if (report.dental_hygiene_done || report.afternoon_dental_hygiene_done) acc.done++;
-    else acc.notDone++;
+    if (questionnaireBoolAnswered(report.dental_hygiene_done)) {
+      if (report.dental_hygiene_done) acc.done++;
+      else acc.notDone++;
+    }
+    if (questionnaireBoolAnswered(report.afternoon_dental_hygiene_done)) {
+      if (report.afternoon_dental_hygiene_done) acc.done++;
+      else acc.notDone++;
+    }
     return acc;
   }, { done: 0, notDone: 0 });
   pieChartData.dental = [
@@ -124,8 +213,10 @@ export const generatePieChartData = (reports) => {
 
   // Shower pie chart
   const showerData = reports.reduce((acc, report) => {
-    if (report.afternoon_shower_taken) acc.taken++;
-    else acc.notTaken++;
+    if (questionnaireBoolAnswered(report.afternoon_shower_taken)) {
+      if (report.afternoon_shower_taken) acc.taken++;
+      else acc.notTaken++;
+    }
     return acc;
   }, { taken: 0, notTaken: 0 });
   pieChartData.shower = [
@@ -138,6 +229,7 @@ export const generatePieChartData = (reports) => {
     (report.appointments || []).filter(apt => apt.type === 'health')
   );
   const healthApptData = healthAppointments.reduce((acc, apt) => {
+    if (!questionnaireStringAnswered(apt.compliance)) return acc;
     if (apt.compliance === 'attended') acc.attended++;
     else acc.notAttended++;
     return acc;
@@ -147,49 +239,57 @@ export const generatePieChartData = (reports) => {
     { name: 'Not Attended', value: healthApptData.notAttended, color: '#f44336' }
   ];
 
-  // School attendance pie chart
+  // School attendance pie — days supposed to go: Present = not Absent (incl. Late, Early Pick Up)
   const schoolData = reports.reduce((acc, report) => {
-    if (report.afternoon_school_supposed_to_go) {
-      if (report.afternoon_school_status === 'Attended') acc.attended++;
-      else acc.notAttended++;
-    }
+    if (report.afternoon_school_supposed_to_go !== true) return acc;
+    if (!questionnaireStringAnswered(report.afternoon_school_status)) return acc;
+    if (isSchoolPresentStatus(report.afternoon_school_status)) acc.present++;
+    else acc.absent++;
     return acc;
-  }, { attended: 0, notAttended: 0 });
+  }, { present: 0, absent: 0 });
   pieChartData.school = [
-    { name: 'Attended', value: schoolData.attended, color: '#4caf50' },
-    { name: 'Not Attended', value: schoolData.notAttended, color: '#f44336' }
+    { name: 'Present (incl. late / early pick up)', value: schoolData.present, color: '#4caf50' },
+    { name: 'Absent', value: schoolData.absent, color: '#f44336' }
   ];
 
-  // Behaviour pie charts
+  // Behaviour pie charts (omit unanswered questionnaire cells)
   const behaviourData = reports.reduce((acc, report) => {
-    // Observation
-    if (report.behaviour_observation === 'positive' || report.afternoon_behaviour_observation === 'positive') {
-      acc.observation.positive++;
-    } else {
-      acc.observation.negative++;
+    if (questionnaireStringAnswered(report.behaviour_observation)) {
+      if (report.behaviour_observation === 'positive') acc.observation.positive++;
+      else acc.observation.negative++;
     }
-    
-    // Followed rules
-    if (report.behaviour_followed_rules || report.afternoon_behaviour_followed_rules) {
-      acc.followedRules.yes++;
-    } else {
-      acc.followedRules.no++;
+    if (questionnaireStringAnswered(report.afternoon_behaviour_observation)) {
+      if (report.afternoon_behaviour_observation === 'positive') acc.observation.positive++;
+      else acc.observation.negative++;
     }
-    
-    // Listened to instructions
-    if (report.behaviour_listened || report.afternoon_behaviour_listened) {
-      acc.listened.yes++;
-    } else {
-      acc.listened.no++;
+
+    if (questionnaireBoolAnswered(report.behaviour_followed_rules)) {
+      if (report.behaviour_followed_rules) acc.followedRules.yes++;
+      else acc.followedRules.no++;
     }
-    
-    // Control behaviour
-    if (report.behaviour_control || report.afternoon_behaviour_control) {
-      acc.control.yes++;
-    } else {
-      acc.control.no++;
+    if (questionnaireBoolAnswered(report.afternoon_behaviour_followed_rules)) {
+      if (report.afternoon_behaviour_followed_rules) acc.followedRules.yes++;
+      else acc.followedRules.no++;
     }
-    
+
+    if (questionnaireBoolAnswered(report.behaviour_listened)) {
+      if (report.behaviour_listened) acc.listened.yes++;
+      else acc.listened.no++;
+    }
+    if (questionnaireBoolAnswered(report.afternoon_behaviour_listened)) {
+      if (report.afternoon_behaviour_listened) acc.listened.yes++;
+      else acc.listened.no++;
+    }
+
+    if (questionnaireBoolAnswered(report.behaviour_control)) {
+      if (report.behaviour_control) acc.control.yes++;
+      else acc.control.no++;
+    }
+    if (questionnaireBoolAnswered(report.afternoon_behaviour_control)) {
+      if (report.afternoon_behaviour_control) acc.control.yes++;
+      else acc.control.no++;
+    }
+
     return acc;
   }, {
     observation: { positive: 0, negative: 0 },
@@ -427,5 +527,10 @@ import {
   calculateRoutineScore,
   calculateWellBeingScore,
   calculateBehaviourScore,
-  getIndicatorValue
+  getIndicatorValue,
+  questionnaireStringAnswered,
+  questionnaireBoolAnswered,
+  routineRatingAnswered,
+  MEDICATION_ADHERENCE_SHIFTS,
+  isSchoolPresentStatus
 } from './reportScoring';

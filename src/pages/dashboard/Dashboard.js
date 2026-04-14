@@ -54,10 +54,6 @@ import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import { getOperationalDate, isReportLocked, calculateAge } from '../../utils/dateHelpers';
 import { getCurrentFacilityFromGeofencing, clearGeofencingCache } from '../../utils/geofencing';
-import {
-  resolveEmployeeDashboardFacilityId,
-  FACILITY_RESOLUTION,
-} from '../../utils/employeeFacility';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 import ClientInfoModal from '../../components/Client/ClientInfoModal';
 import UserSwitcher from '../../components/UserSwitcher/UserSwitcher';
@@ -101,12 +97,10 @@ function Dashboard() {
   const [clientInfoModalOpen, setClientInfoModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [clientPhotoUrls, setClientPhotoUrls] = useState({});
-  /** Active facility for client list and report links: geofence when available, else assigned facility(s). */
+  /** Facility from GPS geofence — client list and report links (not profile facility_id). */
   const [employeeGeofenceFacilityId, setEmployeeGeofenceFacilityId] = useState(null);
-  /** Shown when no facility could be resolved (no geofence and no assignment). */
+  /** Shown when employee is outside all geofences or location is unavailable. */
   const [employeeGeofenceNotice, setEmployeeGeofenceNotice] = useState(null);
-  /** Shown when facility came from profile / user_facilities instead of GPS. */
-  const [employeeFacilityInfoNotice, setEmployeeFacilityInfoNotice] = useState(null);
   
   // Admin state
   const [unsubmittedReports, setUnsubmittedReports] = useState([]);
@@ -169,38 +163,10 @@ function Dashboard() {
       // Fresh GPS check each dashboard load (avoid 5‑min cache keeping "outside" after arriving on-site)
       clearGeofencingCache();
 
-      setEmployeeFacilityInfoNotice(null);
-      const geofenceFacilityId = await getCurrentFacilityFromGeofencing();
-      const { facilityId: currentFacilityId, source: facilitySource } =
-        await resolveEmployeeDashboardFacilityId({
-          supabase,
-          userId: userProfile.id,
-          geofenceFacilityId,
-          profileFacilityId: userProfile.facility_id,
-        });
+      const currentFacilityId = await getCurrentFacilityFromGeofencing();
       setEmployeeGeofenceFacilityId(currentFacilityId);
-      console.log('📍 Employee dashboard facility:', {
-        currentFacilityId,
-        facilitySource,
-        geofenceFacilityId,
-      });
+      console.log('📍 Geofencing detected facility:', currentFacilityId);
 
-      if (
-        currentFacilityId &&
-        facilitySource &&
-        facilitySource !== FACILITY_RESOLUTION.GEOFENCE
-      ) {
-        if (facilitySource === FACILITY_RESOLUTION.USER_FACILITIES_MULTI) {
-          setEmployeeFacilityInfoNotice(
-            'You are assigned to multiple facilities. Showing the first assigned site until location can pick the site via geofence. Allow browser location when on-site for automatic detection.'
-          );
-        } else {
-          setEmployeeFacilityInfoNotice(
-            'Showing clients for your assigned facility. Allow browser location when on-site so the building can be detected by geofence.'
-          );
-        }
-      }
-      
       // ✅ PERFORMANCE: Parallelize independent queries
       // Load clients and facility info in parallel (they don't depend on each other)
       let clientsData = null;
@@ -242,12 +208,18 @@ function Dashboard() {
           throw new Error(`Failed to load clients: ${clientsError.message}`);
         }
         
-        console.log('✅ Clients loaded:', data?.length || 0, 'clients found for facility', currentFacilityId);
-        clientsData = data;
-        
+        const activeClients = (data || []).filter((c) => c.status !== 'discharged');
+        console.log(
+          '✅ Clients loaded:',
+          activeClients.length,
+          'active (non-discharged) for facility',
+          currentFacilityId
+        );
+        clientsData = activeClients;
+
         // ✅ CRITICAL: Set clients state immediately so they appear in UI
-        setClients(data || []);
-        console.log('✅ Clients state updated:', (data || []).length, 'clients');
+        setClients(activeClients);
+        console.log('✅ Clients state updated:', activeClients.length, 'clients');
         
         if (facilityError) {
           if (facilityError.code === '42501' || facilityError.message?.includes('row-level security')) {
@@ -262,7 +234,7 @@ function Dashboard() {
         setEmployeeGeofenceNotice(null);
       } else {
         setEmployeeGeofenceNotice(
-          'No facility could be determined from your location or your profile. Ask an administrator to set your facility assignment (and add you to user_facilities if you work at multiple sites), then reload. On-site, allow browser location and ensure geofencing is configured in Facility Management.'
+          'You are not inside any facility geofence, so client lists are hidden. Use the work device on-site, allow browser location when asked, and ensure this building has geofencing configured in Facility Management.'
         );
         setCurrentFacility(null);
         clientsData = [];
@@ -1052,11 +1024,6 @@ function Dashboard() {
               {employeeGeofenceNotice}
             </Alert>
           )}
-          {employeeFacilityInfoNotice && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              {employeeFacilityInfoNotice}
-            </Alert>
-          )}
           {(() => {
             console.log('🔍 UI Render - clients state:', {
               clientsLength: clients.length,
@@ -1068,8 +1035,8 @@ function Dashboard() {
           {clients.length === 0 ? (
             <Typography variant="body1" color="textSecondary" sx={{ mt: 2 }}>
               {!employeeGeofenceFacilityId
-                ? 'No clients are shown until you have a facility assignment and/or are detected inside a facility geofence. Ask an administrator to set your facility, or allow browser location on-site.'
-                : 'No active clients found in this facility.'}
+                ? 'No clients are shown until you are detected inside a facility geofence. Allow browser location on-site.'
+                : 'No active (non-discharged) clients found in this facility.'}
             </Typography>
           ) : (
             <Grid container spacing={2} sx={{ mt: 1 }}>

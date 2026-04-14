@@ -1,6 +1,15 @@
 // Report scoring utilities for daily reports analytics
 // Calculates various metrics from daily report data
 
+/** String questionnaire field is answered (omit null, undefined, blank). */
+export const questionnaireStringAnswered = (v) => v != null && String(v).trim() !== '';
+
+/** Boolean / tri-state questionnaire field is answered (omit null and undefined; false is a real answer). */
+export const questionnaireBoolAnswered = (v) => v != null;
+
+/** Routine rating (1–5) is answered — omit null, undefined, blank. */
+export const routineRatingAnswered = (v) => v != null && v !== '' && !Number.isNaN(Number(v));
+
 /**
  * Calculate medication adherence score
  * @param {string} medicationStatus - The medication status from the report
@@ -9,6 +18,41 @@
 export const calculateMedicationAdherence = (medicationStatus) => {
   if (!medicationStatus) return 0;
   return medicationStatus === 'Taken' ? 100 : 0;
+};
+
+/**
+ * [requiredField, statusField] for morning / afternoon / evening medication.
+ * Adherence is only counted when the shift has medication_required === true.
+ */
+export const MEDICATION_ADHERENCE_SHIFTS = [
+  ['medication_required', 'medication_status'],
+  ['afternoon_medication_required', 'afternoon_medication_status'],
+  ['evening_medication_required', 'evening_medication_status']
+];
+
+function eachApplicableMedicationScore(report, fn) {
+  MEDICATION_ADHERENCE_SHIFTS.forEach(([reqKey, statusKey]) => {
+    if (report[reqKey] !== true) return;
+    const status = report[statusKey];
+    if (!questionnaireStringAnswered(status)) return;
+    fn(calculateMedicationAdherence(status));
+  });
+}
+
+/** Morning, afternoon, and evening all explicitly "No medication required". */
+export const allMedicationShiftsExplicitlyNotRequired = (report) =>
+  MEDICATION_ADHERENCE_SHIFTS.every(([reqKey]) => report[reqKey] === false);
+
+/**
+ * Daily medication adherence % for summaries.
+ * If every shift is explicitly "no meds required", returns 100% (nothing owed).
+ * Otherwise averages only shifts where meds were required and status is recorded.
+ */
+export const getMedicationAdherenceAveragePercent = (report) => {
+  if (allMedicationShiftsExplicitlyNotRequired(report)) return 100;
+  const scores = [];
+  eachApplicableMedicationScore(report, (s) => scores.push(s));
+  return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
 };
 
 /**
@@ -46,40 +90,57 @@ export const calculateDentalHygieneScore = (dentalHygieneDone) => {
  * @returns {Object} Object containing all calculated scores
  */
 export const calculateReportScores = (reportData) => {
-  const {
-    medication_status,
-    sleep_woke_on_time,
-    diet_ate_well,
-    dental_hygiene_done,
-    routine_made_bed,
-    routine_put_clothes_away,
-    routine_cleared_floor,
-    routine_washed_dishes,
-    behaviour_observation,
-    behaviour_followed_rules,
-    behaviour_listened,
-    behaviour_control
-  } = reportData;
-  
-  const medicationScore = calculateMedicationAdherence(medication_status);
-  const sleepScore = calculateSleepScore(sleep_woke_on_time);
-  const dietScore = calculateDietScore(diet_ate_well);
-  const dentalScore = calculateDentalHygieneScore(dental_hygiene_done);
-  
-  const routineScore = calculateRoutineScore({
-    madeBed: routine_made_bed,
-    putClothesAway: routine_put_clothes_away,
-    clearedFloor: routine_cleared_floor,
-    washedDishes: routine_washed_dishes
-  });
-  
-  const behaviourScore = calculateBehaviourScore({
-    observation: behaviour_observation,
-    followedRules: behaviour_followed_rules,
-    listened: behaviour_listened,
-    control: behaviour_control
-  });
-  
+  let medicationScore = 0;
+  if (allMedicationShiftsExplicitlyNotRequired(reportData)) {
+    medicationScore = 100;
+  } else {
+    const medicationScores = [];
+    eachApplicableMedicationScore(reportData, (s) => medicationScores.push(s));
+    medicationScore =
+      medicationScores.length > 0
+        ? Math.round(medicationScores.reduce((a, b) => a + b, 0) / medicationScores.length)
+        : 0;
+  }
+
+  const sleepScores = [];
+  if (questionnaireBoolAnswered(reportData.sleep_woke_on_time)) {
+    sleepScores.push(calculateSleepScore(reportData.sleep_woke_on_time));
+  }
+  if (questionnaireBoolAnswered(reportData.afternoon_slept_on_time)) {
+    sleepScores.push(calculateSleepScore(reportData.afternoon_slept_on_time));
+  }
+  const sleepScore =
+    sleepScores.length > 0
+      ? Math.round(sleepScores.reduce((a, b) => a + b, 0) / sleepScores.length)
+      : 0;
+
+  const dietScores = [];
+  if (questionnaireBoolAnswered(reportData.diet_ate_well)) {
+    dietScores.push(calculateDietScore(reportData.diet_ate_well));
+  }
+  if (questionnaireBoolAnswered(reportData.afternoon_diet_ate_well)) {
+    dietScores.push(calculateDietScore(reportData.afternoon_diet_ate_well));
+  }
+  const dietScore =
+    dietScores.length > 0
+      ? Math.round(dietScores.reduce((a, b) => a + b, 0) / dietScores.length)
+      : 0;
+
+  const dentalScores = [];
+  if (questionnaireBoolAnswered(reportData.dental_hygiene_done)) {
+    dentalScores.push(calculateDentalHygieneScore(reportData.dental_hygiene_done));
+  }
+  if (questionnaireBoolAnswered(reportData.afternoon_dental_hygiene_done)) {
+    dentalScores.push(calculateDentalHygieneScore(reportData.afternoon_dental_hygiene_done));
+  }
+  const dentalScore =
+    dentalScores.length > 0
+      ? Math.round(dentalScores.reduce((a, b) => a + b, 0) / dentalScores.length)
+      : 0;
+
+  const routineScore = calculateRoutineScore(reportData);
+  const behaviourScore = calculateBehaviourScore(reportData);
+
   return {
     medication: medicationScore,
     sleep: sleepScore,
@@ -264,13 +325,19 @@ export const calculateShowerScore = (showered) => {
  * @returns {number|null} Score as percentage (0-100) or null if not applicable
  */
 export const calculateSchoolScore = (supposedToGo, status) => {
+  if (supposedToGo == null) return null;
+  const st = questionnaireStringAnswered(status) ? String(status).trim() : '';
   if (!supposedToGo) {
-    // Not enrolled, weekend, holiday
-    return status === 'not enrolled' || status === 'weekend' || status === 'Holiday/No School' ? 100 : null;
+    if (st === '') return null;
+    return st === 'not enrolled' || st === 'weekend' || st === 'Holiday/No School' ? 100 : null;
   }
-  // Attended, Late, Early Pick Up = 100%, Absent = 0%
-  return status === 'Absent' ? 0 : 100;
+  if (st === '') return null;
+  return st === 'Absent' ? 0 : 100;
 };
+
+/** For summaries: school day counts as present if answered and not Absent (incl. Late, Early Pick Up). */
+export const isSchoolPresentStatus = (status) =>
+  questionnaireStringAnswered(status) && status !== 'Absent';
 
 /**
  * Calculate health appointments compliance score
@@ -282,9 +349,12 @@ export const calculateHealthAppointmentsScore = (appointments) => {
   
   const healthAppts = appointments.filter(a => a.type === 'health');
   if (healthAppts.length === 0) return null;
-  
-  const attended = healthAppts.filter(a => a.compliance === 'attended').length;
-  return (attended / healthAppts.length) * 100;
+
+  const answered = healthAppts.filter((a) => questionnaireStringAnswered(a.compliance));
+  if (answered.length === 0) return null;
+
+  const attended = answered.filter((a) => a.compliance === 'attended').length;
+  return (attended / answered.length) * 100;
 };
 
 /**
@@ -297,9 +367,12 @@ export const calculateSocialAppointmentsScore = (appointments) => {
   
   const socialAppts = appointments.filter(a => a.type === 'non-health');
   if (socialAppts.length === 0) return null;
-  
-  const attended = socialAppts.filter(a => a.compliance === 'attended').length;
-  return (attended / socialAppts.length) * 100;
+
+  const answered = socialAppts.filter((a) => questionnaireStringAnswered(a.compliance));
+  if (answered.length === 0) return null;
+
+  const attended = answered.filter((a) => a.compliance === 'attended').length;
+  return (attended / answered.length) * 100;
 };
 
 /**
@@ -351,43 +424,39 @@ export const calculateInjuryScore = (injuryOccurred) => {
 export const calculateHealthScore = (report) => {
   const scores = [];
   
-  // Medication adherence (morning, afternoon, evening)
-  if (report.medication_status) {
-    scores.push(calculateMedicationAdherence(report.medication_status));
-  }
-  if (report.afternoon_medication_status) {
-    scores.push(calculateMedicationAdherence(report.afternoon_medication_status));
-  }
-  if (report.evening_medication_status) {
-    scores.push(calculateMedicationAdherence(report.evening_medication_status));
+  // Medication adherence —100% if all shifts "no meds required"; else only required+answered shifts
+  if (allMedicationShiftsExplicitlyNotRequired(report)) {
+    scores.push(100);
+  } else {
+    eachApplicableMedicationScore(report, (s) => scores.push(s));
   }
   
   // Sleep score (morning and afternoon)
-  if (report.sleep_woke_on_time !== undefined) {
+  if (questionnaireBoolAnswered(report.sleep_woke_on_time)) {
     scores.push(calculateSleepScore(report.sleep_woke_on_time));
   }
-  if (report.afternoon_slept_on_time !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_slept_on_time)) {
     scores.push(calculateSleepScore(report.afternoon_slept_on_time));
   }
   
   // Diet score (morning and afternoon)
-  if (report.diet_ate_well !== undefined) {
+  if (questionnaireBoolAnswered(report.diet_ate_well)) {
     scores.push(calculateDietScore(report.diet_ate_well));
   }
-  if (report.afternoon_diet_ate_well !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_diet_ate_well)) {
     scores.push(calculateDietScore(report.afternoon_diet_ate_well));
   }
   
   // Dental hygiene (morning and afternoon)
-  if (report.dental_hygiene_done !== undefined) {
+  if (questionnaireBoolAnswered(report.dental_hygiene_done)) {
     scores.push(calculateDentalHygieneScore(report.dental_hygiene_done));
   }
-  if (report.afternoon_dental_hygiene_done !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_dental_hygiene_done)) {
     scores.push(calculateDentalHygieneScore(report.afternoon_dental_hygiene_done));
   }
   
   // Shower score
-  if (report.afternoon_shower_taken !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_shower_taken)) {
     scores.push(calculateShowerScore(report.afternoon_shower_taken));
   }
   
@@ -395,7 +464,10 @@ export const calculateHealthScore = (report) => {
   if (report.appointments && Array.isArray(report.appointments)) {
     const healthAppointments = report.appointments.filter(apt => apt.type === 'health');
     if (healthAppointments.length > 0) {
-      scores.push(calculateHealthAppointmentsScore(healthAppointments));
+      const apptScore = calculateHealthAppointmentsScore(healthAppointments);
+      if (apptScore != null) {
+        scores.push(apptScore);
+      }
     }
   }
   
@@ -403,30 +475,42 @@ export const calculateHealthScore = (report) => {
 };
 
 /**
- * Calculate overall routine score from all routine tasks
+ * Period routine % from 1–5 ratings (only answered tasks in that period).
+ * @returns {number|null} Percentage or null if nothing answered in that period
+ */
+const routinePeriodPercent = (values) => {
+  const answered = values.filter(routineRatingAnswered);
+  if (answered.length === 0) return null;
+  const total = answered.reduce((sum, v) => sum + Number(v), 0);
+  return (total / (answered.length * 5)) * 100;
+};
+
+/**
+ * Calculate overall routine score (matches single-day ReportViewer logic:
+ * average of morning % and afternoon %, each period scored from its own answered 1–5 tasks).
+ * Unanswered periods are omitted from the average (not treated as 0%).
  * @param {Object} report - Daily report data
  * @returns {number} Routine score as percentage (0-100)
  */
 export const calculateRoutineScore = (report) => {
-  const morningRoutine = [
-    report.routine_made_bed || 0,
-    report.routine_put_clothes_away || 0,
-    report.routine_cleared_floor || 0,
-    report.routine_washed_dishes || 0
-  ];
-  
-  const afternoonRoutine = [
-    report.afternoon_routine_made_bed || 0,
-    report.afternoon_routine_put_clothes_away || 0,
-    report.afternoon_routine_cleared_floor || 0,
-    report.afternoon_routine_washed_dishes || 0
-  ];
-  
-  const allRoutine = [...morningRoutine, ...afternoonRoutine];
-  const totalPoints = allRoutine.reduce((sum, score) => sum + score, 0);
-  const maxPoints = allRoutine.length * 5; // Each task is 1-5 scale
-  
-  return maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : 0;
+  const morningPct = routinePeriodPercent([
+    report.routine_made_bed,
+    report.routine_put_clothes_away,
+    report.routine_cleared_floor,
+    report.routine_washed_dishes
+  ]);
+
+  const afternoonPct = routinePeriodPercent([
+    report.afternoon_routine_made_bed,
+    report.afternoon_routine_put_clothes_away,
+    report.afternoon_routine_cleared_floor,
+    report.afternoon_routine_washed_dishes
+  ]);
+
+  const parts = [morningPct, afternoonPct].filter((p) => p != null);
+  if (parts.length === 0) return 0;
+
+  return Math.round(parts.reduce((sum, p) => sum + p, 0) / parts.length);
 };
 
 /**
@@ -437,16 +521,25 @@ export const calculateRoutineScore = (report) => {
 export const calculateWellBeingScore = (report) => {
   const scores = [];
   
-  // School attendance
-  if (report.afternoon_school_supposed_to_go !== undefined) {
-    scores.push(calculateSchoolScore(report.afternoon_school_supposed_to_go, report.afternoon_school_status));
+  // School attendance (omit when school block unanswered / incomplete)
+  if (questionnaireBoolAnswered(report.afternoon_school_supposed_to_go)) {
+    const schoolScore = calculateSchoolScore(
+      report.afternoon_school_supposed_to_go,
+      report.afternoon_school_status
+    );
+    if (schoolScore != null) {
+      scores.push(schoolScore);
+    }
   }
   
   // Social appointments compliance
   if (report.appointments && Array.isArray(report.appointments)) {
     const socialAppointments = report.appointments.filter(apt => apt.type === 'social');
     if (socialAppointments.length > 0) {
-      scores.push(calculateSocialAppointmentsScore(socialAppointments));
+      const socialScore = calculateSocialAppointmentsScore(socialAppointments);
+      if (socialScore != null) {
+        scores.push(socialScore);
+      }
     }
   }
   
@@ -461,31 +554,31 @@ export const calculateWellBeingScore = (report) => {
 export const calculateBehaviourScore = (report) => {
   const scores = [];
   
-  // Morning behaviour
-  if (report.behaviour_observation) {
+  // Morning behaviour (omit null / undefined / blank — do not treat as 0%)
+  if (questionnaireStringAnswered(report.behaviour_observation)) {
     scores.push(report.behaviour_observation === 'positive' ? 100 : 0);
   }
-  if (report.behaviour_followed_rules !== undefined) {
+  if (questionnaireBoolAnswered(report.behaviour_followed_rules)) {
     scores.push(report.behaviour_followed_rules ? 100 : 0);
   }
-  if (report.behaviour_listened !== undefined) {
+  if (questionnaireBoolAnswered(report.behaviour_listened)) {
     scores.push(report.behaviour_listened ? 100 : 0);
   }
-  if (report.behaviour_control !== undefined) {
+  if (questionnaireBoolAnswered(report.behaviour_control)) {
     scores.push(report.behaviour_control ? 100 : 0);
   }
   
   // Afternoon behaviour
-  if (report.afternoon_behaviour_observation) {
+  if (questionnaireStringAnswered(report.afternoon_behaviour_observation)) {
     scores.push(report.afternoon_behaviour_observation === 'positive' ? 100 : 0);
   }
-  if (report.afternoon_behaviour_followed_rules !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_behaviour_followed_rules)) {
     scores.push(report.afternoon_behaviour_followed_rules ? 100 : 0);
   }
-  if (report.afternoon_behaviour_listened !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_behaviour_listened)) {
     scores.push(report.afternoon_behaviour_listened ? 100 : 0);
   }
-  if (report.afternoon_behaviour_control !== undefined) {
+  if (questionnaireBoolAnswered(report.afternoon_behaviour_control)) {
     scores.push(report.afternoon_behaviour_control ? 100 : 0);
   }
   

@@ -18,7 +18,8 @@ import {
 
 function RoutineReport({ 
   routineScore, 
-  indicator, 
+  indicator,
+  routineChores = [],
   fillableData,
   onFillableDataChange 
 }) {
@@ -47,14 +48,6 @@ function RoutineReport({
       default: return 'default';
     }
   };
-
-  const chores = [
-    { key: 'madeBed', name: 'Made Bed', score: 4.2 },
-    { key: 'putClothesAway', name: 'Put Clothes Away', score: 3.8 },
-    { key: 'clearedFloor', name: 'Cleared Bedroom Floor', score: 4.0 },
-    { key: 'washedDishes', name: 'Washed Dishes', score: 3.6 },
-    { key: 'additional', name: 'Additional Chores', score: 4.1 }
-  ];
 
   return (
     <>
@@ -92,28 +85,44 @@ function RoutineReport({
               </TableRow>
             </TableHead>
             <TableBody>
-              {chores.filter(chore => chore.key !== 'additional').map((chore) => (
-                <TableRow key={chore.key}>
-                  <TableCell>
-                    <Typography variant="body1" fontWeight="medium">
-                      {chore.name}
+              {routineChores.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={2}>
+                    <Typography variant="body2" color="textSecondary">
+                      Generate the report to show average star ratings per chore for the selected range.
                     </Typography>
                   </TableCell>
-                  <TableCell>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Rating
-                        value={chore.score}
-                        precision={0.1}
-                        readOnly
-                        size="large"
-                      />
-                      <Typography variant="body2" color="textSecondary">
-                        ({chore.score.toFixed(1)}/5.0)
-                      </Typography>
-                    </Box>
-                  </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                routineChores.map((chore) => (
+                  <TableRow key={chore.key}>
+                    <TableCell>
+                      <Typography variant="body1" fontWeight="medium">
+                        {chore.name}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {chore.average != null ? (
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Rating
+                            value={chore.average}
+                            precision={0.1}
+                            readOnly
+                            size="large"
+                          />
+                          <Typography variant="body2" color="textSecondary">
+                            ({chore.average.toFixed(1)}/5.0)
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          No ratings in this date range
+                        </Typography>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>

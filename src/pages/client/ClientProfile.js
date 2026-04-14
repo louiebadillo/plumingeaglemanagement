@@ -67,6 +67,7 @@ import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 import { blobToFile } from '../../utils/imageUtils';
 
 const NEW_CLIENT_DRAFT_STORAGE_PREFIX = 'pem_new_client_draft_v1::';
+const EDIT_CLIENT_SCROLL_STORAGE_PREFIX = 'pem_edit_client_scroll_v1::';
 
 function newClientDraftStorageKey(pathname, facilityId) {
   return `${NEW_CLIENT_DRAFT_STORAGE_PREFIX}${pathname}::${facilityId || ''}`;
@@ -109,6 +110,30 @@ function clearNewClientDraft(pathname, facilityId) {
   }
 }
 
+function editClientScrollStorageKey(pathname, clientId) {
+  return `${EDIT_CLIENT_SCROLL_STORAGE_PREFIX}${pathname}::${clientId || ''}`;
+}
+
+function readEditClientScrollTop(pathname, clientId) {
+  if (!clientId) return 0;
+  try {
+    const raw = sessionStorage.getItem(editClientScrollStorageKey(pathname, clientId));
+    const parsed = raw ? Number(raw) : 0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function writeEditClientScrollTop(pathname, clientId, scrollTop) {
+  if (!clientId) return;
+  try {
+    sessionStorage.setItem(editClientScrollStorageKey(pathname, clientId), String(Math.max(0, scrollTop || 0)));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 function ClientProfile() {
   const { clientSlug } = useParams();
   const history = useHistory();
@@ -118,6 +143,36 @@ function ClientProfile() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState({});
+  const editDialogContentRef = useRef(null);
+
+  // Restore scroll position in the edit/create client dialog when navigating away and back.
+  // Needs to run after the dialog has mounted and the draft has repopulated fields.
+  useEffect(() => {
+    if (!editDialogOpen) return;
+    const el = editDialogContentRef.current;
+    if (!el) return;
+
+    const target = readEditClientScrollTop(location.pathname, client?.id);
+    if (!target) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      // Two frames helps when DialogContent height changes after draft data paints.
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled) return;
+      try {
+        el.scrollTop = target;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [editDialogOpen, location.pathname, client?.id]);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -1608,7 +1663,14 @@ function ClientProfile() {
         <DialogTitle>
           {isNewClient ? `Add New Client - ${facility?.name || 'Facility'}` : 'Edit Client Information'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent
+          ref={editDialogContentRef}
+          onScroll={() => {
+            const el = editDialogContentRef.current;
+            if (!el) return;
+            writeEditClientScrollTop(location.pathname, client?.id, el.scrollTop);
+          }}
+        >
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {/* Profile Photo Upload */}
             <Grid item xs={12}>
@@ -1987,6 +2049,7 @@ function ClientProfile() {
                   ...prev,
                   schoolInfo: { ...prev.schoolInfo, grade: e.target.value }
                 }))}
+                inputProps={{ maxLength: 50 }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

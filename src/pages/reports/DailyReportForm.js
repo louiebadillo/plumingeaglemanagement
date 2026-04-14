@@ -190,10 +190,20 @@ function DailyReportForm() {
 
   /** Bumps when client/date/reportId change; stale async loads must not overwrite in-progress forms (e.g. after alt-tab). */
   const dataLoadGenerationRef = useRef(0);
+  const REPORT_SCROLL_KEY_PREFIX = 'pem_daily_report_scroll_v2::';
+  const isScrollHydratingRef = useRef(true);
+  const lastSavedScrollYRef = useRef(0);
+  const reportScrollKey = `${REPORT_SCROLL_KEY_PREFIX}${location.pathname}${location.search || ''}`;
   
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
   const currentUserId = userProfile?.id;
+
+  // DEBUG: confirm whether tab switching causes a remount or just rerenders.
+  useEffect(() => {
+    console.log('DailyReportForm mounted');
+    return () => console.log('DailyReportForm unmounted');
+  }, []);
 
   // Load client, facility, and existing report once per URL identity — ignore stale async completions (tab switch / slow network)
   useEffect(() => {
@@ -232,6 +242,67 @@ function DailyReportForm() {
 
     return () => clearInterval(interval);
   }, [formData, client, actualFacilityId]);
+
+  // Persist + restore window scroll position for long forms when switching tabs/routes.
+  useEffect(() => {
+    // Hydration window: when route remounts, browsers/routers may briefly report scrollY=0.
+    // We avoid overwriting a previously saved scroll position with 0 during that period.
+    isScrollHydratingRef.current = true;
+    const hydrationTimer = window.setTimeout(() => {
+      isScrollHydratingRef.current = false;
+    }, 800);
+
+    const save = () => {
+      try {
+        const y = Number(window.scrollY || 0);
+        if (isScrollHydratingRef.current && y <= 0) return;
+        lastSavedScrollYRef.current = y;
+        sessionStorage.setItem(reportScrollKey, String(y));
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    window.addEventListener('scroll', save, { passive: true });
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') save();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.clearTimeout(hydrationTimer);
+      window.removeEventListener('scroll', save);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [reportScrollKey]);
+
+  useEffect(() => {
+    // Restore once after initial data load finishes and content has rendered.
+    if (loading) return;
+    let target = 0;
+    try {
+      target = Number(sessionStorage.getItem(reportScrollKey) || 0);
+    } catch (e) {
+      target = 0;
+    }
+    if (!Number.isFinite(target) || target <= 0) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      if (cancelled) return;
+      try {
+        window.scrollTo(0, target);
+        lastSavedScrollYRef.current = target;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, reportScrollKey]);
 
   // If facility is null but client has facility_id, try to load it one more time
   // NOTE: This hook MUST be before any early returns to follow Rules of Hooks
@@ -913,13 +984,25 @@ function DailyReportForm() {
       
       if (!error && userData) {
         const user = userData;
-        return `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase();
+        const first = String(user.first_name || '').trim();
+        const last = String(user.last_name || '').trim();
+        const f1 = first ? first[0] : '';
+        const l3 = last ? last.slice(0, 3) : first.slice(1, 4);
+        return `${f1}${l3}`.toUpperCase();
       }
     } catch (error) {
       console.error('Error loading user initials:', error);
     }
     
     return '';
+  };
+
+  const getCurrentUserInitials = () => {
+    const first = String(userProfile?.first_name || '').trim();
+    const last = String(userProfile?.last_name || '').trim();
+    const f1 = first ? first[0] : '';
+    const l3 = last ? last.slice(0, 3) : first.slice(1, 4);
+    return `${f1}${l3}`.toUpperCase();
   };
 
   const validateForm = () => {
@@ -1468,6 +1551,13 @@ function DailyReportForm() {
         <Typography variant="h4">
           Daily Report Form
         </Typography>
+        <Box sx={{ ml: 'auto' }}>
+          <Chip
+            label={`${userProfile?.first_name || ''} ${userProfile?.last_name || ''} (${getCurrentUserInitials()})`.trim()}
+            variant="outlined"
+            size="small"
+          />
+        </Box>
       </Box>
 
       {saved && (

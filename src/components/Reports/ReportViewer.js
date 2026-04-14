@@ -43,6 +43,11 @@ import {
   ExitToApp as AWOLIcon,
   LocalHospital as InjuryIcon
 } from '@mui/icons-material';
+import {
+  calculateRoutineScore,
+  getMedicationAdherenceAveragePercent,
+  calculateSchoolScore
+} from '../../utils/reportScoring';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 
@@ -54,6 +59,14 @@ const ReportViewer = ({ reportId, open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [userInitials, setUserInitials] = useState({});
+
+  const formatUserInitialBase = (firstName, lastName) => {
+    const first = String(firstName || '').trim();
+    const last = String(lastName || '').trim();
+    const f1 = first ? first[0] : '';
+    const l3 = last ? last.slice(0, 3) : first.slice(1, 4);
+    return `${f1}${l3}`.toUpperCase();
+  };
 
   useEffect(() => {
     if (open && reportId) {
@@ -79,11 +92,27 @@ const ReportViewer = ({ reportId, open, onClose }) => {
       );
 
       if (response.ok) {
-        const users = await response.json();
+        const users = (await response.json()) || [];
+
+        // Stable order so duplicate suffixes don't "flip" between renders.
+        users.sort((a, b) => {
+          const al = String(a?.last_name || '').toLowerCase();
+          const bl = String(b?.last_name || '').toLowerCase();
+          if (al !== bl) return al.localeCompare(bl);
+          const af = String(a?.first_name || '').toLowerCase();
+          const bf = String(b?.first_name || '').toLowerCase();
+          if (af !== bf) return af.localeCompare(bf);
+          return String(a?.id || '').localeCompare(String(b?.id || ''));
+        });
+
         const initialsMap = {};
-        users.forEach(user => {
-          const initials = `${user.first_name?.charAt(0) || ''}${user.last_name?.charAt(0) || ''}`.toUpperCase();
-          initialsMap[user.id] = initials;
+        const seenCounts = new Map(); // base -> count assigned so far
+        users.forEach((user) => {
+          const base = formatUserInitialBase(user?.first_name, user?.last_name);
+          const next = (seenCounts.get(base) || 0) + 1;
+          seenCounts.set(base, next);
+          // First occurrence gets base; later duplicates get base2, base3, ...
+          initialsMap[user.id] = next === 1 ? base : `${base}${next}`;
         });
         return initialsMap;
       }
@@ -168,39 +197,26 @@ const ReportViewer = ({ reportId, open, onClose }) => {
     if (!report) return {};
 
     // Morning shift scores
-    const morningMedication = report.medication_status === 'Taken' ? 100 : 0;
     const morningSleep = report.sleep_woke_on_time ? 100 : 0;
     const morningDiet = report.diet_ate_well ? 100 : 0;
     const morningDental = report.dental_hygiene_done ? 100 : 0;
     
     // Afternoon shift scores
-    const afternoonMedication = report.afternoon_medication_status === 'Taken' ? 100 : 0;
     const afternoonSleep = report.afternoon_slept_on_time ? 100 : 0;
     const afternoonDiet = report.afternoon_diet_ate_well ? 100 : 0;
     const afternoonDental = report.afternoon_dental_hygiene_done ? 100 : 0;
     const afternoonShower = report.afternoon_shower_taken ? 100 : 0;
-    const afternoonSchool = report.afternoon_school_status === 'Attended' ? 100 : 0;
+    const afternoonSchoolRaw = calculateSchoolScore(
+      report.afternoon_school_supposed_to_go,
+      report.afternoon_school_status
+    );
+    const afternoonSchool = afternoonSchoolRaw != null ? afternoonSchoolRaw : 0;
 
-    // Evening shift scores
-    const eveningMedication = report.evening_medication_status === 'Taken' ? 100 : 0;
+    // Medication: only required shifts (same as progress analytics)
+    const medicationScoreSingle = getMedicationAdherenceAveragePercent(report);
 
-    // Routine scores (1-5 scale converted to percentage)
-    const morningRoutine = [
-      report.routine_made_bed || 0,
-      report.routine_put_clothes_away || 0,
-      report.routine_cleared_floor || 0,
-      report.routine_washed_dishes || 0
-    ];
-    const afternoonRoutine = [
-      report.afternoon_routine_made_bed || 0,
-      report.afternoon_routine_put_clothes_away || 0,
-      report.afternoon_routine_cleared_floor || 0,
-      report.afternoon_routine_washed_dishes || 0
-    ];
-    
-    const morningRoutineScore = Math.round((morningRoutine.reduce((sum, score) => sum + score, 0) / (morningRoutine.length * 5)) * 100);
-    const afternoonRoutineScore = Math.round((afternoonRoutine.reduce((sum, score) => sum + score, 0) / (afternoonRoutine.length * 5)) * 100);
-    const routineScore = Math.round((morningRoutineScore + afternoonRoutineScore) / 2);
+    // Routine: same formula as progress analytics (avg of morning % & afternoon %; nulls omitted)
+    const routineScore = calculateRoutineScore(report);
 
     // Behavioral scores (morning and afternoon)
     const morningBehavior = [
@@ -221,13 +237,12 @@ const ReportViewer = ({ reportId, open, onClose }) => {
     const behaviorScore = Math.round((morningBehaviorScore + afternoonBehaviorScore) / 2);
 
     // Overall scores
-    const medicationScore = Math.round((morningMedication + afternoonMedication + eveningMedication) / 3);
     const sleepScore = Math.round((morningSleep + afternoonSleep) / 2);
     const dietScore = Math.round((morningDiet + afternoonDiet) / 2);
     const dentalScore = Math.round((morningDental + afternoonDental) / 2);
 
     return {
-      medication: medicationScore,
+      medication: medicationScoreSingle,
       sleep: sleepScore,
       diet: dietScore,
       dental: dentalScore,

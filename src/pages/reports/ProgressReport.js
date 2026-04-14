@@ -1568,6 +1568,7 @@ function ProgressReport() {
             <RoutineReport
               routineScore={aggregatedData.routineScore}
               indicator={aggregatedData.indicator}
+              routineChores={aggregatedData.routineChores || []}
               fillableData={fillableData}
               onFillableDataChange={handleFillableDataChange}
             />
@@ -1590,6 +1591,7 @@ function ProgressReport() {
               indicator={aggregatedData.indicator}
               pieChartData={aggregatedData.pieChartData}
               summaryTables={aggregatedData.summaryTables}
+              birSummary={aggregatedData.birSummary}
               fillableData={fillableData}
               onFillableDataChange={handleFillableDataChange}
             />
