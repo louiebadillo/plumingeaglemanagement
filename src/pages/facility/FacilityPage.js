@@ -235,10 +235,21 @@ function FacilityPage() {
     );
   }
 
-  const filteredClients = clients.filter(client =>
-    client && client.first_name && client.last_name &&
-    `${client.first_name} ${client.last_name}`.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const normalizedSearch = (searchTerm || '').trim().toLowerCase();
+  const filteredClients = (clients || []).filter((client) => {
+    if (!client) return false;
+    const firstName = (client.first_name || '').trim();
+    const lastName = (client.last_name || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    // When there's no search term, show all clients in the facility (even if name fields are blank).
+    if (!normalizedSearch) return true;
+
+    // When searching, match against name (and room as a convenience).
+    const room = (client.room || '').trim();
+    const haystack = `${fullName} ${room}`.trim().toLowerCase();
+    return haystack.includes(normalizedSearch);
+  });
 
   const handleViewClient = (client) => {
     history.push(`/app/client/${client.id}`);
@@ -543,7 +554,9 @@ function FacilityPage() {
                               sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}
                               src={clientPhotoUrls[client.id]}
                             >
-                              {clientPhotoUrls[client.id] ? null : client.first_name?.[0]}{client.last_name?.[0]}
+                              {clientPhotoUrls[client.id]
+                                ? null
+                                : `${(client.first_name || '').trim()[0] || '?'}${(client.last_name || '').trim()[0] || ''}`}
                             </Avatar>
                           </TableCell>
                           <TableCell>
@@ -561,7 +574,8 @@ function FacilityPage() {
                                 history.push(clientUrl);
                               }}
                             >
-                              {client.first_name} {client.last_name}
+                              {`${(client.first_name || '').trim()} ${(client.last_name || '').trim()}`.trim() ||
+                                'Unnamed client'}
                             </Typography>
                           </TableCell>
                           <TableCell>
