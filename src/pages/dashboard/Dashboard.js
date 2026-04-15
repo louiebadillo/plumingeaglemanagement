@@ -40,6 +40,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   History as HistoryIcon,
   Save as SaveIcon,
+  Refresh as RefreshIcon,
   Assignment as ReportIcon
 } from '@mui/icons-material';
 import {
@@ -808,24 +809,35 @@ function Dashboard() {
                   View and manage all in-progress reports across all facilities and dates. Yellow indicates reports for today, red indicates past due reports.
                 </Typography>
               </Box>
-              <FormControl sx={{ minWidth: 200 }}>
-                <InputLabel>Filter by Facility</InputLabel>
-                <Select
-                  value={facilityFilter}
-                  label="Filter by Facility"
-                  onChange={(e) => {
-                    setFacilityFilter(e.target.value);
-                    setCurrentPage(1); // Reset to first page when filter changes
-                  }}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<RefreshIcon />}
+                  onClick={() => loadUnsubmittedReports()}
+                  disabled={submitting}
+                  sx={{ borderRadius: 2, whiteSpace: 'nowrap' }}
                 >
-                  <MenuItem value="all">All Facilities</MenuItem>
-                  {facilities.map((facility) => (
-                    <MenuItem key={facility.id} value={facility.id}>
-                      {facility.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                  Refresh
+                </Button>
+                <FormControl sx={{ minWidth: 220 }}>
+                  <InputLabel>Filter by Facility</InputLabel>
+                  <Select
+                    value={facilityFilter}
+                    label="Filter by Facility"
+                    onChange={(e) => {
+                      setFacilityFilter(e.target.value);
+                      setCurrentPage(1); // Reset to first page when filter changes
+                    }}
+                  >
+                    <MenuItem value="all">All Facilities</MenuItem>
+                    {facilities.map((facility) => (
+                      <MenuItem key={facility.id} value={facility.id}>
+                        {facility.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
             </Box>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
@@ -856,6 +868,7 @@ function Dashboard() {
                       <TableCell><strong>Facility</strong></TableCell>
                       <TableCell><strong>Report Date</strong></TableCell>
                       <TableCell><strong>Last Saved</strong></TableCell>
+                      <TableCell><strong>Last updated by</strong></TableCell>
                       <TableCell><strong>Status</strong></TableCell>
                       <TableCell><strong>Actions</strong></TableCell>
                     </TableRow>
@@ -880,6 +893,11 @@ function Dashboard() {
                           <TableCell>
                             <Typography variant="body2">
                               {formatDateTime(report.updated_at)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {report.lastEditorName || 'Unknown'}
                             </Typography>
                           </TableCell>
                           <TableCell>

@@ -173,7 +173,9 @@ export const SupabaseProvider = ({ children }) => {
       clearTimeout(timeoutId);
       // Handle timeout case - try to use cached profile or retry once
       if (raceError.message === 'Profile fetch timeout') {
-        console.warn('⚠️ Profile fetch timed out, checking cache or retrying...');
+        // When a tab resumes from background (or the device wakes), timers/network can be briefly
+        // suspended. Avoid spamming scary warnings; fall back to cache and refresh later.
+        console.info('⏳ Profile fetch timed out; using cache if available.');
         
         // Check cache first
         const cachedProfile = localStorage.getItem(cacheKey);
@@ -289,28 +291,29 @@ export const SupabaseProvider = ({ children }) => {
         }
       }
       
-      // Check for cached profile in localStorage (from previous successful fetch)
+      // Check for cached profile in localStorage (from previous successful fetch).
+      // IMPORTANT: If we have *any* cached profile, hydrate UI immediately to avoid
+      // long full-screen spinners on tab resume. Then refresh in the background.
       const cachedProfile = localStorage.getItem(cachedProfileKey);
       if (cachedProfile) {
         try {
           const parsedCached = JSON.parse(cachedProfile);
-          // Only use cached profile if it's recent (less than 5 minutes old)
           const cacheAge = Date.now() - (parsedCached._cachedAt || 0);
-          if (cacheAge < 5 * 60 * 1000) { // 5 minutes
-            // Remove the cache timestamp before setting profile
-            const { _cachedAt, ...profile } = parsedCached;
-            setUserProfile(profile);
-            clearTimeout(loadingTimeoutRef.current);
-            setLoading(false);
-            // Only fetch fresh data in background if cache is older than 2 minutes
-            // This reduces unnecessary network calls
-            if (cacheAge > 2 * 60 * 1000) {
-              fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(() => {
-                // Silently fail background refresh
-              });
-            }
-            return;
+          // Remove the cache timestamp before setting profile
+          const { _cachedAt, ...profile } = parsedCached;
+          setUserProfile(profile);
+          clearTimeout(loadingTimeoutRef.current);
+          setLoading(false);
+
+          // Refresh in the background when cache is not very fresh.
+          // Keep this threshold small so role/permissions changes propagate quickly,
+          // but never block UI rendering on it.
+          if (cacheAge > 30 * 1000) {
+            fetchFreshProfile(userId, userEmail, cachedProfileKey).catch(() => {
+              // Silently fail background refresh
+            });
           }
+          return;
         } catch (parseError) {
           console.error('Error parsing cached profile:', parseError);
         }

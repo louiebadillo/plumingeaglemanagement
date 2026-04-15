@@ -47,6 +47,7 @@ import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
 import { useDialogScrollThroughVisibility } from '../../hooks/useDialogScrollThroughVisibility';
+import { useSupabase } from '../../context/SupabaseContext';
 
 // Staff data is now loaded from Supabase
 
@@ -84,6 +85,8 @@ async function findAuthUserByEmail(admin, email) {
 }
 
 function StaffManagement() {
+  const { userProfile } = useSupabase();
+  const isSuperAdmin = userProfile?.role === 'super_admin';
   const [staff, setStaff] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -419,6 +422,10 @@ function StaffManagement() {
   };
 
   const handleDeleteStaff = (staffMember) => {
+    if (staffMember?.role === 'admin' && !isSuperAdmin) {
+      setError('Only super admins can delete admin users.');
+      return;
+    }
     setStaffToDelete(staffMember);
     setDeleteDialogOpen(true);
   };
@@ -480,6 +487,12 @@ function StaffManagement() {
 
   const handleConfirmDelete = async () => {
     if (!staffToDelete) return;
+    if (staffToDelete?.role === 'admin' && !isSuperAdmin) {
+      setDeleteDialogOpen(false);
+      setStaffToDelete(null);
+      setError('Only super admins can delete admin users.');
+      return;
+    }
 
     try {
       setDeleting(true);
@@ -1163,13 +1176,16 @@ function StaffManagement() {
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Delete Staff">
-                            <IconButton 
-                              size="small" 
-                              onClick={() => handleDeleteStaff(member)}
-                              color="error"
-                            >
-                              <DeleteIcon />
-                            </IconButton>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleDeleteStaff(member)}
+                                color="error"
+                                disabled={member?.role === 'admin' && !isSuperAdmin}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </span>
                           </Tooltip>
                         </Box>
                       </TableCell>

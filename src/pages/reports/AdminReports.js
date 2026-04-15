@@ -65,6 +65,53 @@ function AdminReports() {
   const isAdmin = userRole === 'admin';
   const queryClient = useQueryClient();
 
+  const getLastEditorId = (report) => {
+    if (!report) return null;
+    const trackingFields = [
+      'morning_client_in_facility_updated_by',
+      'afternoon_client_in_facility_updated_by',
+      'evening_client_in_facility_updated_by',
+      'medication_updated_by',
+      'sleep_updated_by',
+      'diet_updated_by',
+      'dental_updated_by',
+      'routine_made_bed_updated_by',
+      'routine_put_clothes_away_updated_by',
+      'routine_cleared_floor_updated_by',
+      'routine_washed_dishes_updated_by',
+      'behaviour_observation_updated_by',
+      'behaviour_followed_rules_updated_by',
+      'behaviour_listened_updated_by',
+      'behaviour_control_updated_by',
+      'afternoon_medication_updated_by',
+      'afternoon_slept_on_time_updated_by',
+      'afternoon_diet_updated_by',
+      'afternoon_dental_updated_by',
+      'afternoon_shower_updated_by',
+      'afternoon_routine_made_bed_updated_by',
+      'afternoon_routine_put_clothes_away_updated_by',
+      'afternoon_routine_cleared_floor_updated_by',
+      'afternoon_routine_washed_dishes_updated_by',
+      'afternoon_school_updated_by',
+      'afternoon_behaviour_observation_updated_by',
+      'afternoon_behaviour_followed_rules_updated_by',
+      'afternoon_behaviour_listened_updated_by',
+      'afternoon_behaviour_control_updated_by',
+      'evening_medication_updated_by',
+      'appointments_updated_by',
+      'bir_updated_by',
+      'awol_updated_by',
+      'injury_updated_by',
+    ];
+
+    let lastEditorId = report.created_by || null;
+    trackingFields.forEach((field) => {
+      const updatedBy = report[field];
+      if (updatedBy) lastEditorId = updatedBy;
+    });
+    return lastEditorId;
+  };
+
   // ✅ FIX #4: Cached reports query - 1 minute TTL (reports change frequently)
   // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
   const { data: reportsData, isLoading: reportsLoading, error: reportsError, refetch: refetchReports } = useQuery({
@@ -84,8 +131,39 @@ function AdminReports() {
       if (error) {
         throw new Error(`Failed to fetch reports: ${error.message}`);
       }
-      
-      return data || [];
+
+      const reports = data || [];
+      // Batch fetch "submitted by" names from public.users (avoid N+1)
+      const editorIds = Array.from(
+        reports.reduce((acc, r) => {
+          const id = getLastEditorId(r);
+          if (id) acc.add(id);
+          return acc;
+        }, new Set())
+      );
+
+      let editorNamesMap = {};
+      if (editorIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, first_name, last_name')
+          .in('id', editorIds);
+        if (!usersError && usersData) {
+          editorNamesMap = usersData.reduce((acc, u) => {
+            const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim();
+            acc[u.id] = fullName || 'Unknown';
+            return acc;
+          }, {});
+        }
+      }
+
+      return reports.map((r) => {
+        const editorId = getLastEditorId(r);
+        return {
+          ...r,
+          submittedByName: editorId ? (editorNamesMap[editorId] || 'Unknown') : 'Unknown',
+        };
+      });
     },
     enabled: isAdmin, // Only fetch if admin
     staleTime: 1 * 60 * 1000, // Cache for 1 minute (reports change frequently)
@@ -352,6 +430,7 @@ function AdminReports() {
                   <TableCell>Facility</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Created</TableCell>
+                  <TableCell>Submitted by</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -374,6 +453,7 @@ function AdminReports() {
                         />
                       </TableCell>
                       <TableCell>{formatDate(report.created_at)}</TableCell>
+                      <TableCell>{report.submittedByName || 'Unknown'}</TableCell>
                       <TableCell>
                         <Box display="flex" gap={1}>
                           <Tooltip title="View Summary">
@@ -400,7 +480,7 @@ function AdminReports() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={7} align="center">
                       <Typography variant="body2" color="textSecondary">
                         No reports found matching your criteria.
                       </Typography>

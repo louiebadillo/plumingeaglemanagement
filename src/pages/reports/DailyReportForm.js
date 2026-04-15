@@ -1296,10 +1296,13 @@ function DailyReportForm() {
       // Avoid .update().select().single() — can throw "Cannot coerce the result to a single JSON object"
       if (existingReport) {
         const updatePayload = buildUpdatePayload();
-        const { error: updateError } = await supabase
+        const { data: updatedRows, error: updateError } = await supabase
           .from('daily_reports_v2')
           .update(updatePayload)
-          .eq('id', existingReport.id);
+          .eq('id', existingReport.id)
+          // IMPORTANT: Under some RLS configs, updates that affect 0 rows can return no error.
+          // Request representation so we can detect no-op updates and surface a real error.
+          .select('id,status');
 
         if (updateError) {
           console.error('Supabase error response:', updateError);
@@ -1312,6 +1315,12 @@ function DailyReportForm() {
           }
 
           throw new Error(`Failed to update report: ${updateError.message}`);
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          throw new Error(
+            'Update was blocked (no rows updated). This usually means a permissions (RLS) rule prevented the status change or you no longer have access to this report.'
+          );
         }
 
         const refreshed = await refreshReportById(existingReport.id);
@@ -1360,13 +1369,20 @@ function DailyReportForm() {
             
             if (!findError && existingData) {
               const updatePayload = buildUpdatePayload();
-              const { error: updateError } = await supabase
+              const { data: updatedRows, error: updateError } = await supabase
                 .from('daily_reports_v2')
                 .update(updatePayload)
-                .eq('id', existingData.id);
+                .eq('id', existingData.id)
+                .select('id,status');
 
               if (updateError) {
                 throw new Error(`Failed to update existing report: ${updateError.message}`);
+              }
+
+              if (!updatedRows || updatedRows.length === 0) {
+                throw new Error(
+                  'Update was blocked (no rows updated). This usually means a permissions (RLS) rule prevented the status change or you no longer have access to this report.'
+                );
               }
 
               const refreshed = await refreshReportById(existingData.id);
@@ -1412,7 +1428,7 @@ function DailyReportForm() {
         if (!silent) {
           // If saving as draft, navigate to dashboard immediately without showing modal
           if (status === 'draft') {
-            history.push('/app/dashboard');
+            history.push(resolveReturnToPath());
           } else {
             // Only show success modal for submitted reports
             setSuccessMessage('Report submitted successfully!');
@@ -1445,6 +1461,18 @@ function DailyReportForm() {
     handleSave('submitted');
   };
 
+  const resolveReturnToPath = () => {
+    const returnTo = urlParams.get('returnTo');
+    return returnTo && returnTo.startsWith('/app/') ? returnTo : '/app/dashboard';
+  };
+
+  const handleSuccessClose = () => {
+    setShowSuccessModal(false);
+    // For admins, return to the last list page after submit/delete.
+    // Employees saving drafts already redirect immediately in handleSave().
+    history.push(resolveReturnToPath());
+  };
+
   const handleDelete = async () => {
     if (!existingReport || !existingReport.id) {
       alert('No report to delete.');
@@ -1467,11 +1495,7 @@ function DailyReportForm() {
       setSuccessMessage('Report deleted successfully.');
       setShowSuccessModal(true);
       setShowDeleteDialog(false);
-      const returnTo = urlParams.get('returnTo');
-      const redirectPath = returnTo && returnTo.startsWith('/app/') ? returnTo : '/app/dashboard';
-      setTimeout(() => {
-        history.push(redirectPath);
-      }, 1500);
+      // Redirect is handled when the success modal is closed.
     } catch (err) {
       console.error('Error deleting report:', err);
       setError('Failed to delete report. Please try again.');
@@ -2510,7 +2534,7 @@ function DailyReportForm() {
       </Dialog>
 
       {/* Success Modal */}
-      <Dialog open={showSuccessModal} onClose={() => setShowSuccessModal(false)} maxWidth="sm" fullWidth>
+      <Dialog open={showSuccessModal} onClose={handleSuccessClose} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box display="flex" alignItems="center" gap={2}>
             <CheckIcon color="success" />
@@ -2523,7 +2547,7 @@ function DailyReportForm() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowSuccessModal(false)} variant="contained" color="primary">
+          <Button onClick={handleSuccessClose} variant="contained" color="primary">
             OK
           </Button>
         </DialogActions>
