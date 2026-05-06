@@ -439,6 +439,21 @@ function ProgressReport() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const getPrintUrls = () => {
+    const range = normalizeRestoredDateRange(dateRange);
+    if (!selectedClientId || !range) return { main: null, incidents: null };
+    const start = format(range.startDate, 'yyyy-MM-dd');
+    const end = format(range.endDate, 'yyyy-MM-dd');
+    return {
+      main: `/app/reports/progress/print?clientId=${encodeURIComponent(
+        selectedClientId,
+      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      incidents: `/app/reports/progress/print-incidents?clientId=${encodeURIComponent(
+        selectedClientId,
+      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    };
+  };
+
   // Download PDF (client-side html2pdf.js) - without BIR, AWOL, Injuries
   const handleDownloadPDF = async () => {
     if (!aggregatedData || !client) {
@@ -1564,12 +1579,25 @@ function ProgressReport() {
           `}</style>
           {/* Action Buttons at Top */}
           <Box display="flex" gap={2} mb={3} justifyContent="center" flexWrap="wrap" className="no-print">
+            {(() => {
+              const urls = getPrintUrls();
+              return (
+                <>
             <Button
               variant="contained"
               color="primary"
               size="large"
               startIcon={<OpenInNewIcon />}
-              onClick={handleOpenPrintView}
+              component="a"
+              href={urls.main || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.main) {
+                  e.preventDefault();
+                  handleOpenPrintView();
+                }
+              }}
             >
               Open print view
             </Button>
@@ -1578,10 +1606,22 @@ function ProgressReport() {
               color="warning"
               size="large"
               startIcon={<OpenInNewIcon />}
-              onClick={handleOpenIncidentsPrintView}
+              component="a"
+              href={urls.incidents || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.incidents) {
+                  e.preventDefault();
+                  handleOpenIncidentsPrintView();
+                }
+              }}
             >
               Open incidents print view (BIR/AWOL/Injuries)
             </Button>
+                </>
+              );
+            })()}
           </Box>
 
           {/* PDF Content - Separate from action buttons */}
@@ -1684,12 +1724,25 @@ function ProgressReport() {
 
           {/* Download Buttons at Bottom */}
           <Box display="flex" gap={2} mt={4} mb={3} justifyContent="center" flexWrap="wrap" className="no-print">
+            {(() => {
+              const urls = getPrintUrls();
+              return (
+                <>
             <Button
               variant="contained"
               color="primary"
               size="large"
               startIcon={<OpenInNewIcon />}
-              onClick={handleOpenPrintView}
+              component="a"
+              href={urls.main || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.main) {
+                  e.preventDefault();
+                  handleOpenPrintView();
+                }
+              }}
             >
               Open print view
             </Button>
@@ -1698,10 +1751,22 @@ function ProgressReport() {
               color="warning"
               size="large"
               startIcon={<OpenInNewIcon />}
-              onClick={handleOpenIncidentsPrintView}
+              component="a"
+              href={urls.incidents || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.incidents) {
+                  e.preventDefault();
+                  handleOpenIncidentsPrintView();
+                }
+              }}
             >
               Open incidents print view (BIR/AWOL/Injuries)
             </Button>
+                </>
+              );
+            })()}
           </Box>
         </Box>
       )}
