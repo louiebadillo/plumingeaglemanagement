@@ -21,7 +21,8 @@ function RoutineReport({
   indicator,
   routineChores = [],
   fillableData,
-  onFillableDataChange 
+  onFillableDataChange,
+  readOnly = false
 }) {
   const [overallRemarks, setOverallRemarks] = useState(
     fillableData?.routineRemarks?.overallRemarks || ''
@@ -139,6 +140,7 @@ function RoutineReport({
             placeholder="Overall observations about routine and chores performance..."
             value={overallRemarks}
             onChange={(e) => handleOverallRemarksChange(e.target.value)}
+            InputProps={{ readOnly }}
           />
         </Box>
       </CardContent>

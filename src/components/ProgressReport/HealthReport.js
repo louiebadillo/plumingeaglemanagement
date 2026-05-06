@@ -36,7 +36,8 @@ function HealthReport({
   pieChartData, 
   summaryTables,
   fillableData,
-  onFillableDataChange 
+  onFillableDataChange,
+  readOnly = false
 }) {
   const [medicationRows, setMedicationRows] = useState(
     fillableData?.medication || [{ medications: '', status: '', remarks: '' }]
@@ -253,13 +254,21 @@ function HealthReport({
                 <TableCell sx={{ verticalAlign: 'top' }}>
                   <Box>
                     {medicationRows.map((row, index) => (
-                      <Box key={index} display="flex" gap={1} mb={1} alignItems="center">
+                      <Box
+                        key={index}
+                        display="flex"
+                        gap={1}
+                        mb={1}
+                        alignItems="center"
+                        className="medication-row"
+                      >
                         <TextField
                           size="small"
                           placeholder="Medications taken this month"
                           value={row.medications}
                           onChange={(e) => handleMedicationChange(index, 'medications', e.target.value)}
                           sx={{ flex: 1 }}
+                          InputProps={{ readOnly }}
                         />
                         <TextField
                           size="small"
@@ -267,6 +276,7 @@ function HealthReport({
                           value={row.status}
                           onChange={(e) => handleMedicationChange(index, 'status', e.target.value)}
                           sx={{ flex: 1 }}
+                          InputProps={{ readOnly }}
                         />
                         <TextField
                           size="small"
@@ -274,8 +284,9 @@ function HealthReport({
                           value={row.remarks}
                           onChange={(e) => handleMedicationChange(index, 'remarks', e.target.value)}
                           sx={{ flex: 1 }}
+                          InputProps={{ readOnly }}
                         />
-                        {medicationRows.length > 1 && (
+                        {!readOnly && medicationRows.length > 1 && (
                           <IconButton
                             size="small"
                             onClick={() => removeMedicationRow(index)}
@@ -287,6 +298,7 @@ function HealthReport({
                         )}
                       </Box>
                     ))}
+                    {!readOnly && (
                     <Button
                       size="small"
                       startIcon={<AddIcon />}
@@ -296,6 +308,7 @@ function HealthReport({
                     >
                       Add Medication
                     </Button>
+                    )}
                   </Box>
                 </TableCell>
               </TableRow>
@@ -315,6 +328,7 @@ function HealthReport({
                       placeholder="Hygiene remarks"
                       value={remarks.hygiene}
                       onChange={(e) => handleRemarksChange('hygiene', e.target.value)}
+                      InputProps={{ readOnly }}
                     />
                   </Box>
                 </TableCell>
@@ -335,6 +349,7 @@ function HealthReport({
                       placeholder="Sleep pattern remarks"
                       value={remarks.sleepPattern}
                       onChange={(e) => handleRemarksChange('sleepPattern', e.target.value)}
+                      InputProps={{ readOnly }}
                     />
                   </Box>
                 </TableCell>
@@ -355,6 +370,7 @@ function HealthReport({
                       placeholder="Diet and food remarks"
                       value={remarks.dietFood}
                       onChange={(e) => handleRemarksChange('dietFood', e.target.value)}
+                      InputProps={{ readOnly }}
                     />
                   </Box>
                 </TableCell>

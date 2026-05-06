@@ -27,10 +27,27 @@ import {
   Chip
 } from '@mui/material';
 import {
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
-import { format, subDays, subMonths, subYears } from 'date-fns';
+import { format, isValid, subDays, subMonths, subYears } from 'date-fns';
+
+/** After JSON.parse, dateRange dates are strings — coerce back to Date for format() and queries */
+function coerceToDate(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return isValid(value) ? value : null;
+  const d = new Date(value);
+  return isValid(d) ? d : null;
+}
+
+function normalizeRestoredDateRange(dr) {
+  if (!dr || dr.startDate == null || dr.endDate == null) return null;
+  const startDate = coerceToDate(dr.startDate);
+  const endDate = coerceToDate(dr.endDate);
+  if (!startDate || !endDate) return null;
+  return { startDate, endDate };
+}
 import { supabase } from '../../lib/supabase';
 import { useSupabase } from '../../context/SupabaseContext';
 import html2pdf from 'html2pdf.js';
@@ -146,6 +163,7 @@ function ProgressReport() {
   const [client, setClient] = useState(null);
   const [clients, setClients] = useState([]);
   const [reports, setReports] = useState([]);
+  const [reportsCount, setReportsCount] = useState(null);
   const [aggregatedData, setAggregatedData] = useState(null);
   const [fillableData, setFillableData] = useState({});
   const [reportId, setReportId] = useState(null);
@@ -202,7 +220,11 @@ function ProgressReport() {
             if (parsed.client) setClient(parsed.client);
             if (parsed.aggregatedData) setAggregatedData(parsed.aggregatedData);
             if (parsed.fillableData) setFillableData(parsed.fillableData);
-            if (parsed.dateRange) setDateRange(parsed.dateRange);
+            if (parsed.dateRange) {
+              const normalized = normalizeRestoredDateRange(parsed.dateRange);
+              if (normalized) setDateRange(normalized);
+            }
+            if (typeof parsed.reportsCount === 'number') setReportsCount(parsed.reportsCount);
             if (parsed.selectedClientId) setSelectedClientId(parsed.selectedClientId);
             if (parsed.reportType) setReportType(parsed.reportType);
             if (parsed.customDateRange) setCustomDateRange(parsed.customDateRange);
@@ -347,6 +369,7 @@ function ProgressReport() {
       // Fetch reports
       const reportsData = await fetchReports(selectedClientId, calculatedDateRange.startDate, calculatedDateRange.endDate);
       setReports(reportsData);
+      setReportsCount(reportsData.length);
 
       // Aggregate data
       const aggregated = aggregateReportsData(reportsData, calculatedDateRange);
@@ -362,6 +385,7 @@ function ProgressReport() {
         fillableData: {},
         dateRange: calculatedDateRange,
         selectedClientId,
+        reportsCount: reportsData.length,
         reportType,
         customDateRange,
         _savedAt: Date.now()
@@ -377,6 +401,58 @@ function ProgressReport() {
     }
   };
 
+  const handleOpenPrintView = () => {
+    if (!selectedClientId || !dateRange || !client || !aggregatedData) {
+      setError('Generate the report first, then open print view.');
+      return;
+    }
+    const range = normalizeRestoredDateRange(dateRange);
+    if (!range) {
+      setError('Date range is invalid. Click Generate Report again.');
+      return;
+    }
+    setError(null);
+    const start = format(range.startDate, 'yyyy-MM-dd');
+    const end = format(range.endDate, 'yyyy-MM-dd');
+    const url = `/app/reports/progress/print?clientId=${encodeURIComponent(
+      selectedClientId
+    )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenIncidentsPrintView = () => {
+    if (!selectedClientId || !dateRange || !client || !aggregatedData) {
+      setError('Generate the report first, then open incidents print view.');
+      return;
+    }
+    const range = normalizeRestoredDateRange(dateRange);
+    if (!range) {
+      setError('Date range is invalid. Click Generate Report again.');
+      return;
+    }
+    setError(null);
+    const start = format(range.startDate, 'yyyy-MM-dd');
+    const end = format(range.endDate, 'yyyy-MM-dd');
+    const url = `/app/reports/progress/print-incidents?clientId=${encodeURIComponent(
+      selectedClientId
+    )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const getPrintUrls = () => {
+    const range = normalizeRestoredDateRange(dateRange);
+    if (!selectedClientId || !range) return { main: null, incidents: null };
+    const start = format(range.startDate, 'yyyy-MM-dd');
+    const end = format(range.endDate, 'yyyy-MM-dd');
+    return {
+      main: `/app/reports/progress/print?clientId=${encodeURIComponent(
+        selectedClientId,
+      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      incidents: `/app/reports/progress/print-incidents?clientId=${encodeURIComponent(
+        selectedClientId,
+      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    };
+  };
 
   // Download PDF (client-side html2pdf.js) - without BIR, AWOL, Injuries
   const handleDownloadPDF = async () => {
@@ -1502,23 +1578,50 @@ function ProgressReport() {
             }
           `}</style>
           {/* Action Buttons at Top */}
-          <Box display="flex" gap={2} mb={3} justifyContent="center" className="no-print">
+          <Box display="flex" gap={2} mb={3} justifyContent="center" flexWrap="wrap" className="no-print">
+            {(() => {
+              const urls = getPrintUrls();
+              return (
+                <>
             <Button
               variant="contained"
+              color="primary"
               size="large"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadPDF}
+              startIcon={<OpenInNewIcon />}
+              component="a"
+              href={urls.main || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.main) {
+                  e.preventDefault();
+                  handleOpenPrintView();
+                }
+              }}
             >
-              Download Report
+              Open print view
             </Button>
             <Button
-              variant="outlined"
+              variant="contained"
+              color="warning"
               size="large"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadBIRAWOLInjuries}
+              startIcon={<OpenInNewIcon />}
+              component="a"
+              href={urls.incidents || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.incidents) {
+                  e.preventDefault();
+                  handleOpenIncidentsPrintView();
+                }
+              }}
             >
-              Download BIR/AWOL/Injuries
+              Open incidents print view (BIR/AWOL/Injuries)
             </Button>
+                </>
+              );
+            })()}
           </Box>
 
           {/* PDF Content - Separate from action buttons */}
@@ -1551,6 +1654,14 @@ function ProgressReport() {
             overallScore={aggregatedData.overallScore}
             indicator={aggregatedData.indicator}
             reportDate={new Date()}
+            dailyReportsCount={reports.length > 0 ? reports.length : reportsCount}
+            overview={
+              typeof fillableData.overview === 'string' ? fillableData.overview : ''
+            }
+            onOverviewChange={(value) =>
+              handleFillableDataChange('overview', value)
+            }
+            overviewReadOnly={false}
           />
 
           <div id="section1" className="pdf-section">
@@ -1592,34 +1703,70 @@ function ProgressReport() {
               pieChartData={aggregatedData.pieChartData}
               summaryTables={aggregatedData.summaryTables}
               birSummary={aggregatedData.birSummary}
+              awolSummary={aggregatedData.awolSummary}
               fillableData={fillableData}
               onFillableDataChange={handleFillableDataChange}
             />
           </div>
 
           <div id="section5" className="pdf-section">
-            <ProgressGraphs trendData={aggregatedData.trendData} />
+            <ProgressGraphs
+              trendData={aggregatedData.trendData}
+              sectionAverages={{
+                health: aggregatedData.healthScore,
+                routine: aggregatedData.routineScore,
+                wellbeing: aggregatedData.wellbeingScore,
+                behaviour: aggregatedData.behaviourScore,
+              }}
+            />
           </div>
           </Box>
 
           {/* Download Buttons at Bottom */}
-          <Box display="flex" gap={2} mt={4} mb={3} justifyContent="center" className="no-print">
+          <Box display="flex" gap={2} mt={4} mb={3} justifyContent="center" flexWrap="wrap" className="no-print">
+            {(() => {
+              const urls = getPrintUrls();
+              return (
+                <>
             <Button
               variant="contained"
+              color="primary"
               size="large"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadPDF}
+              startIcon={<OpenInNewIcon />}
+              component="a"
+              href={urls.main || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.main) {
+                  e.preventDefault();
+                  handleOpenPrintView();
+                }
+              }}
             >
-              Download Report
+              Open print view
             </Button>
             <Button
-              variant="outlined"
+              variant="contained"
+              color="warning"
               size="large"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadBIRAWOLInjuries}
+              startIcon={<OpenInNewIcon />}
+              component="a"
+              href={urls.incidents || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!urls.incidents) {
+                  e.preventDefault();
+                  handleOpenIncidentsPrintView();
+                }
+              }}
             >
-              Download BIR/AWOL/Injuries
+              Open incidents print view (BIR/AWOL/Injuries)
             </Button>
+                </>
+              );
+            })()}
           </Box>
         </Box>
       )}

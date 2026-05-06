@@ -30,7 +30,9 @@ function WellBeingReport({
   pieChartData, 
   summaryTables,
   fillableData,
-  onFillableDataChange 
+  onFillableDataChange,
+  readOnly = false,
+  isPrint = false
 }) {
   const [activities, setActivities] = useState(
     fillableData?.activities || {
@@ -77,10 +79,10 @@ function WellBeingReport({
           {title}
         </Typography>
         <ResponsiveContainer width="100%" height={200}>
-          <PieChart margin={{ right: 0, left: 0 }}>
+          <PieChart margin={{ right: isPrint ? 10 : 0, left: isPrint ? 10 : 0 }}>
             <Pie
               data={data}
-              cx="20%"
+              cx={isPrint ? '35%' : '20%'}
               cy="50%"
               outerRadius={50}
               dataKey="value"
@@ -95,7 +97,7 @@ function WellBeingReport({
                 const percentage = total > 0 ? Math.round((entry.payload.value / total) * 100) : 0;
                 return `${entry.payload.name} | ${entry.payload.value} (${percentage}%)`;
               }}
-              wrapperStyle={{ paddingLeft: '40px', marginLeft: '30px' }}
+              wrapperStyle={isPrint ? { paddingLeft: '16px', marginLeft: '8px' } : { paddingLeft: '40px', marginLeft: '30px' }}
               align="right"
               verticalAlign="middle"
               layout="vertical"
@@ -211,6 +213,7 @@ function WellBeingReport({
                     placeholder="Describe activities and engagement while inside the group home..."
                     value={activities.insideGH}
                     onChange={(e) => handleActivitiesChange('insideGH', e.target.value)}
+                    InputProps={{ readOnly }}
                   />
                 </TableCell>
               </TableRow>
@@ -228,6 +231,7 @@ function WellBeingReport({
                     placeholder="Describe activities and engagement while outside the group home..."
                     value={activities.outsideGH}
                     onChange={(e) => handleActivitiesChange('outsideGH', e.target.value)}
+                    InputProps={{ readOnly }}
                   />
                 </TableCell>
               </TableRow>
