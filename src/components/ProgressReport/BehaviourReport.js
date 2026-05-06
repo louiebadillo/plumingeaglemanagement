@@ -35,8 +35,11 @@ function BehaviourReport({
   pieChartData, 
   summaryTables,
   birSummary,
+  awolSummary,
   fillableData,
-  onFillableDataChange 
+  onFillableDataChange,
+  readOnly = false,
+  mode = 'full' // 'full' | 'incidents'
 }) {
   const [behaviourRemarks, setBehaviourRemarks] = useState(
     fillableData?.behaviourRemarks || {
@@ -179,142 +182,172 @@ function BehaviourReport({
       <Card sx={{ mb: 3 }}>
       <CardContent>
         <Typography variant="h5" gutterBottom color="primary" id="section4-title">
-          Section 4: Behaviour Report
+          {mode === 'incidents' ? 'Section 4: Incidents (BIR / AWOL / Injuries)' : 'Section 4: Behaviour Report'}
         </Typography>
 
-        {/* Behaviour Score and Indicator */}
-        <Box display="flex" alignItems="center" gap={2} mb={3} id="behaviour-score">
-          <Typography variant="h6">
-            Behaviour Score Average:
-          </Typography>
-          <Typography variant="h4" color="primary">
-            {behaviourScore}%
-          </Typography>
-          <Chip
-            label={indicator}
-            color={getIndicatorColor(indicator)}
-            size="large"
-          />
-        </Box>
+        {mode !== 'incidents' && (
+          <>
+            {/* Behaviour Score and Indicator */}
+            <Box display="flex" alignItems="center" gap={2} mb={3} id="behaviour-score">
+              <Typography variant="h6">
+                Behaviour Score Average:
+              </Typography>
+              <Typography variant="h4" color="primary">
+                {behaviourScore}%
+              </Typography>
+              <Chip
+                label={indicator}
+                color={getIndicatorColor(indicator)}
+                size="large"
+              />
+            </Box>
 
-        {/* Behaviour Pie Charts */}
-        <Grid 
-          container 
-          spacing={3} 
-          mb={3} 
-          id="behaviour-charts" 
-          className="pdf-avoid-break"
-          sx={{
-            // Screen-only responsive styling (not applied in PDF)
-            '@media screen': {
-              '& .MuiGrid-item': {
-                minWidth: 0, // Prevent overflow
-                overflow: 'visible'
-              }
-            }
-          }}
-        >
-          <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
-            {renderPieChart(pieChartData?.behaviour?.observation, 'Behaviour Observation')}
-          </Grid>
-          <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
-            {renderPieChart(pieChartData?.behaviour?.followedRules, 'Followed Rules')}
-          </Grid>
-          <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
-            {renderPieChart(pieChartData?.behaviour?.listened, 'Listened to Instructions')}
-          </Grid>
-          <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
-            {renderPieChart(pieChartData?.behaviour?.control, 'Able to Control Behaviour')}
-          </Grid>
-        </Grid>
+            {/* Behaviour Pie Charts */}
+            <Grid 
+              container 
+              spacing={3} 
+              mb={3} 
+              id="behaviour-charts" 
+              className="pdf-avoid-break"
+              sx={{
+                // Screen-only responsive styling (not applied in PDF)
+                '@media screen': {
+                  '& .MuiGrid-item': {
+                    minWidth: 0, // Prevent overflow
+                    overflow: 'visible'
+                  }
+                }
+              }}
+            >
+              <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
+                {renderPieChart(pieChartData?.behaviour?.observation, 'Behaviour Observation')}
+              </Grid>
+              <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
+                {renderPieChart(pieChartData?.behaviour?.followedRules, 'Followed Rules')}
+              </Grid>
+              <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
+                {renderPieChart(pieChartData?.behaviour?.listened, 'Listened to Instructions')}
+              </Grid>
+              <Grid item xs={12} md={6} sx={{ minWidth: 0, overflow: 'visible' }}>
+                {renderPieChart(pieChartData?.behaviour?.control, 'Able to Control Behaviour')}
+              </Grid>
+            </Grid>
 
-        {/* Behaviour Assessment Table */}
-        <Typography variant="h6" gutterBottom id="behaviour-assessment-title">
-          Behaviour Assessment
-        </Typography>
-        <TableContainer component={Paper} id="behaviour-assessment-table" className="pdf-avoid-break">
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ width: '25%' }}><strong>Category</strong></TableCell>
-                <TableCell sx={{ width: '75%' }}><strong>Remarks</strong></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              <TableRow>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <Typography variant="body1" fontWeight="medium">
-                    Mood (include significant isolated changes in mood and possible reason/s why client felt that way)
+            {/* BIR/AWOL score averages */}
+            <Box mb={2} id="bir-awol-score-averages" className="pdf-avoid-break">
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    BIR score average
                   </Typography>
-                </TableCell>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    placeholder="Describe mood patterns, changes, and possible reasons..."
-                    value={behaviourRemarks.mood}
-                    onChange={(e) => handleBehaviourRemarksChange('mood', e.target.value)}
-                  />
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <Typography variant="body1" fontWeight="medium">
-                    Attitude towards staff/management
+                  <Typography variant="body1" color="text.secondary">
+                    {birSummary && birSummary.totalDays > 0 ? (
+                      <>
+                        <strong>{birSummary.averagePercent}%</strong>
+                        {' — '}
+                        {birSummary.trueDays} BIR day{birSummary.trueDays === 1 ? '' : 's'} out of{' '}
+                        {birSummary.totalDays} filtered report day{birSummary.totalDays === 1 ? '' : 's'}
+                      </>
+                    ) : (
+                      'No filtered report days in this range.'
+                    )}
                   </Typography>
-                </TableCell>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    placeholder="Describe attitude and interactions with staff and management..."
-                    value={behaviourRemarks.attitude}
-                    onChange={(e) => handleBehaviourRemarksChange('attitude', e.target.value)}
-                  />
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <Typography variant="body1" fontWeight="medium">
-                    Miscellaneous/Injuries
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    AWOL score average
                   </Typography>
-                </TableCell>
-                <TableCell sx={{ verticalAlign: 'top' }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    placeholder="Any miscellaneous observations or injury-related notes..."
-                    value={behaviourRemarks.miscellaneous}
-                    onChange={(e) => handleBehaviourRemarksChange('miscellaneous', e.target.value)}
-                  />
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
+                  <Typography variant="body1" color="text.secondary">
+                    {awolSummary && awolSummary.totalDays > 0 ? (
+                      <>
+                        <strong>{awolSummary.averagePercent}%</strong>
+                        {' — '}
+                        {awolSummary.trueDays} AWOL day{awolSummary.trueDays === 1 ? '' : 's'} out of{' '}
+                        {awolSummary.totalDays} filtered report day{awolSummary.totalDays === 1 ? '' : 's'}
+                      </>
+                    ) : (
+                      'No filtered report days in this range.'
+                    )}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Box>
 
-        {/* BIR score average (matches behaviour BIR component: 100% per day with no BIR, 0% with BIR) */}
-        <Box mb={2} id="bir-score-summary" className="pdf-avoid-break">
-          <Typography variant="subtitle1" gutterBottom>
-            BIR score average
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            {birSummary && birSummary.totalDays > 0 ? (
-              <>
-                <strong>{birSummary.averagePercent}%</strong>
-                {' — '}
-                {birSummary.trueDays} BIR day{birSummary.trueDays === 1 ? '' : 's'} out of{' '}
-                {birSummary.totalDays} filtered report day{birSummary.totalDays === 1 ? '' : 's'}
-              </>
-            ) : (
-              'No filtered report days in this range.'
-            )}
-          </Typography>
-        </Box>
+            {/* Behaviour Assessment Table */}
+            <Typography variant="h6" gutterBottom id="behaviour-assessment-title">
+              Behaviour Assessment
+            </Typography>
+            <TableContainer component={Paper} id="behaviour-assessment-table" className="pdf-avoid-break">
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width: '25%' }}><strong>Category</strong></TableCell>
+                    <TableCell sx={{ width: '75%' }}><strong>Remarks</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <Typography variant="body1" fontWeight="medium">
+                        Mood (include significant isolated changes in mood and possible reason/s why client felt that way)
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        placeholder="Describe mood patterns, changes, and possible reasons..."
+                        value={behaviourRemarks.mood}
+                        onChange={(e) => handleBehaviourRemarksChange('mood', e.target.value)}
+                        InputProps={{ readOnly }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <Typography variant="body1" fontWeight="medium">
+                        Attitude towards staff/management
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        placeholder="Describe attitude and interactions with staff and management..."
+                        value={behaviourRemarks.attitude}
+                        onChange={(e) => handleBehaviourRemarksChange('attitude', e.target.value)}
+                        InputProps={{ readOnly }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <Typography variant="body1" fontWeight="medium">
+                        Miscellaneous/Injuries
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: 'top' }}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        placeholder="Any miscellaneous observations or injury-related notes..."
+                        value={behaviourRemarks.miscellaneous}
+                        onChange={(e) => handleBehaviourRemarksChange('miscellaneous', e.target.value)}
+                        InputProps={{ readOnly }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        )}
 
+        {mode === 'incidents' && (
+        <>
         {/* BIR Bar Chart */}
         <Box mb={3} id="bir-charts" className="pdf-avoid-break">
           {renderBarChart(pieChartData?.birBarChart, 'BIR Incidents by Type')}
@@ -343,6 +376,46 @@ function BehaviourReport({
             {renderPieChart(pieChartData?.incidents?.injury, 'Injury Types')}
           </Grid>
         </Grid>
+
+        {/* BIR/AWOL score averages (100% = no incident that day; 0% = any incident that day) */}
+        <Box mb={2} id="incident-score-averages" className="pdf-avoid-break">
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>
+                BIR score average
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                {birSummary && birSummary.totalDays > 0 ? (
+                  <>
+                    <strong>{birSummary.averagePercent}%</strong>
+                    {' — '}
+                    {birSummary.trueDays} BIR day{birSummary.trueDays === 1 ? '' : 's'} out of{' '}
+                    {birSummary.totalDays} filtered report day{birSummary.totalDays === 1 ? '' : 's'}
+                  </>
+                ) : (
+                  'No filtered report days in this range.'
+                )}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>
+                AWOL score average
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                {awolSummary && awolSummary.totalDays > 0 ? (
+                  <>
+                    <strong>{awolSummary.averagePercent}%</strong>
+                    {' — '}
+                    {awolSummary.trueDays} AWOL day{awolSummary.trueDays === 1 ? '' : 's'} out of{' '}
+                    {awolSummary.totalDays} filtered report day{awolSummary.totalDays === 1 ? '' : 's'}
+                  </>
+                ) : (
+                  'No filtered report days in this range.'
+                )}
+              </Typography>
+            </Grid>
+          </Grid>
+        </Box>
 
         {/* Summary Tables - Stacked Vertically */}
         <Box sx={{ mb: 3 }} id="incident-summaries">
@@ -445,6 +518,8 @@ function BehaviourReport({
             </Table>
           </TableContainer>
         </Box>
+        </>
+        )}
       </CardContent>
     </Card>
     </>

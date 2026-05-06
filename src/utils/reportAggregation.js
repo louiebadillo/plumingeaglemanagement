@@ -9,6 +9,7 @@
  */
 export const aggregateReportsData = (reports, dateRange) => {
   const emptyBirSummary = { trueDays: 0, totalDays: 0, averagePercent: 0 };
+  const emptyAwolSummary = { trueDays: 0, totalDays: 0, averagePercent: 0 };
 
   if (!reports || reports.length === 0) {
     return {
@@ -22,6 +23,7 @@ export const aggregateReportsData = (reports, dateRange) => {
       trendData: [],
       summaryTables: {},
       birSummary: emptyBirSummary,
+      awolSummary: emptyAwolSummary,
       routineChores: []
     };
   }
@@ -41,6 +43,7 @@ export const aggregateReportsData = (reports, dateRange) => {
       trendData: [],
       summaryTables: {},
       birSummary: emptyBirSummary,
+      awolSummary: emptyAwolSummary,
       routineChores: []
     };
   }
@@ -71,6 +74,18 @@ export const aggregateReportsData = (reports, dateRange) => {
       ? Math.round(((birTotalDays - birTrueDays) / birTotalDays) * 100)
       : 0;
 
+  const awolTrueDays = validReports.filter((r) => {
+    const hasAwolArray =
+      r.awol_incidents && Array.isArray(r.awol_incidents) && r.awol_incidents.length > 0;
+    const hasLegacyAwol = !!r.awol_incident;
+    return hasAwolArray || hasLegacyAwol;
+  }).length;
+  const awolTotalDays = validReports.length;
+  const awolAveragePercent =
+    awolTotalDays > 0
+      ? Math.round(((awolTotalDays - awolTrueDays) / awolTotalDays) * 100)
+      : 0;
+
   return {
     healthScore,
     routineScore,
@@ -85,6 +100,11 @@ export const aggregateReportsData = (reports, dateRange) => {
       trueDays: birTrueDays,
       totalDays: birTotalDays,
       averagePercent: birAveragePercent
+    },
+    awolSummary: {
+      trueDays: awolTrueDays,
+      totalDays: awolTotalDays,
+      averagePercent: awolAveragePercent
     },
     routineChores: computeRoutineChoreAverages(validReports)
   };
@@ -321,7 +341,13 @@ export const generatePieChartData = (reports) => {
   const incidentData = reports.reduce((acc, report) => {
     // BIR incidents
     if (report.bir_incidents && report.bir_incidents.hasBIR) {
-      report.bir_incidents.incidents.forEach(incident => {
+      const incidents = Array.isArray(report.bir_incidents.incidents)
+        ? report.bir_incidents.incidents.filter(Boolean)
+        : [];
+      const hasTypedIncidents = incidents.length > 0;
+      const otherText = report.bir_incidents.otherDescription || report.bir_incidents.remarks;
+      const typesToCount = hasTypedIncidents ? incidents : (otherText ? ['Other / Unspecified'] : []);
+      typesToCount.forEach((incident) => {
         acc.bir[incident] = (acc.bir[incident] || 0) + 1;
       });
     }
@@ -439,14 +465,34 @@ export const generateSummaryTables = (reports) => {
     }
 
     // BIR incidents
-    if (report.bir_incidents && report.bir_incidents.hasBIR && report.bir_incidents.incidents) {
-      report.bir_incidents.incidents.forEach(incident => {
+    if (report.bir_incidents && report.bir_incidents.hasBIR) {
+      const incidents = Array.isArray(report.bir_incidents.incidents)
+        ? report.bir_incidents.incidents.filter(Boolean)
+        : [];
+      const hasTypedIncidents = incidents.length > 0;
+
+      const remarksParts = [
+        report.bir_incidents.otherDescription,
+        report.bir_incidents.remarks,
+      ].filter((s) => typeof s === 'string' && s.trim().length > 0);
+      const remarks = remarksParts.length > 0 ? remarksParts.join(' — ') : 'N/A';
+
+      if (hasTypedIncidents) {
+        incidents.forEach((incident) => {
+          summaryTables.birs.push({
+            date: report.report_date,
+            type: incident,
+            remarks,
+          });
+        });
+      } else {
+        // Still show a row when a BIR day exists but no incident types were selected.
         summaryTables.birs.push({
           date: report.report_date,
-          type: incident,
-          remarks: report.bir_incidents.remarks || 'N/A'
+          type: 'Other / Unspecified',
+          remarks,
         });
-      });
+      }
     }
 
     // AWOL incidents - support both old format (awol_incident) and new format (awol_incidents array)

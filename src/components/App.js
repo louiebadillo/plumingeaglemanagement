@@ -7,6 +7,8 @@ import { SnackbarProvider } from './Snackbar';
 // components
 import Layout from './Layout';
 import AutoLogout from './AutoLogout/AutoLogout';
+import ProgressReportPrint from '../pages/reports/ProgressReportPrint';
+import ProgressReportIncidentsPrint from '../pages/reports/ProgressReportIncidentsPrint';
 
 // pages
 import Error from '../pages/error';
@@ -62,6 +64,16 @@ function AppContent() {
                 render={() => <Redirect to='/app/dashboard' />}
               />
 
+              <PrivateRoute
+                exact
+                path='/app/reports/progress/print'
+                component={ProgressReportPrint}
+              />
+              <PrivateRoute
+                exact
+                path='/app/reports/progress/print-incidents'
+                component={ProgressReportIncidentsPrint}
+              />
               <PrivateRoute path='/app' component={Layout} />
               <PublicRoute path='/login' component={Login} />
               <PublicRoute path='/logout' component={Logout} />
