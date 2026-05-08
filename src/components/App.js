@@ -19,6 +19,10 @@ import Logout from '../pages/logout';
 import { SupabaseProvider, useSupabase } from '../context/SupabaseContext';
 import { getHistory } from '../index';
 
+// Side-effect import: registers window.pemDebug.run() for on-site
+// troubleshooting from the browser DevTools console. No-op otherwise.
+import '../utils/employeeAccessDebug';
+
 function AppContent() {
   // global
   const { user, loading } = useSupabase();

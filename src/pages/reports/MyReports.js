@@ -170,8 +170,13 @@ function MyReports() {
         const facilityId = await getCurrentFacilityFromGeofencing();
         if (cancelled) return;
         setCurrentFacilityId(facilityId);
+        console.info('[PEM-MYR] Geofence resolved for My Reports', { facilityId });
 
         if (!facilityId) {
+          console.warn(
+            '[PEM-MYR] No facility matched — My Reports will be empty. ' +
+              'Run window.pemDebug.run() in the console for a full diagnostic.'
+          );
           setReports([]);
           return;
         }

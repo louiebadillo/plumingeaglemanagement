@@ -633,8 +633,8 @@ function ClientProfile() {
   }, []);
 
   // Preserve scroll position on the client add/edit form across browser tab
-  // switches and remounts. The form is long, and admins lose their place when
-  // the page returns to the top after the tab regains focus.
+  // switches and full page reloads (Chrome's memory-saver discards the tab,
+  // so coming back triggers a real reload).
   useEffect(() => {
     const path = location.pathname;
     const isAddEditFormRoute =
@@ -644,55 +644,140 @@ function ClientProfile() {
       path.endsWith('/edit');
     if (!isAddEditFormRoute) return;
 
+    // Take over scroll restoration from the browser so our restore isn't
+    // racing with the browser's auto-restore (which lands on the top of a
+    // not-yet-rendered form after a reload).
+    const previousScrollRestoration =
+      typeof window.history !== 'undefined' ? window.history.scrollRestoration : undefined;
+    try {
+      if (window.history && 'scrollRestoration' in window.history) {
+        window.history.scrollRestoration = 'manual';
+      }
+    } catch (e) { /* ignore */ }
+
     const storageKey = `pem_client_form_scroll_v1::${path}${location.search}`;
 
-    let restoreAttempts = 0;
-    const tryRestore = () => {
-      const raw = sessionStorage.getItem(storageKey);
-      const y = raw ? parseInt(raw, 10) : 0;
-      if (Number.isFinite(y) && y > 0) {
-        window.scrollTo({ top: y, left: 0, behavior: 'auto' });
-      }
+    // While the page is still rendering after a reload, programmatic scrolls
+    // can be clamped to a smaller scrollHeight. We must NOT save those clamped
+    // values back to storage or the real position is lost on the next attempt.
+    let isRestoring = false;
+    let restoreTickTimer = null;
+
+    const saveCurrentScroll = () => {
+      if (isRestoring) return;
+      const y = Math.max(0, Math.round(window.scrollY || 0));
+      try {
+        sessionStorage.setItem(storageKey, String(y));
+      } catch (e) { /* ignore */ }
     };
-    // The form may render progressively (data restored from sessionStorage,
-    // images loading, etc.). Try a few times to land on the correct offset.
-    const restoreTimers = [
-      window.setTimeout(() => { tryRestore(); restoreAttempts++; }, 0),
-      window.setTimeout(() => { tryRestore(); restoreAttempts++; }, 150),
-      window.setTimeout(() => { tryRestore(); restoreAttempts++; }, 500),
-    ];
+
+    const stopRestoring = () => {
+      if (restoreTickTimer) {
+        window.clearTimeout(restoreTickTimer);
+        restoreTickTimer = null;
+      }
+      // Defer clearing the flag so any pending scroll events from the final
+      // scrollTo don't fire a save with a possibly-stale value.
+      window.setTimeout(() => { isRestoring = false; }, 50);
+    };
+
+    const restoreWhenReady = () => {
+      const raw = sessionStorage.getItem(storageKey);
+      const targetY = raw ? parseInt(raw, 10) : 0;
+      if (!Number.isFinite(targetY) || targetY <= 0) return;
+
+      // Cancel any in-flight restore so the two loops don't compete.
+      if (restoreTickTimer) {
+        window.clearTimeout(restoreTickTimer);
+        restoreTickTimer = null;
+      }
+
+      isRestoring = true;
+      let attempts = 0;
+      // Keep retrying for ~10s — large forms with many MUI sections, charts,
+      // and async-restored draft data can take a while to grow tall enough.
+      const maxAttempts = 100;
+      const intervalMs = 100;
+
+      const tick = () => {
+        attempts += 1;
+        const maxScroll = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight
+        );
+
+        // Page isn't tall enough yet — keep waiting instead of clamping.
+        if (maxScroll < targetY - 4) {
+          if (attempts < maxAttempts) {
+            restoreTickTimer = window.setTimeout(tick, intervalMs);
+          } else {
+            stopRestoring();
+          }
+          return;
+        }
+
+        window.scrollTo({ top: targetY, left: 0, behavior: 'auto' });
+
+        const landed = Math.abs((window.scrollY || 0) - targetY) < 8;
+        if (landed || attempts >= maxAttempts) {
+          stopRestoring();
+        } else {
+          restoreTickTimer = window.setTimeout(tick, intervalMs);
+        }
+      };
+
+      restoreTickTimer = window.setTimeout(tick, 0);
+    };
+
+    restoreWhenReady();
 
     let saveRaf = null;
     const handleScroll = () => {
       if (saveRaf) return;
       saveRaf = window.requestAnimationFrame(() => {
-        try {
-          sessionStorage.setItem(storageKey, String(window.scrollY || 0));
-        } catch (e) { /* ignore quota errors */ }
+        saveCurrentScroll();
         saveRaf = null;
       });
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        try {
-          sessionStorage.setItem(storageKey, String(window.scrollY || 0));
-        } catch (e) { /* ignore */ }
+        saveCurrentScroll();
       } else if (document.visibilityState === 'visible') {
-        tryRestore();
+        restoreWhenReady();
       }
     };
+    const handlePageHide = () => {
+      saveCurrentScroll();
+    };
+
+    // Periodic safety-net save — if the tab is discarded between scroll
+    // events, we still have a recent value persisted.
+    const intervalId = window.setInterval(saveCurrentScroll, 1500);
 
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      restoreTimers.forEach((t) => window.clearTimeout(t));
+      window.clearInterval(intervalId);
       if (saveRaf) window.cancelAnimationFrame(saveRaf);
-      // Final flush of latest scroll position.
+      if (restoreTickTimer) window.clearTimeout(restoreTickTimer);
+      // Don't save here — the next mount/route may overwrite the good
+      // value with whatever the unmounting page's current scroll happens
+      // to be (often 0 during an in-app navigation transition).
       try {
-        sessionStorage.setItem(storageKey, String(window.scrollY || 0));
+        if (
+          window.history &&
+          'scrollRestoration' in window.history &&
+          previousScrollRestoration
+        ) {
+          window.history.scrollRestoration = previousScrollRestoration;
+        }
       } catch (e) { /* ignore */ }
     };
   }, [location.pathname, location.search]);

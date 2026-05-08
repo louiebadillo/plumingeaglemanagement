@@ -36,6 +36,10 @@ export const useDraftReportsCount = () => {
       if (!cancelled) {
         setCurrentFacilityId(id);
         setGeofenceResolved(true);
+        console.info('[PEM-DRAFTS] Geofence resolved for drafts badge', {
+          userId: userProfile?.id,
+          facilityId: id,
+        });
       }
     };
 
