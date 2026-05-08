@@ -439,25 +439,46 @@ export async function uploadProfilePhoto(file, clientId) {
  * Get a signed URL for a profile photo (for private bucket)
  * @param {string} filePath - The file path in storage
  * @param {number} expiresIn - Expiration time in seconds (default: 3600 = 1 hour)
- * @returns {Promise<string>}
+ * @returns {Promise<string|null>}
  */
 export async function getProfilePhotoUrl(filePath, expiresIn = 3600) {
   try {
     const bucketName = 'profile-photos';
+    const originalPath = typeof filePath === 'string' ? filePath : String(filePath || '');
+    if (!originalPath || originalPath.startsWith('blob:')) {
+      return null;
+    }
     
     // If filePath is already a full URL, extract the path
-    let path = filePath;
-    if (filePath.includes('/storage/v1/object/public/')) {
+    let path = originalPath;
+    if (originalPath.includes('/storage/v1/object/public/')) {
       // Extract path from public URL
-      const urlParts = filePath.split('/profile-photos/');
+      const urlParts = originalPath.split('/profile-photos/');
       if (urlParts.length > 1) {
         path = urlParts[1];
       }
-    } else if (filePath.startsWith('http')) {
+    } else if (originalPath.startsWith('http')) {
       // Extract path from signed URL or other URL formats
-      const urlParts = filePath.split('/profile-photos/');
+      const urlParts = originalPath.split('/profile-photos/');
       if (urlParts.length > 1) {
         path = urlParts[1].split('?')[0]; // Remove query params
+      }
+    }
+
+    // Avoid noisy 400 "Object not found" errors for stale DB values by
+    // checking the folder first. This happens when a client row points to a
+    // profile photo path that was never uploaded or was later removed.
+    const lastSlash = path.lastIndexOf('/');
+    if (lastSlash > 0) {
+      const folder = path.slice(0, lastSlash);
+      const fileName = path.slice(lastSlash + 1);
+      const { data: existingFiles, error: listError } = await supabase.storage
+        .from(bucketName)
+        .list(folder, { search: fileName, limit: 1 });
+
+      if (!listError) {
+        const fileExists = (existingFiles || []).some((file) => file.name === fileName);
+        if (!fileExists) return null;
       }
     }
     
@@ -466,13 +487,12 @@ export async function getProfilePhotoUrl(filePath, expiresIn = 3600) {
       .createSignedUrl(path, expiresIn);
 
     if (error) {
-      console.error('Signed URL error:', error);
+      if (error.message?.includes('Object not found')) return null;
       throw new Error(`Failed to create signed URL: ${error.message}`);
     }
 
     return data.signedUrl;
   } catch (error) {
-    console.error('Get profile photo URL error:', error);
     throw error;
   }
 }

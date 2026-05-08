@@ -96,6 +96,35 @@ function ProgressGraphs({ trendData, sectionAverages = {} }) {
     const { data: chartData, slope } = prepared;
     const trendField = `${dataKey}Trend`;
 
+    // Build the month label from the actual dates in the data so the day-only
+    // ticks still tell the reader which month they belong to.
+    // Single month → "May 2026"; spans months → "May – Jun 2026" /
+    // "Dec 2025 – Jan 2026".
+    const monthLabel = (() => {
+      if (!chartData || chartData.length === 0) return '';
+      const seen = [];
+      const seenKeys = new Set();
+      for (const row of chartData) {
+        const d = new Date(row.date);
+        if (Number.isNaN(d.getTime())) continue;
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        seen.push({
+          year: d.getFullYear(),
+          monthShort: d.toLocaleDateString('en-US', { month: 'short' }),
+        });
+      }
+      if (seen.length === 0) return '';
+      if (seen.length === 1) return `${seen[0].monthShort} ${seen[0].year}`;
+      const first = seen[0];
+      const last = seen[seen.length - 1];
+      if (first.year === last.year) {
+        return `${first.monthShort} – ${last.monthShort} ${last.year}`;
+      }
+      return `${first.monthShort} ${first.year} – ${last.monthShort} ${last.year}`;
+    })();
+
     return (
       <Box
         sx={{
@@ -149,10 +178,14 @@ function ProgressGraphs({ trendData, sectionAverages = {} }) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
                 dataKey="date"
-                label={{ value: 'Date', position: 'insideBottom', offset: -5 }}
+                interval={0}
+                tick={{ fontSize: 11 }}
+                height={50}
+                label={{ value: monthLabel, position: 'insideBottom', offset: -2 }}
                 tickFormatter={(value) => {
                   const date = new Date(value);
-                  return `${date.getDate()}, ${date.toLocaleDateString('en-US', { month: 'short' })}`;
+                  if (Number.isNaN(date.getTime())) return value;
+                  return String(date.getDate());
                 }}
               />
               <YAxis

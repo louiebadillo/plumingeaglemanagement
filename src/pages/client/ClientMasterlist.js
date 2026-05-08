@@ -329,12 +329,22 @@ function ClientMasterlist() {
   useEffect(() => {
     const loadPhotoUrls = async () => {
       if (!clientsData || clientsData.length === 0) return;
+      let stalePhotoPathWasCleared = false;
       
       const photoUrlPromises = clientsData
         .filter(client => client.profile_photo_url)
         .map(async (client) => {
           try {
             const signedUrl = await getProfilePhotoUrl(client.profile_photo_url, 3600);
+            if (!signedUrl) {
+              const { error: clearError } = await supabase
+                .from('clients')
+                .update({ profile_photo_url: null })
+                .eq('id', client.id)
+                .eq('profile_photo_url', client.profile_photo_url);
+              if (!clearError) stalePhotoPathWasCleared = true;
+              return null;
+            }
             return { clientId: client.id, url: signedUrl };
           } catch (error) {
             console.error(`Error loading photo for client ${client.id}:`, error);
@@ -350,10 +360,13 @@ function ClientMasterlist() {
         }
       });
       setClientPhotoUrls(photoUrlMap);
+      if (stalePhotoPathWasCleared) {
+        queryClient.invalidateQueries(['clients']);
+      }
     };
     
     loadPhotoUrls();
-  }, [clientsData]);
+  }, [clientsData, queryClient]);
 
   const facilities = facilitiesData || [];
   const loading = clientsLoading || facilitiesLoading;

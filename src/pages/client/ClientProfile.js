@@ -92,9 +92,15 @@ function readNewClientDraft(pathname, facilityId) {
 function writeNewClientDraft(pathname, facilityId, draft) {
   if (!facilityId || !draft) return;
   try {
+    // Don't persist temporary blob: preview URLs — they are only valid for the
+    // current page session and would render as a broken image after reload.
+    const sanitized =
+      draft.profilePhoto && typeof draft.profilePhoto === 'string' && draft.profilePhoto.startsWith('blob:')
+        ? { ...draft, profilePhoto: null }
+        : draft;
     sessionStorage.setItem(
       newClientDraftStorageKey(pathname, facilityId),
-      JSON.stringify(draft)
+      JSON.stringify(sanitized)
     );
   } catch (e) {
     console.warn('Could not save new client draft:', e);
@@ -132,6 +138,10 @@ function ClientProfile() {
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+  // Holds the cropped File for new-client photo upload (uploaded after the client is created in Supabase).
+  const [pendingPhotoFile, setPendingPhotoFile] = useState(null);
+  // Holds the temporary blob: preview URL so we can revoke it once uploaded/cleared.
+  const pendingPhotoPreviewRef = useRef(null);
 
   /** Prevents re-running "new client" empty template init when the effect fires again with the same URL (e.g. tab focus). */
   const newClientDraftKeyRef = useRef(null);
@@ -612,6 +622,175 @@ function ClientProfile() {
     }
   }, [client]);
 
+  // Revoke any leftover blob: preview URL on unmount to avoid memory leaks.
+  useEffect(() => {
+    return () => {
+      if (pendingPhotoPreviewRef.current) {
+        try { URL.revokeObjectURL(pendingPhotoPreviewRef.current); } catch (e) { /* ignore */ }
+        pendingPhotoPreviewRef.current = null;
+      }
+    };
+  }, []);
+
+  // Preserve scroll position on the client add/edit form across browser tab
+  // switches and full page reloads (Chrome's memory-saver discards the tab,
+  // so coming back triggers a real reload).
+  useEffect(() => {
+    const path = location.pathname;
+    const isAddEditFormRoute =
+      path === '/app/client/new' ||
+      path.endsWith('/client/new') ||
+      path.endsWith('/new/edit') ||
+      path.endsWith('/edit');
+    if (!isAddEditFormRoute) return;
+
+    // Take over scroll restoration from the browser so our restore isn't
+    // racing with the browser's auto-restore (which lands on the top of a
+    // not-yet-rendered form after a reload).
+    const previousScrollRestoration =
+      typeof window.history !== 'undefined' ? window.history.scrollRestoration : undefined;
+    try {
+      if (window.history && 'scrollRestoration' in window.history) {
+        window.history.scrollRestoration = 'manual';
+      }
+    } catch (e) { /* ignore */ }
+
+    const storageKey = `pem_client_form_scroll_v1::${path}${location.search}`;
+
+    // While the page is still rendering after a reload, programmatic scrolls
+    // can be clamped to a smaller scrollHeight. We must NOT save those clamped
+    // values back to storage or the real position is lost on the next attempt.
+    let isRestoring = false;
+    let restoreTickTimer = null;
+
+    const saveCurrentScroll = () => {
+      if (isRestoring) return;
+      const y = Math.max(0, Math.round(window.scrollY || 0));
+      try {
+        sessionStorage.setItem(storageKey, String(y));
+      } catch (e) { /* ignore */ }
+    };
+
+    const stopRestoring = () => {
+      if (restoreTickTimer) {
+        window.clearTimeout(restoreTickTimer);
+        restoreTickTimer = null;
+      }
+      // Defer clearing the flag so any pending scroll events from the final
+      // scrollTo don't fire a save with a possibly-stale value.
+      window.setTimeout(() => { isRestoring = false; }, 50);
+    };
+
+    const restoreWhenReady = () => {
+      const raw = sessionStorage.getItem(storageKey);
+      const targetY = raw ? parseInt(raw, 10) : 0;
+      if (!Number.isFinite(targetY) || targetY <= 0) return;
+
+      // Cancel any in-flight restore so the two loops don't compete.
+      if (restoreTickTimer) {
+        window.clearTimeout(restoreTickTimer);
+        restoreTickTimer = null;
+      }
+
+      isRestoring = true;
+      let attempts = 0;
+      // Keep retrying for ~10s — large forms with many MUI sections, charts,
+      // and async-restored draft data can take a while to grow tall enough.
+      const maxAttempts = 100;
+      const intervalMs = 100;
+
+      const tick = () => {
+        attempts += 1;
+        const maxScroll = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight
+        );
+
+        // Page isn't tall enough yet — keep waiting instead of clamping.
+        if (maxScroll < targetY - 4) {
+          if (attempts < maxAttempts) {
+            restoreTickTimer = window.setTimeout(tick, intervalMs);
+          } else {
+            stopRestoring();
+          }
+          return;
+        }
+
+        window.scrollTo({ top: targetY, left: 0, behavior: 'auto' });
+
+        const landed = Math.abs((window.scrollY || 0) - targetY) < 8;
+        if (landed || attempts >= maxAttempts) {
+          stopRestoring();
+        } else {
+          restoreTickTimer = window.setTimeout(tick, intervalMs);
+        }
+      };
+
+      restoreTickTimer = window.setTimeout(tick, 0);
+    };
+
+    restoreWhenReady();
+
+    let saveRaf = null;
+    const handleScroll = () => {
+      if (saveRaf) return;
+      saveRaf = window.requestAnimationFrame(() => {
+        saveCurrentScroll();
+        saveRaf = null;
+      });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveCurrentScroll();
+      } else if (document.visibilityState === 'visible') {
+        restoreWhenReady();
+      }
+    };
+    const handlePageHide = () => {
+      saveCurrentScroll();
+    };
+
+    // Periodic safety-net save — if the tab is discarded between scroll
+    // events, we still have a recent value persisted.
+    const intervalId = window.setInterval(saveCurrentScroll, 1500);
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(intervalId);
+      if (saveRaf) window.cancelAnimationFrame(saveRaf);
+      if (restoreTickTimer) window.clearTimeout(restoreTickTimer);
+      // Don't save here — the next mount/route may overwrite the good
+      // value with whatever the unmounting page's current scroll happens
+      // to be (often 0 during an in-app navigation transition).
+      try {
+        if (
+          window.history &&
+          'scrollRestoration' in window.history &&
+          previousScrollRestoration
+        ) {
+          window.history.scrollRestoration = previousScrollRestoration;
+        }
+      } catch (e) { /* ignore */ }
+    };
+  }, [location.pathname, location.search]);
+
+  // Clear the saved scroll position once the form is successfully saved or
+  // explicitly cancelled, so the next visit starts at the top.
+  const clearFormScroll = () => {
+    try {
+      const path = location.pathname;
+      sessionStorage.removeItem(`pem_client_form_scroll_v1::${path}${location.search}`);
+    } catch (e) { /* ignore */ }
+  };
+
   const handleEdit = () => {
     if (!clientSlug || clientSlug === 'new') return;
     history.push(`/app/client/${clientSlug}/edit`);
@@ -627,6 +806,13 @@ function ClientProfile() {
 
   const handleCancelClientForm = () => {
     clearSessionDraft(profileEditModalRestoreScope);
+    clearFormScroll();
+    // Discard any pending (un-uploaded) profile photo
+    if (pendingPhotoPreviewRef.current) {
+      try { URL.revokeObjectURL(pendingPhotoPreviewRef.current); } catch (e) { /* ignore */ }
+      pendingPhotoPreviewRef.current = null;
+    }
+    setPendingPhotoFile(null);
     if (isNewClient) {
       const fac = facilityFromUrl || new URLSearchParams(window.location.search).get('facility');
       if (fac) clearNewClientDraft(location.pathname, fac);
@@ -701,7 +887,12 @@ function ClientProfile() {
           pediatrician_checkup: cleanDateField(editingClient.pediatricianCheckup),
           allowed_contacts: editingClient.allowedContacts || [],
           risks_and_preferences: editingClient.risksAndPreferences,
-          profile_photo_url: editingClient.profilePhoto || null,
+          // Never persist temporary blob: URLs. The real photo path is written
+          // after the row is created (and we have a client id) below.
+          profile_photo_url:
+            editingClient.profilePhoto && !editingClient.profilePhoto.startsWith('blob:')
+              ? editingClient.profilePhoto
+              : null,
           facility_id: facilityFromUrl || editingClient.facility // Use the facility ID from URL or from editingClient
         };
         
@@ -724,14 +915,39 @@ function ClientProfile() {
 
         clearNewClientDraft(window.location.pathname, facilityFromUrl || editingClient.facility);
         newClientDraftKeyRef.current = null;
-        
-        // If there's a profile photo to upload (stored temporarily), upload it now
-        if (editingClient.profilePhoto && editingClient.profilePhoto.startsWith('blob:')) {
-          // This means we have a temporary file URL, we need to handle it differently
-          // For now, we'll skip this and let the user upload after creation
+
+        // If a profile photo was selected before the client existed, upload it
+        // now that we have a client id, then patch the client row with the path.
+        if (pendingPhotoFile && newClient?.id) {
+          try {
+            const result = await uploadProfilePhoto(pendingPhotoFile, newClient.id);
+            const { error: photoUpdateError } = await supabase
+              .from('clients')
+              .update({ profile_photo_url: result.path })
+              .eq('id', newClient.id);
+            if (photoUpdateError) {
+              console.error('❌ Failed to save profile photo path:', photoUpdateError);
+            } else {
+              console.log('✅ Profile photo uploaded for new client:', result.path);
+              queryClient.invalidateQueries(['clients']);
+            }
+          } catch (photoErr) {
+            console.error('💥 Profile photo upload failed for new client:', photoErr);
+            alert(
+              `Client was created, but uploading the profile photo failed: ${photoErr.message}. ` +
+              `You can re-upload the photo by editing the client.`
+            );
+          } finally {
+            if (pendingPhotoPreviewRef.current) {
+              try { URL.revokeObjectURL(pendingPhotoPreviewRef.current); } catch (e) { /* ignore */ }
+              pendingPhotoPreviewRef.current = null;
+            }
+            setPendingPhotoFile(null);
+          }
         }
-        
+
         clearSessionDraft(profileEditModalRestoreScope);
+        clearFormScroll();
         // Show success modal before redirecting
         setSuccessMessage(`Client "${editingClient.firstName} ${editingClient.lastName}" has been created successfully.`);
         setSuccessModalOpen(true);
@@ -811,6 +1027,7 @@ function ClientProfile() {
         queryClient.invalidateQueries(['clients']);
         setClient(editingClient);
         clearSessionDraft(profileEditModalRestoreScope);
+        clearFormScroll();
         setSuccessMessage(`Client "${editingClient.firstName} ${editingClient.lastName}" information has been updated successfully.`);
         setSuccessModalOpen(true);
         setTimeout(() => {
@@ -919,15 +1136,19 @@ function ClientProfile() {
         
         setProfilePhotoUrl(signedUrl);
       } else {
-        // For new clients, store the file temporarily
-        // We'll upload after client creation
+        // For new clients, keep the actual File so we can upload it
+        // after the client row is created and we know the new client id.
+        // Revoke any previous preview URL so we don't leak blob URLs.
+        if (pendingPhotoPreviewRef.current) {
+          try { URL.revokeObjectURL(pendingPhotoPreviewRef.current); } catch (e) { /* ignore */ }
+        }
         const tempUrl = URL.createObjectURL(croppedBlob);
+        pendingPhotoPreviewRef.current = tempUrl;
+        setPendingPhotoFile(croppedFile);
         setEditingClient(prev => ({
           ...prev,
-          profilePhoto: tempUrl // Temporary blob URL
+          profilePhoto: tempUrl // Temporary blob URL for in-form preview only
         }));
-        // Store the blob for later upload
-        setImageToCrop(croppedBlob);
       }
     } catch (error) {
       console.error('Error uploading profile photo:', error);
@@ -940,6 +1161,20 @@ function ClientProfile() {
   };
 
   const handleProfilePhotoRemove = async () => {
+    // If the user picked a photo for a not-yet-created client, just discard
+    // the pending file and revoke the preview URL — there is nothing to
+    // delete from storage yet.
+    if (pendingPhotoFile || (editingClient?.profilePhoto && editingClient.profilePhoto.startsWith('blob:'))) {
+      if (pendingPhotoPreviewRef.current) {
+        try { URL.revokeObjectURL(pendingPhotoPreviewRef.current); } catch (e) { /* ignore */ }
+        pendingPhotoPreviewRef.current = null;
+      }
+      setPendingPhotoFile(null);
+      setEditingClient(prev => ({ ...prev, profilePhoto: null }));
+      if (client) setClient(prev => ({ ...prev, profilePhoto: null }));
+      return;
+    }
+
     if (!profilePhotoPath && !editingClient?.profilePhoto) {
       // Just remove from UI if no path stored
       setEditingClient(prev => ({

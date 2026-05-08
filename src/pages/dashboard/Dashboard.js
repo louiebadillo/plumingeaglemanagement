@@ -203,9 +203,13 @@ function Dashboard() {
       // Fresh GPS check each dashboard load (avoid 5‑min cache keeping "outside" after arriving on-site)
       clearGeofencingCache();
 
+      console.info('[PEM-DASH] Resolving facility for employee', {
+        userId: userProfile?.id,
+        role: userProfile?.role,
+      });
       const currentFacilityId = await getCurrentFacilityFromGeofencing();
       setEmployeeGeofenceFacilityId(currentFacilityId);
-      console.log('📍 Geofencing detected facility:', currentFacilityId);
+      console.info('[PEM-DASH] Geofence resolved', { facilityId: currentFacilityId });
 
       // ✅ PERFORMANCE: Parallelize independent queries
       // Load clients and facility info in parallel (they don't depend on each other)
@@ -232,29 +236,41 @@ function Dashboard() {
         const { data, error: clientsError } = clientsResult;
         const { data: facilityInfo, error: facilityError } = facilityResult;
         
-        console.log('🔍 Client query result:', {
+        console.info('[PEM-DASH] clients query result', {
           facilityId: currentFacilityId,
-          dataLength: data?.length || 0,
-          data: data,
-          error: clientsError
+          totalRows: data?.length || 0,
+          statuses: Array.from(new Set((data || []).map((c) => c.status))),
+          firstFiveIds: (data || []).slice(0, 5).map((c) => c.id),
+          errorCode: clientsError?.code,
         });
-        
+
         if (clientsError) {
-          console.error('❌ Error loading clients:', clientsError);
+          console.error('[PEM-DASH] Error loading clients:', clientsError);
           // Check if it's an RLS error
           if (clientsError.code === '42501' || clientsError.message?.includes('row-level security')) {
+            console.warn(
+              '[PEM-DASH] Row-level security blocked the read. The user_profiles row ' +
+                'for this employee likely does not have access to facility ' +
+                currentFacilityId + '.'
+            );
             throw new Error('Access denied. You may not have permission to view clients in this facility. Please contact an administrator.');
           }
           throw new Error(`Failed to load clients: ${clientsError.message}`);
         }
-        
+
         const activeClients = (data || []).filter((c) => c.status !== 'discharged');
-        console.log(
-          '✅ Clients loaded:',
-          activeClients.length,
-          'active (non-discharged) for facility',
-          currentFacilityId
-        );
+        console.info('[PEM-DASH] Active clients for facility', {
+          facilityId: currentFacilityId,
+          totalRows: (data || []).length,
+          activeRows: activeClients.length,
+        });
+        if ((data || []).length === 0) {
+          console.warn(
+            '[PEM-DASH] Geofence matched a facility but the clients table returned 0 ' +
+              'rows. Either no clients are assigned to that facility, or RLS is silently ' +
+              'filtering them. Run window.pemDebug.run() to confirm.'
+          );
+        }
         clientsData = activeClients;
 
         // ✅ CRITICAL: Set clients state immediately so they appear in UI
