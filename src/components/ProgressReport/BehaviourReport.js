@@ -233,46 +233,6 @@ function BehaviourReport({
               </Grid>
             </Grid>
 
-            {/* BIR/AWOL score averages */}
-            <Box mb={2} id="bir-awol-score-averages" className="pdf-avoid-break">
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    BIR score average
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    {birSummary && birSummary.totalDays > 0 ? (
-                      <>
-                        <strong>{birSummary.averagePercent}%</strong>
-                        {' — '}
-                        {birSummary.trueDays} BIR day{birSummary.trueDays === 1 ? '' : 's'} out of{' '}
-                        {birSummary.totalDays} filtered report day{birSummary.totalDays === 1 ? '' : 's'}
-                      </>
-                    ) : (
-                      'No filtered report days in this range.'
-                    )}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    AWOL score average
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    {awolSummary && awolSummary.totalDays > 0 ? (
-                      <>
-                        <strong>{awolSummary.averagePercent}%</strong>
-                        {' — '}
-                        {awolSummary.trueDays} AWOL day{awolSummary.trueDays === 1 ? '' : 's'} out of{' '}
-                        {awolSummary.totalDays} filtered report day{awolSummary.totalDays === 1 ? '' : 's'}
-                      </>
-                    ) : (
-                      'No filtered report days in this range.'
-                    )}
-                  </Typography>
-                </Grid>
-              </Grid>
-            </Box>
-
             {/* Behaviour Assessment Table */}
             <Typography variant="h6" gutterBottom id="behaviour-assessment-title">
               Behaviour Assessment
