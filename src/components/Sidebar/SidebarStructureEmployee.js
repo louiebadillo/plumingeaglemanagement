@@ -2,7 +2,8 @@ import React from 'react';
 import {
   AccountCircle as ProfileIcon,
   Assignment as AssignmentIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  MyLocation as MyLocationIcon,
 } from '@mui/icons-material';
 import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 
@@ -26,9 +27,10 @@ const getEmployeeStructure = (draftCount) => [
       },
     ],
   },
-  { id: 2, type: 'divider' },
+  { id: 2, label: 'Location Help', link: '/app/location-help', icon: <MyLocationIcon /> },
+  { id: 3, type: 'divider' },
   {
-    id: 3,
+    id: 4,
     label: 'Logout',
     click: function(...rest) {
       const name = 'onLogout'

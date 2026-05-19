@@ -7,14 +7,20 @@ import { Settings as SettingsIcon } from '@mui/icons-material';
  * @param {string} userRole - The role of the current user
  * @param {Array} facilities - Array of facilities from Supabase
  * @param {number} draftCount - Number of draft reports for employees
+ * @param {number} locationRequestCount - Open location help requests (admins)
  * @returns {Array} - The appropriate sidebar structure
  */
-export function getSidebarStructure(userRole, facilities = [], draftCount = 0) {
+export function getSidebarStructure(
+  userRole,
+  facilities = [],
+  draftCount = 0,
+  locationRequestCount = 0
+) {
   let structure;
   
   switch (userRole) {
     case 'admin':
-      structure = [...getAdminStructure(draftCount)];
+      structure = [...getAdminStructure(draftCount, locationRequestCount)];
       break;
     case 'employee':
       structure = [...getEmployeeStructure(draftCount)];

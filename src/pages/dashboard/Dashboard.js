@@ -54,7 +54,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
 import { getOperationalDate, isReportLocked, calculateAge } from '../../utils/dateHelpers';
-import { getCurrentFacilityFromGeofencing, clearGeofencingCache, requestLocationPermission } from '../../utils/geofencing';
+import { getCurrentFacilityFromGeofencing, clearGeofencingCache } from '../../utils/geofencing';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 import ClientInfoModal from '../../components/Client/ClientInfoModal';
 import UserSwitcher from '../../components/UserSwitcher/UserSwitcher';
@@ -102,11 +102,7 @@ function Dashboard() {
   const [employeeGeofenceFacilityId, setEmployeeGeofenceFacilityId] = useState(null);
   /** Shown when employee is outside all geofences or location is unavailable. */
   const [employeeGeofenceNotice, setEmployeeGeofenceNotice] = useState(null);
-  const [geoPermissionState, setGeoPermissionState] = useState('unknown'); // unknown | granted | denied | prompt | unsupported
-  const [geoLastErrorMessage, setGeoLastErrorMessage] = useState(null);
-  const [geoPermissionLoading, setGeoPermissionLoading] = useState(false);
-  const [geoHelpOpen, setGeoHelpOpen] = useState(false);
-  
+
   // Admin state
   const [unsubmittedReports, setUnsubmittedReports] = useState([]);
   const [allUnsubmittedReports, setAllUnsubmittedReports] = useState([]); // Store all reports before filtering
@@ -160,45 +156,10 @@ function Dashboard() {
     }
   }, [userProfile, isAdmin, operationalDate, location.pathname, facilityFilter]);
 
-  // Track geolocation permission state (best-effort; Permissions API not supported on all browsers)
-  useEffect(() => {
-    if (isAdmin) return;
-    let isCancelled = false;
-    let permissionStatus = null;
-
-    const syncPermission = async () => {
-      try {
-        if (!navigator?.permissions?.query) {
-          if (!isCancelled) setGeoPermissionState('unsupported');
-          return;
-        }
-        // Note: "geolocation" is valid per Permissions API in Chromium-based browsers
-        permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-        if (isCancelled) return;
-        setGeoPermissionState(permissionStatus.state || 'unknown');
-
-        permissionStatus.onchange = () => {
-          if (isCancelled) return;
-          setGeoPermissionState(permissionStatus.state || 'unknown');
-        };
-      } catch (e) {
-        if (!isCancelled) setGeoPermissionState('unknown');
-      }
-    };
-
-    syncPermission();
-
-    return () => {
-      isCancelled = true;
-      if (permissionStatus) permissionStatus.onchange = null;
-    };
-  }, [isAdmin]);
-
   const loadEmployeeData = async () => {
     try {
       setLoading(true);
       setError(null);
-      setGeoLastErrorMessage(null);
 
       // Fresh GPS check each dashboard load (avoid 5‑min cache keeping "outside" after arriving on-site)
       clearGeofencingCache();
@@ -290,7 +251,7 @@ function Dashboard() {
         setEmployeeGeofenceNotice(null);
       } else {
         setEmployeeGeofenceNotice(
-          'You are not inside any facility geofence, so client lists are hidden. Use the work device on-site, allow browser location when asked, and ensure this building has geofencing configured in Facility Management.'
+          'You are not inside any facility geofence, so client lists are hidden. Open Location Help in the sidebar to check your location or send a report to an administrator.'
         );
         setCurrentFacility(null);
         clientsData = [];
@@ -422,26 +383,8 @@ function Dashboard() {
     } catch (err) {
       console.error('Error loading employee data:', err);
       setError('Failed to load client data.');
-      setGeoLastErrorMessage(err?.message || 'Unknown error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRequestGeolocation = async () => {
-    try {
-      setGeoPermissionLoading(true);
-      setGeoLastErrorMessage(null);
-      setEmployeeGeofenceNotice('Checking your location…');
-      // Trigger browser permission prompt (if needed). Success here doesn't guarantee inside a geofence.
-      await requestLocationPermission();
-      // Re-check facility + reload clients after permission grant
-      await loadEmployeeData();
-    } catch (err) {
-      console.error('Geolocation permission request failed:', err);
-      setGeoLastErrorMessage(err?.message || 'Location permission request failed.');
-    } finally {
-      setGeoPermissionLoading(false);
     }
   };
 
@@ -1053,93 +996,6 @@ function Dashboard() {
           <Typography variant="h4" gutterBottom>
             Welcome, {employeeName}
           </Typography>
-          {!isAdmin && (
-            <Box sx={{ mt: 2 }}>
-              <Alert
-                icon={false}
-                severity={
-                  geoPermissionState === 'denied'
-                    ? 'error'
-                    : geoPermissionState === 'granted'
-                      ? 'success'
-                      : 'info'
-                }
-                action={
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      size="small"
-                      onClick={() => setGeoHelpOpen(true)}
-                      variant="outlined"
-                      color="inherit"
-                      sx={{ borderRadius: 2, borderColor: 'rgba(0,0,0,0.35)' }}
-                    >
-                      How to enable
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={handleRequestGeolocation}
-                      disabled={geoPermissionLoading}
-                      variant="contained"
-                      color={geoPermissionState === 'denied' ? 'error' : 'primary'}
-                      sx={{ borderRadius: 2 }}
-                    >
-                      {geoPermissionLoading
-                        ? 'Checking…'
-                        : geoPermissionState === 'denied'
-                          ? 'Retry'
-                          : geoPermissionState === 'granted'
-                            ? 'Refresh location'
-                            : 'Enable location'}
-                    </Button>
-                  </Stack>
-                }
-              >
-                <Box>
-                  {(() => {
-                    const isDenied = geoPermissionState === 'denied';
-                    const isGranted = geoPermissionState === 'granted';
-                    const isInsideFacility = Boolean(employeeGeofenceFacilityId);
-                    const indicatorColor = isDenied ? '#d32f2f' : isGranted ? '#2e7d32' : '#ed6c02';
-                    const statusLabel = isDenied
-                      ? 'Location blocked'
-                      : isGranted
-                        ? 'Location allowed'
-                        : 'Location needs attention';
-
-                    return (
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
-                        <Box
-                          sx={{
-                            mt: '3px',
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            bgcolor: indicatorColor,
-                            flex: '0 0 auto',
-                          }}
-                          aria-hidden="true"
-                        />
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                            {statusLabel}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Facility detection:{' '}
-                            {isInsideFacility ? 'inside a facility geofence' : 'not inside any facility geofence'}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    );
-                  })()}
-                  {geoLastErrorMessage && (
-                    <Typography variant="body2" sx={{ mt: 0.5 }}>
-                      Last location error: {geoLastErrorMessage}
-                    </Typography>
-                  )}
-                </Box>
-              </Alert>
-            </Box>
-          )}
           <Box sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: 600 }}>
               Quick Guide
@@ -1198,48 +1054,22 @@ function Dashboard() {
             </Alert>
           )}
           {employeeGeofenceNotice && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
+            <Alert
+              severity="warning"
+              sx={{ mb: 2 }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => history.push('/app/location-help')}
+                >
+                  Location Help
+                </Button>
+              }
+            >
               {employeeGeofenceNotice}
             </Alert>
           )}
-          <Dialog open={geoHelpOpen} onClose={() => setGeoHelpOpen(false)} maxWidth="sm" fullWidth>
-            <DialogTitle>Enable location in Chrome</DialogTitle>
-            <DialogContent dividers>
-              <Typography variant="body2" paragraph>
-                This app needs your browser location to detect which facility you’re inside.
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 600 }} gutterBottom>
-                Steps (Chrome on laptop)
-              </Typography>
-              <Typography variant="body2" component="div">
-                <ol style={{ marginTop: 0 }}>
-                  <li>In the address bar, click the <strong>lock</strong> (or tune) icon.</li>
-                  <li>Open <strong>Site settings</strong>.</li>
-                  <li>Set <strong>Location</strong> to <strong>Allow</strong>.</li>
-                  <li>Reload this page.</li>
-                </ol>
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }}>
-                If you don’t see clients even after allowing location, your device GPS/Wi‑Fi accuracy may be outside the facility radius (50m can be tight indoors).
-              </Typography>
-            </DialogContent>
-            <DialogActions>
-              <Button
-                onClick={() => {
-                  window.open(
-                    'https://support.google.com/chrome/answer/142065',
-                    '_blank',
-                    'noopener,noreferrer'
-                  );
-                }}
-              >
-                Chrome help
-              </Button>
-              <Button variant="contained" onClick={() => setGeoHelpOpen(false)}>
-                Done
-              </Button>
-            </DialogActions>
-          </Dialog>
           {(() => {
             console.log('🔍 UI Render - clients state:', {
               clientsLength: clients.length,
@@ -1251,7 +1081,7 @@ function Dashboard() {
           {clients.length === 0 ? (
             <Typography variant="body1" color="textSecondary" sx={{ mt: 2 }}>
               {!employeeGeofenceFacilityId
-                ? 'No clients are shown until you are detected inside a facility geofence. Allow browser location on-site.'
+                ? 'No clients are shown until you are detected inside a facility geofence. Use Location Help in the sidebar for assistance.'
                 : 'No active (non-discharged) clients found in this facility.'}
             </Typography>
           ) : (

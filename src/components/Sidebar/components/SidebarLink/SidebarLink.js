@@ -137,7 +137,19 @@ export default function SidebarLink({
         </ListItem>
       </>
     );
-  if (!children)
+  if (!children) {
+    const linkText = (
+      <ListItemText
+        classes={{
+          primary: classnames(classes.linkText, {
+            [classes.linkTextActive]: isLinkActive,
+            [classes.linkTextHidden]: !isSidebarOpened,
+          }),
+        }}
+        primary={label}
+      />
+    );
+
     return (
       <>
         <ListItem
@@ -166,15 +178,13 @@ export default function SidebarLink({
           >
             {nested ? <Dot color={isLinkActive && 'primary'} /> : icon}
           </ListItemIcon>
-          <ListItemText
-            classes={{
-              primary: classnames(classes.linkText, {
-                [classes.linkTextActive]: isLinkActive,
-                [classes.linkTextHidden]: !isSidebarOpened,
-              }),
-            }}
-            primary={label}
-          />
+          {props.badge ? (
+            <Badge badgeContent={props.badge} color={props.badgeColor || 'default'}>
+              {linkText}
+            </Badge>
+          ) : (
+            linkText
+          )}
         </ListItem>
         <Popover
           id={id}
@@ -216,6 +226,7 @@ export default function SidebarLink({
         </Popover>
       </>
     );
+  }
 
   return (
     <>

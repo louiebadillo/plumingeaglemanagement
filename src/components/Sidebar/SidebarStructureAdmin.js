@@ -6,7 +6,8 @@ import {
   Assignment as AssignmentIcon,
   Business as BuildingIcon,
   Logout as LogoutIcon,
-  Assessment as AssessmentIcon
+  Assessment as AssessmentIcon,
+  MyLocation as MyLocationIcon,
 } from '@mui/icons-material';
 import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 
@@ -14,7 +15,7 @@ import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
 import Dot from './components/Dot';
 
 // Admin sidebar structure - Full access
-const getAdminStructure = (draftCount) => [
+const getAdminStructure = (draftCount, locationRequestCount = 0) => [
   { id: 0, label: 'Dashboard', link: '/app/dashboard', icon: <ProfileIcon /> },
   {
     id: 1,
@@ -44,16 +45,12 @@ const getAdminStructure = (draftCount) => [
     id: 2,
     label: 'Client Masterlist',
     link: '/app/client-masterlist',
-    badge: 'Admin',
-    badgeColor: 'secondary',
     icon: <PersonIcon />,
   },
   {
     id: 3,
     label: 'Staff Management',
     link: '/app/staff/management',
-    badge: 'Admin',
-    badgeColor: 'secondary',
     icon: <PeopleIcon />,
   },
   {
@@ -80,6 +77,14 @@ const getAdminStructure = (draftCount) => [
     link: '/app/reports/progress',
     icon: <AssessmentIcon />,
   },
+  {
+    id: 8,
+    label: 'Location requests',
+    link: '/app/location-requests',
+    icon: <MyLocationIcon />,
+    badge: locationRequestCount > 0 ? locationRequestCount.toString() : null,
+    badgeColor: 'error',
+  },
   { id: 5, type: 'divider' },
   {
     id: 6,
@@ -100,7 +105,7 @@ const getAdminStructure = (draftCount) => [
 // Hook-based component for dynamic sidebar
 const AdminSidebarStructure = () => {
   const { draftCount } = useDraftReportsCount();
-  return getAdminStructure(draftCount);
+  return getAdminStructure(draftCount, 0);
 };
 
 export { getAdminStructure };

@@ -61,6 +61,12 @@ const initialFormData = {
   geofence_radius_meters: 100
 };
 
+const formatGeofenceCoordInput = (value) => {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : '';
+};
+
 function FacilityManagement() {
   const history = useHistory();
   const queryClient = useQueryClient();
@@ -79,6 +85,7 @@ function FacilityManagement() {
       return (data || []).filter(f => f && f.id);
     },
     staleTime: 30 * 60 * 1000, // 30 minutes - match Layout so cache is shared
+    refetchOnWindowFocus: false, // avoid dialog/form flicker when returning to this tab
   });
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState(null);
@@ -86,6 +93,8 @@ function FacilityManagement() {
   const [formData, setFormData] = useState(initialFormData);
   const [submitting, setSubmitting] = useState(false);
   const [geofencingAddress, setGeofencingAddress] = useState('');
+  const [geofenceLatInput, setGeofenceLatInput] = useState('');
+  const [geofenceLngInput, setGeofenceLngInput] = useState('');
   const [geocoding, setGeocoding] = useState(false);
   const [geocodingError, setGeocodingError] = useState(null);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
@@ -97,6 +106,7 @@ function FacilityManagement() {
   const facilityDialogContentRef = useRef(null);
   const FACILITY_EDIT_MODAL_SNAPSHOT = 'facility_edit_modal_v2';
   const facilityEditModalRestoreAttemptedRef = useRef(false);
+  const editDialogWasOpenRef = useRef(false);
 
   const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
@@ -112,54 +122,68 @@ function FacilityManagement() {
   const getFacilityScrollScope = () =>
     isNewFacility ? 'facility_create_scroll' : `facility_edit_scroll_${editingFacility?.id || ''}`;
 
-  // Restore facility + geofencing fields once per dialog open
-  useEffect(() => {
-    if (!editDialogOpen) {
-      facilityDraftRestoreRef.current = null;
-      return;
-    }
-    const scope = getFacilityDraftScope();
-    if (!scope || scope === 'facility_edit_') return;
-    if (facilityDraftRestoreRef.current === scope) return;
-    facilityDraftRestoreRef.current = scope;
+  const syncGeofenceCoordInputs = (lat, lng) => {
+    setGeofenceLatInput(formatGeofenceCoordInput(lat));
+    setGeofenceLngInput(formatGeofenceCoordInput(lng));
+  };
 
-    const saved = loadSessionDraft(scope);
-    if (!saved || typeof saved !== 'object' || !saved.formData) return;
-
-    setFormData({
-      ...initialFormData,
-      ...saved.formData,
-      geofence_radius_meters: saved.formData.geofence_radius_meters ?? 100,
-      phone: formatNorthAmericanPhoneInput(saved.formData.phone || ''),
-    });
-    setGeofencingAddress(typeof saved.geofencingAddress === 'string' ? saved.geofencingAddress : '');
-  }, [editDialogOpen, isNewFacility, editingFacility?.id]);
-
-  // Restore dialog scroll position on re-open (after draft content paints)
-  useEffect(() => {
-    if (!editDialogOpen) return;
+  const restoreDialogScroll = () => {
     const scope = getFacilityScrollScope();
     const el = facilityDialogContentRef.current;
-    if (!scope || !el) return;
+    if (!scope || scope === 'facility_edit_' || !el) return;
     const targetRaw = loadSessionDraft(scope);
     const target = typeof targetRaw === 'number' ? targetRaw : Number(targetRaw || 0);
     if (!Number.isFinite(target) || target <= 0) return;
-
-    let cancelled = false;
-    const restore = async () => {
-      await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => requestAnimationFrame(r));
-      if (cancelled) return;
+    const apply = () => {
       try {
         el.scrollTop = target;
       } catch (e) {
         /* ignore */
       }
     };
-    restore();
-    return () => {
-      cancelled = true;
+    apply();
+    requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(apply);
+    });
+  };
+
+  // Restore facility + geofencing fields only when the dialog first opens (not on tab return)
+  useEffect(() => {
+    if (!editDialogOpen) {
+      facilityDraftRestoreRef.current = null;
+      editDialogWasOpenRef.current = false;
+      return;
+    }
+    if (editDialogWasOpenRef.current) return;
+    editDialogWasOpenRef.current = true;
+
+    const scope = getFacilityDraftScope();
+    if (!scope || scope === 'facility_edit_') return;
+    if (facilityDraftRestoreRef.current === scope) return;
+    facilityDraftRestoreRef.current = scope;
+
+    const saved = loadSessionDraft(scope);
+    if (!saved || typeof saved !== 'object' || !saved.formData) {
+      restoreDialogScroll();
+      return;
+    }
+
+    const restored = {
+      ...initialFormData,
+      ...saved.formData,
+      geofence_radius_meters: saved.formData.geofence_radius_meters ?? 100,
+      phone: formatNorthAmericanPhoneInput(saved.formData.phone || ''),
     };
+    setFormData(restored);
+    setGeofencingAddress(typeof saved.geofencingAddress === 'string' ? saved.geofencingAddress : '');
+    if (saved.geofenceLatInput != null || saved.geofenceLngInput != null) {
+      setGeofenceLatInput(String(saved.geofenceLatInput ?? ''));
+      setGeofenceLngInput(String(saved.geofenceLngInput ?? ''));
+    } else {
+      syncGeofenceCoordInputs(restored.geofence_latitude, restored.geofence_longitude);
+    }
+    restoreDialogScroll();
   }, [editDialogOpen, isNewFacility, editingFacility?.id]);
 
   useDialogScrollThroughVisibility(
@@ -185,10 +209,23 @@ function FacilityManagement() {
     const scope = getFacilityDraftScope();
     if (!scope || scope === 'facility_edit_') return;
     const t = window.setTimeout(() => {
-      saveSessionDraft(scope, { formData, geofencingAddress });
+      saveSessionDraft(scope, {
+        formData,
+        geofencingAddress,
+        geofenceLatInput,
+        geofenceLngInput,
+      });
     }, 300);
     return () => window.clearTimeout(t);
-  }, [formData, geofencingAddress, editDialogOpen, isNewFacility, editingFacility?.id]);
+  }, [
+    formData,
+    geofencingAddress,
+    geofenceLatInput,
+    geofenceLngInput,
+    editDialogOpen,
+    isNewFacility,
+    editingFacility?.id,
+  ]);
 
   useEffect(() => {
     if (!editDialogOpen) return;
@@ -201,13 +238,23 @@ function FacilityManagement() {
           editingFacilityId: editingFacility?.id ?? null,
           formData,
           geofencingAddress,
+          geofenceLatInput,
+          geofenceLngInput,
         });
       } catch (e) {
         /* ignore */
       }
     }, 200);
     return () => window.clearTimeout(t);
-  }, [editDialogOpen, isNewFacility, editingFacility?.id, formData, geofencingAddress]);
+  }, [
+    editDialogOpen,
+    isNewFacility,
+    editingFacility?.id,
+    formData,
+    geofencingAddress,
+    geofenceLatInput,
+    geofenceLngInput,
+  ]);
 
   useEffect(() => {
     if (!editDialogOpen) return;
@@ -220,13 +267,19 @@ function FacilityManagement() {
           editingFacilityId: editingFacility?.id ?? null,
           formData,
           geofencingAddress,
+          geofenceLatInput,
+          geofenceLngInput,
         });
       } catch (e) {
         /* ignore */
       }
     };
     const onVis = () => {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === 'hidden') {
+        flush();
+      } else {
+        restoreDialogScroll();
+      }
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', onVis);
@@ -234,7 +287,15 @@ function FacilityManagement() {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [editDialogOpen, isNewFacility, editingFacility?.id, formData, geofencingAddress]);
+  }, [
+    editDialogOpen,
+    isNewFacility,
+    editingFacility?.id,
+    formData,
+    geofencingAddress,
+    geofenceLatInput,
+    geofenceLngInput,
+  ]);
 
   useEffect(() => {
     if (loading) return;
@@ -268,7 +329,14 @@ function FacilityManagement() {
       });
     }
     setGeofencingAddress(typeof snap.geofencingAddress === 'string' ? snap.geofencingAddress : '');
+    if (snap.geofenceLatInput != null || snap.geofenceLngInput != null) {
+      setGeofenceLatInput(String(snap.geofenceLatInput ?? ''));
+      setGeofenceLngInput(String(snap.geofenceLngInput ?? ''));
+    } else if (snap.formData) {
+      syncGeofenceCoordInputs(snap.formData.geofence_latitude, snap.formData.geofence_longitude);
+    }
     facilityDraftRestoreRef.current = null;
+    editDialogWasOpenRef.current = false;
     setEditDialogOpen(true);
     facilityEditModalRestoreAttemptedRef.current = true;
   }, [loading, facilities]);
@@ -285,8 +353,13 @@ function FacilityManagement() {
       geofence_radius_meters: facility.geofence_radius_meters || 100
     });
     setGeofencingAddress('');
+    syncGeofenceCoordInputs(
+      facility.geofence_latitude,
+      facility.geofence_longitude
+    );
     setGeocodingError(null);
     setIsNewFacility(false);
+    editDialogWasOpenRef.current = false;
     setEditDialogOpen(true);
   };
 
@@ -294,8 +367,11 @@ function FacilityManagement() {
     setEditingFacility(null);
     setFormData(initialFormData);
     setGeofencingAddress('');
+    setGeofenceLatInput('');
+    setGeofenceLngInput('');
     setGeocodingError(null);
     setIsNewFacility(true);
+    editDialogWasOpenRef.current = false;
     setEditDialogOpen(true);
   };
 
@@ -446,10 +522,35 @@ function FacilityManagement() {
   };
 
   const handleInputChange = (field, value) => {
-    setFormData({
-      ...formData,
-      [field]: value
-    });
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleApplyGeofenceCoordinates = () => {
+    const lat = parseFloat(String(geofenceLatInput).trim());
+    const lng = parseFloat(String(geofenceLngInput).trim());
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setGeocodingError('Enter valid latitude and longitude numbers.');
+      return;
+    }
+    if (lat < -90 || lat > 90) {
+      setGeocodingError('Latitude must be between -90 and 90.');
+      return;
+    }
+    if (lng < -180 || lng > 180) {
+      setGeocodingError('Longitude must be between -180 and 180.');
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      geofence_latitude: lat,
+      geofence_longitude: lng,
+    }));
+    setGeocodingError(null);
   };
 
   const handleSetGeofencing = async () => {
@@ -465,11 +566,12 @@ function FacilityManagement() {
       const result = await geocodeAddress(geofencingAddress);
       
       if (result) {
-        setFormData({
-          ...formData,
+        setFormData((prev) => ({
+          ...prev,
           geofence_latitude: result.latitude,
-          geofence_longitude: result.longitude
-        });
+          geofence_longitude: result.longitude,
+        }));
+        syncGeofenceCoordInputs(result.latitude, result.longitude);
         setGeocodingError(null);
         // Optionally show success message
         console.log('✅ Geofencing set successfully:', result);
@@ -486,13 +588,15 @@ function FacilityManagement() {
 
   const handleClearGeofencing = () => {
     if (window.confirm('Are you sure you want to clear geofencing settings for this facility?')) {
-      setFormData({
-        ...formData,
+      setFormData((prev) => ({
+        ...prev,
         geofence_latitude: null,
         geofence_longitude: null,
-        geofence_radius_meters: 100
-      });
+        geofence_radius_meters: 100,
+      }));
       setGeofencingAddress('');
+      setGeofenceLatInput('');
+      setGeofenceLngInput('');
       setGeocodingError(null);
     }
   };
@@ -649,8 +753,9 @@ function FacilityManagement() {
       </Grid>
 
       {/* Edit/Add Facility Dialog */}
-      <Dialog 
-        open={editDialogOpen} 
+      <Dialog
+        open={editDialogOpen}
+        keepMounted
         onClose={shieldEntityDialogClose(() => {
           if (!submitting) {
             clearSessionDraft(FACILITY_EDIT_MODAL_SNAPSHOT);
@@ -674,7 +779,12 @@ function FacilityManagement() {
         </DialogTitle>
         <DialogContent
           ref={facilityDialogContentRef}
-          sx={{ minHeight: 0 }}
+          dividers
+          sx={{
+            minHeight: 0,
+            overflowY: 'auto',
+            maxHeight: 'calc(100vh - 220px)',
+          }}
           onScroll={(e) => {
             const scope = getFacilityScrollScope();
             const el = e.currentTarget;
@@ -733,75 +843,126 @@ function FacilityManagement() {
                 Geofencing Settings
               </Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                Configure geofencing to automatically detect when employees are at this facility. Enter the facility address and set the detection radius.
+                Configure geofencing to detect when employees are at this facility. Set coordinates
+                by address, by typing latitude/longitude, or by dragging the map pin.
               </Typography>
 
-              {/* Current Geofencing Status */}
-              {formData.geofence_latitude && formData.geofence_longitude && (
+              {/* Geofencing: address */}
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Option 1 — Address
+              </Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={12} sm={8}>
+                  <TextField
+                    fullWidth
+                    label="Geofencing address"
+                    value={geofencingAddress}
+                    onChange={(e) => setGeofencingAddress(e.target.value)}
+                    placeholder="123 Main St, City, State"
+                    helperText="Geocode this address to set the geofence center"
+                    disabled={geocoding}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    color="primary"
+                    onClick={handleSetGeofencing}
+                    disabled={geocoding || !geofencingAddress.trim()}
+                    startIcon={geocoding ? <CircularProgress size={20} /> : <LocationIcon />}
+                    sx={{ height: '56px' }}
+                  >
+                    {geocoding ? 'Setting…' : 'Set from address'}
+                  </Button>
+                </Grid>
+              </Grid>
+
+              {/* Geofencing: latitude / longitude */}
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Option 2 — Latitude & longitude
+              </Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={12} sm={5}>
+                  <TextField
+                    fullWidth
+                    label="Latitude"
+                    value={geofenceLatInput}
+                    onChange={(e) => setGeofenceLatInput(e.target.value)}
+                    placeholder="e.g. 43.653226"
+                    helperText="Decimal degrees (-90 to 90)"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={5}>
+                  <TextField
+                    fullWidth
+                    label="Longitude"
+                    value={geofenceLngInput}
+                    onChange={(e) => setGeofenceLngInput(e.target.value)}
+                    placeholder="e.g. -79.383184"
+                    helperText="Decimal degrees (-180 to 180)"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={handleApplyGeofenceCoordinates}
+                    sx={{ height: '56px' }}
+                  >
+                    Apply
+                  </Button>
+                </Grid>
+              </Grid>
+
+              {formData.geofence_latitude != null && formData.geofence_longitude != null && (
                 <>
                   <Alert severity="success" sx={{ mb: 2 }}>
                     <Typography variant="body2">
-                      <strong>Geofencing Configured:</strong><br />
-                      Latitude: {formData.geofence_latitude.toFixed(6)}<br />
-                      Longitude: {formData.geofence_longitude.toFixed(6)}<br />
+                      <strong>Current geofence center</strong>
+                      <br />
+                      Latitude: {Number(formData.geofence_latitude).toFixed(6)}
+                      <br />
+                      Longitude: {Number(formData.geofence_longitude).toFixed(6)}
+                      <br />
                       Radius: {formData.geofence_radius_meters || 100} meters
                     </Typography>
                   </Alert>
-                  
-                  {/* Map Visualization */}
+
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Option 3 — Map pin
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Drag the marker on the map to fine-tune the center.
+                  </Typography>
+
                   <GeofencingMap
                     latitude={formData.geofence_latitude}
                     longitude={formData.geofence_longitude}
                     radius={formData.geofence_radius_meters || 100}
                     onLocationChange={(lat, lng) => {
-                      setFormData({
-                        ...formData,
+                      setFormData((prev) => ({
+                        ...prev,
                         geofence_latitude: lat,
-                        geofence_longitude: lng
-                      });
+                        geofence_longitude: lng,
+                      }));
+                      syncGeofenceCoordInputs(lat, lng);
                     }}
+                    onMapReady={restoreDialogScroll}
                   />
+
+                  <Box sx={{ mb: 2 }}>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={handleClearGeofencing}
+                      startIcon={<ClearIcon />}
+                    >
+                      Clear geofencing
+                    </Button>
+                  </Box>
                 </>
               )}
-
-              {/* Geofencing Address Input */}
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid item xs={12} sm={8}>
-                  <TextField
-                    fullWidth
-                    label="Geofencing Address"
-                    value={geofencingAddress}
-                    onChange={(e) => setGeofencingAddress(e.target.value)}
-                    placeholder="Enter the facility address for geofencing (e.g., 123 Main St, City, State)"
-                    helperText="Enter the exact address where employees will be working"
-                    disabled={geocoding}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={4}>
-                  <Box display="flex" gap={1} height="100%">
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={handleSetGeofencing}
-                      disabled={geocoding || !geofencingAddress.trim()}
-                      startIcon={geocoding ? <CircularProgress size={20} /> : <LocationIcon />}
-                      sx={{ flex: 1 }}
-                    >
-                      {geocoding ? 'Setting...' : 'Set Geofencing'}
-                    </Button>
-                    {formData.geofence_latitude && formData.geofence_longitude && (
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        onClick={handleClearGeofencing}
-                        startIcon={<ClearIcon />}
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </Box>
-                </Grid>
-              </Grid>
 
               {geocodingError && (
                 <Alert severity="error" sx={{ mb: 2 }}>

@@ -7,7 +7,7 @@ const mapContainerStyle = {
   height: '400px'
 };
 
-function GeofencingMap({ latitude, longitude, radius = 100, onLocationChange }) {
+function GeofencingMap({ latitude, longitude, radius = 100, onLocationChange, onMapReady }) {
   // Suppress Google Maps Marker deprecation warning
   // This is a known issue with @react-google-maps/api library
   // The library hasn't been updated to use AdvancedMarkerElement yet
@@ -58,9 +58,15 @@ function GeofencingMap({ latitude, longitude, radius = 100, onLocationChange }) 
     }
   }, [latitude, longitude]);
 
-  const onMapLoad = useCallback((map) => {
-    setMap(map);
-  }, []);
+  const onMapLoad = useCallback(
+    (mapInstance) => {
+      setMap(mapInstance);
+      if (onMapReady) {
+        onMapReady();
+      }
+    },
+    [onMapReady]
+  );
 
   const onMarkerDragEnd = useCallback((event) => {
     const newPosition = {

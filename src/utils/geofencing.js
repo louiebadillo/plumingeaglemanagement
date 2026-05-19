@@ -3,6 +3,8 @@
  * Used only for UX — access control must still be enforced with Supabase RLS.
  */
 
+import { collectLocationAccessSnapshot } from './geolocationDiagnostics';
+
 const LOG_TAG = '[PEM-GEO]';
 // Soft cap so a noisy facility list doesn't spam the console.
 const MAX_FACILITIES_LOGGED = 20;
@@ -59,6 +61,7 @@ export const getCurrentFacilityFromGeofencing = () => {
       device: null,
       facilities: [],
       error: null,
+      locationAccess: null,
     };
 
     try {
@@ -70,6 +73,9 @@ export const getCurrentFacilityFromGeofencing = () => {
         report.cacheHit = true;
         report.cacheAgeMs = now - geofencingCache.timestamp;
         report.result = geofencingCache.facilityId;
+        report.locationAccess = await collectLocationAccessSnapshot({
+          positionObtained: Boolean(lastGeofenceReport?.device),
+        });
         logInfo('Cache hit; returning cached facility', {
           facilityId: report.result,
           cacheAgeSec: Math.round(report.cacheAgeMs / 1000),
@@ -81,6 +87,9 @@ export const getCurrentFacilityFromGeofencing = () => {
       let position;
       try {
         position = await requestLocationPermission();
+        report.locationAccess = await collectLocationAccessSnapshot({
+          positionObtained: true,
+        });
       } catch (geoError) {
         report.error = {
           stage: 'getCurrentPosition',
@@ -88,6 +97,10 @@ export const getCurrentFacilityFromGeofencing = () => {
           code: geoError?.code,
           message: geoError?.message,
         };
+        report.locationAccess = await collectLocationAccessSnapshot({
+          positionObtained: false,
+          geoError,
+        });
         logError(
           'Failed to get device position. Common causes: location permission denied, ' +
             'no GPS hardware, or browser location services off.',
