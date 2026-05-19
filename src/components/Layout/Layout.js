@@ -29,6 +29,8 @@ import MyReports from '../../pages/reports/MyReports';
 import AdminReports from '../../pages/reports/AdminReports';
 import ProgressReport from '../../pages/reports/ProgressReport';
 import StaffManagement from '../../pages/staff/StaffManagement';
+import LocationHelp from '../../pages/location/LocationHelp';
+import LocationHelpRequests from '../../pages/location/LocationHelpRequests';
 // Template pages removed - not in use
 
 import BreadCrumbs from '../../components/BreadCrumbs';
@@ -40,6 +42,7 @@ import { useSupabase } from '../../context/SupabaseContext';
 //Sidebar structure
 import { getSidebarStructure } from '../Sidebar/getSidebarStructure';
 import { useDraftReportsCount } from '../../hooks/useDraftReportsCount';
+import { useLocationHelpRequestCount } from '../../hooks/useLocationHelpRequestCount';
 
 const Redirect = (props) => {
   useEffect(() => window.location.replace(props.url));
@@ -54,6 +57,8 @@ function Layout(props) {
   const { userProfile } = useSupabase();
   const queryClient = useQueryClient();
   const { draftCount } = useDraftReportsCount();
+  const { openCount: locationRequestCount, refresh: refreshLocationRequestCount } =
+    useLocationHelpRequestCount();
   
   // ✅ FIX #4: Cached facilities query - 30 minute cache (facilities rarely change)
   // ✅ FIX #1: Replaced fetch() with Supabase client (parameterized, secure)
@@ -91,10 +96,23 @@ function Layout(props) {
       window.removeEventListener('facilitiesChanged', handleFacilitiesChanged);
     };
   }, [queryClient]);
-  
+
+  const userRole = userProfile?.role || 'employee';
+
+  // Refresh open location-request badge when admin navigates
+  useEffect(() => {
+    if (userRole === 'admin' || userRole === 'super_admin') {
+      refreshLocationRequestCount();
+    }
+  }, [props.location?.pathname, userRole, refreshLocationRequestCount]);
+
   // Get sidebar structure based on user role from Supabase
-  const userRole = userProfile?.role || 'employee'; // Default to employee if no role
-  const sidebarStructure = getSidebarStructure(userRole, facilities, draftCount);
+  const sidebarStructure = getSidebarStructure(
+    userRole,
+    facilities,
+    draftCount,
+    locationRequestCount
+  );
 
   return (
     <div className={classes.root}>
@@ -126,6 +144,26 @@ function Layout(props) {
           <Route path="/app/reports/create" component={CreateReport} />
           <Route path="/app/reports/daily-report" component={DailyReportForm} />
           <Route path="/app/reports/my-reports" component={MyReports} />
+          <Route
+            path="/app/location-help"
+            render={() =>
+              userRole === 'admin' ? (
+                <RouterRedirect to="/app/dashboard" />
+              ) : (
+                <LocationHelp />
+              )
+            }
+          />
+          <Route
+            path="/app/location-requests"
+            render={() =>
+              userRole === 'admin' || userRole === 'super_admin' ? (
+                <LocationHelpRequests />
+              ) : (
+                <RouterRedirect to="/app/dashboard" />
+              )
+            }
+          />
           <Route path="/app/reports/admin-reports" component={AdminReports} />
           <Route path="/app/reports/progress" render={() => {
             // Only allow admins to access progress reports
