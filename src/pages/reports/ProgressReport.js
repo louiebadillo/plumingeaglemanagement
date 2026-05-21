@@ -32,27 +32,10 @@ import {
 } from '@mui/icons-material';
 import { useHistory, useLocation } from 'react-router-dom';
 import { format, isValid, subDays, subMonths, subYears } from 'date-fns';
-
-/** After JSON.parse, dateRange dates are strings — coerce back to Date for format() and queries */
-function coerceToDate(value) {
-  if (value == null) return null;
-  if (value instanceof Date) return isValid(value) ? value : null;
-  const d = new Date(value);
-  return isValid(d) ? d : null;
-}
-
-function normalizeRestoredDateRange(dr) {
-  if (!dr || dr.startDate == null || dr.endDate == null) return null;
-  const startDate = coerceToDate(dr.startDate);
-  const endDate = coerceToDate(dr.endDate);
-  if (!startDate || !endDate) return null;
-  return { startDate, endDate };
-}
+import { parseDateOfBirthLocal } from '../../utils/dateHelpers';
 import { supabase } from '../../lib/supabase';
 import { useSupabase } from '../../context/SupabaseContext';
 import html2pdf from 'html2pdf.js';
-
-// Import Progress Report Components
 import ReportHeader from '../../components/ProgressReport/ReportHeader';
 import HealthReport from '../../components/ProgressReport/HealthReport';
 import RoutineReport from '../../components/ProgressReport/RoutineReport';
@@ -71,6 +54,21 @@ import {
   getIndicatorValue
 } from '../../utils/reportScoring';
 import { aggregateReportsData } from '../../utils/reportAggregation';
+
+/** After JSON.parse, dateRange dates are strings — coerce back to local calendar Date */
+function coerceToDate(value) {
+  if (value == null) return null;
+  const d = parseDateOfBirthLocal(value);
+  return d && isValid(d) ? d : null;
+}
+
+function normalizeRestoredDateRange(dr) {
+  if (!dr || dr.startDate == null || dr.endDate == null) return null;
+  const startDate = coerceToDate(dr.startDate);
+  const endDate = coerceToDate(dr.endDate);
+  if (!startDate || !endDate) return null;
+  return { startDate, endDate };
+}
 
 // Suppress ResizeObserver errors (common with html2pdf.js)
 const originalError = console.error;
@@ -308,8 +306,8 @@ function ProgressReport() {
     let startDate, endDate;
 
     if (type === 'custom' && customRange) {
-      startDate = new Date(customRange.startDate);
-      endDate = new Date(customRange.endDate);
+      startDate = parseDateOfBirthLocal(customRange.startDate);
+      endDate = parseDateOfBirthLocal(customRange.endDate);
     } else if (type === 'monthly') {
       startDate = subMonths(today, 1);
       endDate = today;

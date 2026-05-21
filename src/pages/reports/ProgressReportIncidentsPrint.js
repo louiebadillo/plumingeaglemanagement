@@ -9,6 +9,7 @@ import { useSupabase } from '../../context/SupabaseContext';
 import ReportHeader from '../../components/ProgressReport/ReportHeader';
 import BehaviourReport from '../../components/ProgressReport/BehaviourReport';
 import { aggregateReportsData } from '../../utils/reportAggregation';
+import { parseDateOfBirthLocal } from '../../utils/dateHelpers';
 
 const PRINT_STYLE_ID = 'progress-report-incidents-print-styles';
 
@@ -62,8 +63,11 @@ function loadMatchingFillable(clientId, startStr, endStr) {
     if (parsed.selectedClientId !== clientId) return {};
     const dr = parsed.dateRange;
     if (!dr || dr.startDate == null || dr.endDate == null) return {};
-    const s = format(new Date(dr.startDate), 'yyyy-MM-dd');
-    const e = format(new Date(dr.endDate), 'yyyy-MM-dd');
+    const startDate = parseDateOfBirthLocal(dr.startDate);
+    const endDate = parseDateOfBirthLocal(dr.endDate);
+    if (!startDate || !endDate) return {};
+    const s = format(startDate, 'yyyy-MM-dd');
+    const e = format(endDate, 'yyyy-MM-dd');
     if (s !== startStr || e !== endStr) return {};
     return parsed.fillableData || {};
   } catch {

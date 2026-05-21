@@ -9,7 +9,7 @@ import {
   TextField
 } from '@mui/material';
 import { format } from 'date-fns';
-import { calculateAge } from '../../utils/dateHelpers';
+import { calculateAge, parseDateOfBirthLocal } from '../../utils/dateHelpers';
 
 function ReportHeader({ 
   client, 
@@ -29,8 +29,9 @@ function ReportHeader({
   overviewLabel = 'Overview'
 }) {
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return format(new Date(dateString), 'MMM dd, yyyy');
+    const date = parseDateOfBirthLocal(dateString);
+    if (!date) return 'N/A';
+    return format(date, 'MMM dd, yyyy');
   };
 
   const getIndicatorColor = (indicator) => {

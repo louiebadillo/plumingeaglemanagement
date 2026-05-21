@@ -50,6 +50,7 @@ import {
 } from '../../utils/reportScoring';
 import { useSupabase } from '../../context/SupabaseContext';
 import { getSupabaseConfig, getSupabaseHeaders } from '../../utils/supabaseConfig';
+import { formatDateOnly } from '../../utils/dateHelpers';
 
 const ReportViewer = ({ reportId, open, onClose }) => {
   const { userProfile } = useSupabase();
@@ -171,7 +172,15 @@ const ReportViewer = ({ reportId, open, onClose }) => {
     }
   };
 
-  const formatDate = (dateString) => {
+  const formatReportDate = (dateString) =>
+    formatDateOnly(dateString, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+  const formatDateTime = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -300,7 +309,7 @@ const ReportViewer = ({ reportId, open, onClose }) => {
               <span>📋 Client: ${client?.first_name} ${client?.last_name}</span>
               <span>🏠 Room: ${client?.room || 'N/A'}</span>
               <span>🏢 Facility: ${facility?.name}</span>
-              <span>📅 Date: ${formatDate(report?.report_date)}</span>
+              <span>📅 Date: ${formatReportDate(report?.report_date)}</span>
             </div>
           </div>
           
@@ -625,7 +634,7 @@ const ReportViewer = ({ reportId, open, onClose }) => {
           
           <div class="section metadata">
             <h2>📋 Report Information</h2>
-            <p><strong>Submitted:</strong> ${formatDate(report?.updated_at)} at ${formatTime(report?.updated_at)}</p>
+            <p><strong>Submitted:</strong> ${formatDateTime(report?.updated_at)} at ${formatTime(report?.updated_at)}</p>
             <p><strong>Status:</strong> ${report?.status}</p>
           </div>
         </body>
@@ -1110,7 +1119,7 @@ const ReportViewer = ({ reportId, open, onClose }) => {
                       Date
                     </Typography>
                     <Typography variant="h6">
-                      {formatDate(report.report_date)}
+                      {formatReportDate(report.report_date)}
                     </Typography>
                   </Box>
                 </Grid>
@@ -1273,7 +1282,7 @@ const ReportViewer = ({ reportId, open, onClose }) => {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="body2" color="textSecondary">
-                    <strong>Submitted:</strong> {formatDate(report.updated_at)} at {formatTime(report.updated_at)}
+                    <strong>Submitted:</strong> {formatDateTime(report.updated_at)} at {formatTime(report.updated_at)}
                   </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>

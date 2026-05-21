@@ -55,6 +55,7 @@ import { createClientUrl } from '../../utils/urlUtils';
 import { supabase } from '../../lib/supabase';
 import DateSelectionModal from '../../components/DailyReport/DateSelectionModal';
 import { getProfilePhotoUrl } from '../../utils/fileUpload';
+import { calculateAge } from '../../utils/dateHelpers';
 import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
 
 // Initial form data for creating/editing clients
@@ -579,10 +580,7 @@ function FacilityPage() {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            {client.date_of_birth ? 
-                              new Date().getFullYear() - new Date(client.date_of_birth).getFullYear() : 
-                              'N/A'
-                            }
+                            {client.date_of_birth ? calculateAge(client.date_of_birth) : 'N/A'}
                           </TableCell>
                           <TableCell>{client.phone || 'N/A'}</TableCell>
                           <TableCell>

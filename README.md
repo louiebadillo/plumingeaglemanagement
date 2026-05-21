@@ -63,7 +63,6 @@ Facility laptops often report inaccurate positions. Admins can tune geofences us
 - **Material UI (MUI) v5**
 - **Supabase** — Auth, PostgreSQL database, row-level security, storage
 - **TanStack React Query** — Server state / caching
-- **Google Maps** — Optional map for geofence setup (`REACT_APP_GOOGLE_MAPS_API_KEY`)
 
 ---
 
