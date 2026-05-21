@@ -49,6 +49,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { uploadFile, deleteFile, getFileUrl } from '../../utils/fileUpload';
 import { saveSessionDraft, loadSessionDraft, clearSessionDraft } from '../../utils/sessionDraftStorage';
 import { supabase } from '../../lib/supabase';
+import { formatDateOnly } from '../../utils/dateHelpers';
 
 /**
  * After storage upload, attach file metadata to daily_reports_v2 so the master list can list it.
@@ -795,7 +796,7 @@ function ClientFileManager({ clientId, clientName, isAdmin }) {
                             <Box>
                               {file.reportDate && (
                                 <Typography variant="caption" color="textSecondary" display="block">
-                                  Report Date: {new Date(file.reportDate).toLocaleDateString()}
+                                  Report Date: {formatDateOnly(file.reportDate, { month: 'numeric', day: 'numeric', year: 'numeric' })}
                                 </Typography>
                               )}
                               <Typography variant="caption" color="textSecondary" display="block">

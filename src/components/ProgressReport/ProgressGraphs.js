@@ -1,4 +1,5 @@
 import React, { useMemo, useRef } from 'react';
+import { parseDateOfBirthLocal } from '../../utils/dateHelpers';
 import {
   Box,
   Typography,
@@ -105,8 +106,8 @@ function ProgressGraphs({ trendData, sectionAverages = {} }) {
       const seen = [];
       const seenKeys = new Set();
       for (const row of chartData) {
-        const d = new Date(row.date);
-        if (Number.isNaN(d.getTime())) continue;
+        const d = parseDateOfBirthLocal(row.date);
+        if (!d) continue;
         const key = `${d.getFullYear()}-${d.getMonth()}`;
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
@@ -183,8 +184,8 @@ function ProgressGraphs({ trendData, sectionAverages = {} }) {
                 height={50}
                 label={{ value: monthLabel, position: 'insideBottom', offset: -2 }}
                 tickFormatter={(value) => {
-                  const date = new Date(value);
-                  if (Number.isNaN(date.getTime())) return value;
+                  const date = parseDateOfBirthLocal(value);
+                  if (!date) return value;
                   return String(date.getDate());
                 }}
               />
@@ -195,7 +196,8 @@ function ProgressGraphs({ trendData, sectionAverages = {} }) {
               <Tooltip
                 formatter={(value, name) => [`${value}%`, name]}
                 labelFormatter={(date) => {
-                  const dateObj = new Date(date);
+                  const dateObj = parseDateOfBirthLocal(date);
+                  if (!dateObj) return date;
                   return `${dateObj.getDate()}, ${dateObj.toLocaleDateString('en-US', { month: 'short' })}`;
                 }}
               />

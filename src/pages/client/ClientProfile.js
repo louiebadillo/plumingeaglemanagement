@@ -54,6 +54,7 @@ import {
 import { useParams, useHistory, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatDate, calculateAge } from '../../context/clientMock';
+import { normalizeDateOnly } from '../../utils/dateHelpers';
 import { useSupabase } from '../../context/SupabaseContext';
 import { parseClientSlug, createClientUrl } from '../../utils/urlUtils';
 import { supabase } from '../../lib/supabase';
@@ -476,14 +477,14 @@ function ClientProfile() {
               lastName: supabaseClient.last_name,
               gender: supabaseClient.gender,
               age: supabaseClient.date_of_birth ? calculateAge(supabaseClient.date_of_birth) : '',
-              dateOfBirth: supabaseClient.date_of_birth,
+              dateOfBirth: normalizeDateOnly(supabaseClient.date_of_birth),
               phone: supabaseClient.phone,
               email: supabaseClient.email,
               address: supabaseClient.address,
               albertaHealthCardNumber: supabaseClient.alberta_health_card_number,
               client_id_no: supabaseClient.client_id_no,
               band_no: supabaseClient.band_no,
-              admissionDate: supabaseClient.admission_date,
+              admissionDate: normalizeDateOnly(supabaseClient.admission_date),
               room: supabaseClient.room,
               pronouns: supabaseClient.pronouns,
               socialMediaLinks: supabaseClient.social_media_links || [],
@@ -514,15 +515,15 @@ function ClientProfile() {
               allergies: supabaseClient.allergies,
               diagnosis: supabaseClient.diagnosis,
               familyDoctor: supabaseClient.family_doctor,
-              familyDoctorCheckup: supabaseClient.family_doctor_checkup,
+              familyDoctorCheckup: normalizeDateOnly(supabaseClient.family_doctor_checkup),
               dentist: supabaseClient.dentist,
-              dentistCheckup: supabaseClient.dentist_checkup,
+              dentistCheckup: normalizeDateOnly(supabaseClient.dentist_checkup),
               optometrist: supabaseClient.optometrist,
-              optometristCheckup: supabaseClient.optometrist_checkup,
+              optometristCheckup: normalizeDateOnly(supabaseClient.optometrist_checkup),
               specialist: supabaseClient.specialist,
-              specialistCheckup: supabaseClient.specialist_checkup,
+              specialistCheckup: normalizeDateOnly(supabaseClient.specialist_checkup),
               pediatrician: supabaseClient.pediatrician,
-              pediatricianCheckup: supabaseClient.pediatrician_checkup,
+              pediatricianCheckup: normalizeDateOnly(supabaseClient.pediatrician_checkup),
               allowedContacts: supabaseClient.allowed_contacts || [],
               risksAndPreferences: supabaseClient.risks_and_preferences,
               // Keep old fields for backward compatibility but don't use in UI
@@ -827,10 +828,11 @@ function ClientProfile() {
 
   // Helper function to convert empty strings to null for date fields
   const cleanDateField = (value) => {
-    if (!value || value === '' || value.trim() === '') {
+    const normalized = normalizeDateOnly(value);
+    if (!normalized) {
       return null;
     }
-    return value;
+    return normalized;
   };
 
   const handleSaveEdit = async () => {

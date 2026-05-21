@@ -349,12 +349,4 @@ export const getClientStatusColor = (status) => {
   }
 };
 
-export const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-};
-
-export { calculateAge } from '../utils/dateHelpers';
+export { formatDateOnly as formatDate, calculateAge, normalizeDateOnly } from '../utils/dateHelpers';

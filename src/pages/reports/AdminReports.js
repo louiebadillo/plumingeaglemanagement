@@ -229,7 +229,8 @@ function AdminReports() {
     
     let matchesDate = true;
     if (dateRange !== 'all') {
-      const reportDate = new Date(report.report_date);
+      const reportDateStr = report.report_date ? String(report.report_date).split('T')[0] : '';
+      const reportDate = reportDateStr ? new Date(`${reportDateStr}T12:00:00`) : null;
       const now = new Date();
       
       switch (dateRange) {
@@ -275,7 +276,14 @@ function AdminReports() {
     }
   };
 
-  const formatDate = (dateString) => {
+  const formatReportDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const [year, month, day] = String(dateString).split('T')[0].split('-');
+    if (!year || !month || !day) return dateString;
+    return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10)).toLocaleDateString();
+  };
+
+  const formatDateTime = (dateString) => {
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -452,7 +460,7 @@ function AdminReports() {
                           size="small"
                         />
                       </TableCell>
-                      <TableCell>{formatDate(report.created_at)}</TableCell>
+                      <TableCell>{formatDateTime(report.created_at)}</TableCell>
                       <TableCell>{report.submittedByName || 'Unknown'}</TableCell>
                       <TableCell>
                         <Box display="flex" gap={1}>
@@ -507,7 +515,7 @@ function AdminReports() {
               <Grid container spacing={2}>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="textSecondary">Date:</Typography>
-                  <Typography variant="body1">{formatDate(selectedReport.report_date)}</Typography>
+                  <Typography variant="body1">{formatReportDate(selectedReport.report_date)}</Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="textSecondary">Status:</Typography>

@@ -48,7 +48,7 @@ import { useHistory } from 'react-router-dom';
 import SuccessModal from '../../components/Modals/SuccessModal';
 import DeleteConfirmModal from '../../components/Modals/DeleteConfirmModal';
 import { getProfilePhotoUrl } from '../../utils/fileUpload';
-import { calculateAge } from '../../utils/dateHelpers';
+import { calculateAge, formatDateOnly, normalizeDateOnly } from '../../utils/dateHelpers';
 import { formatNorthAmericanPhoneInput } from '../../utils/phoneFormat';
 import { shieldEntityDialogClose } from '../../hooks/useDialogCloseGuard';
 import { useDialogScrollThroughVisibility } from '../../hooks/useDialogScrollThroughVisibility';
@@ -66,7 +66,7 @@ function buildClientTablePayload(form) {
   return {
     first_name: form.first_name,
     last_name: form.last_name,
-    date_of_birth: form.date_of_birth || null,
+    date_of_birth: normalizeDateOnly(form.date_of_birth) || null,
     gender: form.gender || null,
     client_id_no: form.client_id_no || null,
     band_no: form.band_no || null,
@@ -267,10 +267,13 @@ function ClientMasterlist() {
           if (ageB === 'N/A') return -1;
           return ageA - ageB; // Ascending (youngest to oldest)
         
-        case 'admission_date':
-          if (!a.admission_date) return 1;
-          if (!b.admission_date) return -1;
-          return new Date(b.admission_date) - new Date(a.admission_date); // Descending (most recent first)
+        case 'admission_date': {
+          const dateA = normalizeDateOnly(a.admission_date);
+          const dateB = normalizeDateOnly(b.admission_date);
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return dateB.localeCompare(dateA); // Descending (most recent first)
+        }
         
         case 'band_no':
           const bandA = a.band_no ? parseFloat(a.band_no) : Infinity;
@@ -458,7 +461,7 @@ function ClientMasterlist() {
     setClientForm({
       first_name: client.first_name,
       last_name: client.last_name,
-      date_of_birth: client.date_of_birth,
+      date_of_birth: normalizeDateOnly(client.date_of_birth),
       gender: client.gender,
       client_id_no: client.client_id_no || '',
       band_no: client.band_no || '',
@@ -805,8 +808,8 @@ function ClientMasterlist() {
                     </TableCell>
                     <TableCell>{client.room || 'N/A'}</TableCell>
                     <TableCell>
-                      {client.admission_date 
-                        ? new Date(client.admission_date).toLocaleDateString() 
+                      {client.admission_date
+                        ? formatDateOnly(client.admission_date, { month: 'numeric', day: 'numeric', year: 'numeric' })
                         : 'N/A'}
                     </TableCell>
                     <TableCell>

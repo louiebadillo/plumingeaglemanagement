@@ -13,6 +13,41 @@ export const formatDateLocal = (date) => {
 };
 
 /**
+ * Normalize a calendar date from DB/API/form to YYYY-MM-DD (no timezone shift).
+ * @param {string|Date|null|undefined} value
+ * @returns {string} YYYY-MM-DD or empty string
+ */
+export const normalizeDateOnly = (value) => {
+  if (value == null || value === '') return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return formatDateLocal(value);
+  }
+  const str = String(value).trim();
+  if (!str) return '';
+  const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+};
+
+/**
+ * Format a calendar date for display (local calendar, not UTC midnight).
+ * @param {string|Date|null|undefined} value
+ * @param {Intl.DateTimeFormatOptions} [options]
+ * @returns {string}
+ */
+export const formatDateOnly = (value, options = {}) => {
+  if (!value) return 'N/A';
+  const date = parseDateOfBirthLocal(value);
+  if (!date) return 'N/A';
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    ...options
+  });
+};
+
+/**
  * Get the current operational date based on 6am-6am logic
  * If current time < 6:00 AM: operational date = yesterday
  * If current time >= 6:00 AM: operational date = today
@@ -54,9 +89,10 @@ export const isReportLocked = (reportDate) => {
   
   // After 6:00 AM, check if report date is before current operational date
   const operationalDate = getOperationalDate();
-  const reportDateObj = new Date(reportDate);
-  const operationalDateObj = new Date(operationalDate);
-  
+  const reportDateObj = parseDateOfBirthLocal(reportDate);
+  const operationalDateObj = parseDateOfBirthLocal(operationalDate);
+  if (!reportDateObj || !operationalDateObj) return false;
+
   // Report is locked if it's from a date before the current operational date
   return reportDateObj < operationalDateObj;
 };
