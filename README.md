@@ -112,8 +112,27 @@ Default dev login values may be defined in `src/config.js` / `env.example` for l
 Run SQL migrations in the Supabase SQL editor when deploying new features, for example:
 
 - `supabase/migrations/20250518_location_help_requests.sql` — Employee **Send to admin** / admin **Location requests** inbox
+- `supabase/migrations/20250520_location_help_resend_notify.sql` — **Resend email** when employees submit location help (Edge Function deploy steps)
 
 Ensure `users`, `facilities`, `clients`, `daily_reports_v2`, and related RLS policies exist for your environment.
+
+#### Location help email alerts (Resend)
+
+1. Create a free account at [resend.com](https://resend.com) and add an API key.
+2. For production, verify your domain in Resend and set `RESEND_FROM_EMAIL` (e.g. `PEL Reports <notifications@pelreports.ca>`). For testing only, you can use `onboarding@resend.dev` (delivers only to your Resend account email).
+3. Install the [Supabase CLI](https://supabase.com/docs/guides/cli), link your project: `supabase link --project-ref YOUR_REF`
+4. Set Edge Function secrets:
+   ```bash
+   supabase secrets set RESEND_API_KEY=re_xxxx \
+     ADMIN_NOTIFY_EMAIL=you@example.com \
+     RESEND_FROM_EMAIL="PEL Reports <notifications@yourdomain.com>" \
+     APP_SITE_URL=https://pelreports.ca
+   ```
+5. Deploy the function:
+   ```bash
+   supabase functions deploy notify-location-help-request
+   ```
+6. Redeploy the React app. When an employee taps **Send to admin**, you receive an email with the full diagnostic report and a link to **Location requests**.
 
 ---
 
@@ -144,7 +163,9 @@ src/
   hooks/                # Draft counts, location request counts, dialogs
   services/             # Location help requests API helpers
   utils/                # Geofencing, dates, uploads, session drafts
-supabase/migrations/    # SQL to run in Supabase
+supabase/
+  functions/            # Edge Functions (e.g. notify-location-help-request)
+  migrations/           # SQL to run in Supabase
 ```
 
 ---
