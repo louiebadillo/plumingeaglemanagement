@@ -38,6 +38,20 @@ export async function submitLocationHelpRequest({
 
   if (error) throw error;
   notifyLocationHelpRequestsChanged();
+
+  // Notify admin by email (Resend via Edge Function). Non-blocking for the employee.
+  try {
+    const { error: notifyError } = await supabase.functions.invoke(
+      'notify-location-help-request',
+      { body: { requestId: data.id } },
+    );
+    if (notifyError) {
+      console.warn('Admin email notification failed:', notifyError.message);
+    }
+  } catch (notifyErr) {
+    console.warn('Admin email notification failed:', notifyErr);
+  }
+
   return data;
 }
 

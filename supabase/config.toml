@@ -1,0 +1,5 @@
+# Supabase local CLI config (optional for local `supabase functions serve`).
+# Deploy with: supabase functions deploy notify-location-help-request
+
+[functions.notify-location-help-request]
+verify_jwt = true
